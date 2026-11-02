@@ -1,8 +1,5 @@
-import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from flask import Flask
-from threading import Thread
 
 # === إعداداتك الخاصة ===
 BOT_TOKEN = "8884467242:AAGqwLhTOuQdpRdOy5GCuhhAOoxuypM_Y4Y"
@@ -13,17 +10,6 @@ REDOTPAY_ID = "1198898814"
 # ======================
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# خادم ويب خفيف لإرضاء منصة Render ومنع خطأ الـ Port timeout
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Pixora Store Bot is Alive!"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
 
 # دالة عرض القائمة الرئيسية والمنتجات الأساسية
 @bot.message_handler(commands=['start', 'menu'])
@@ -204,8 +190,5 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# تشغيل خادم الويب في خلفية مستقلة ليتوافق مع Render
-if __name__ == '__main__':
-    t = Thread(target=run_web)
-    t.start()
-    bot.infinity_polling()
+# تشغيل البوت مباشرة
+bot.infinity_polling()
