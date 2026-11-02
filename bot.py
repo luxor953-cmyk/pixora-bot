@@ -2,11 +2,11 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # === إعداداتك الخاصة ===
-BOT_TOKEN = "8884467242:AAGJx6sf8SIT55EWeftzYGO2ZNP5NJTNMa0"
+BOT_TOKEN = "8884467242:AAG_QCV0KDRcJ7Bc30YSKr617nBzB4bUb6g"
 ADMIN_ID = 514752764
 RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
-REDOTPAY_ID = "1198898814"
+REDOTPAY_INFO = "1198898814"
 # ======================
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -58,7 +58,7 @@ def send_welcome(message):
     btn_crunchyroll = InlineKeyboardButton("🍿 Crunchyroll 1 Month Redeem Link • $0.6 (5)", callback_data="buy_crunchyroll")
     markup.add(btn_crunchyroll)
     
-    # أزرار طرق الدفع بالرموز الدقيقة والاحترافية
+    # أزرار طرق الدفع
     btn_ccp = InlineKeyboardButton("🏦 CCP بريد الجزائر", callback_data="pay_ccp")
     btn_binance = InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance")
     btn_redotpay = InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay")
