@@ -197,7 +197,7 @@ def handle_query(call):
 
     elif call.data == "pay_ccp":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🏦 **معلومات الدفع عبر بريد الجزائر (CCP):**\n`{RIP_CPP}`\n\nأرسل وصل الدفع لتأكيد الطلب.", parse_mode="Markdown")
+        bot.send_message(chat_id, f"🏦 **معلومات الدفع عبر Baridimob (CCP):**\n`{RIP_CPP}`\n\nأرسل وصل الدفع لتأكيد الطلب.", parse_mode="Markdown")
     elif call.data == "pay_binance":
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, f"🪙 **معلومات الدفع عبر Binance Pay:**\nID: `{BINANCE_ID}`\n\nأرسل لقطة الشاشة للمشرف.", parse_mode="Markdown")
