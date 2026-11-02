@@ -67,7 +67,7 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("💳 شراء عبر CCP", callback_data="pay_ccp"),
+            InlineKeyboardButton("💳 شراء عبر Baridimob", callback_data="pay_ccp"),
             InlineKeyboardButton("🟡 شراء عبر Binance", callback_data="pay_binance"),
             InlineKeyboardButton("💳 شراء عبر RedotPay", callback_data="pay_redotpay"),
             InlineKeyboardButton("🏠 Main Menu / القائمة الرئيسية", callback_data="main_menu")
@@ -183,7 +183,7 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("🏦 CCP بريد الجزائر", callback_data="pay_ccp"),
+            InlineKeyboardButton("🏦 CCP Baridimob", callback_data="pay_ccp"),
             InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance"),
             InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay"),
             InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
