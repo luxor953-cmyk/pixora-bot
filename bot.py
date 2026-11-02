@@ -2,7 +2,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # === إعداداتك الخاصة ===
-BOT_TOKEN = "8884467242:AAGiubxxmbrwL65N8lcYr3N5Fx0heIDWgSM"
+BOT_TOKEN = "8884467242:AAG7DwyDlBVpErb6xcCVLXpSdnmVVpMbpT0"
 ADMIN_ID = 514752764
 RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
