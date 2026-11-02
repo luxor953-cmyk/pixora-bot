@@ -1,5 +1,8 @@
+import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
+from threading import Thread
 
 # === إعداداتك الخاصة ===
 BOT_TOKEN = "8884467242:AAGqwLhTOuQdpRdOy5GCuhhAOoxuypM_Y4Y"
@@ -11,26 +14,46 @@ REDOTPAY_ID = "1198898814"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# دالة عرض القائمة الرئيسية والمنتجات الأساسية
+# خادم ويب خفيف لإرضاء منصة Render وتشغيل الموقع بنجاح
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Pixora Store is Active & Running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# دالة القائمة الرئيسية مع الكميات والأسعار المنظمة
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    markup = InlineKeyboardMarkup(row_width=1)
+    markup = InlineKeyboardMarkup(row_width=2)
     
-    btn_gemini = InlineKeyboardButton("🌟 Google Pro (Gemini 18M)", callback_data="prod_gemini")
-    btn_chatgpt = InlineKeyboardButton("🤖 ChatGPT (خيارات متعددة)", callback_data="prod_chatgpt")
-    btn_capcut = InlineKeyboardButton("🎬 CapCut Pro", callback_data="prod_capcut")
-    btn_office = InlineKeyboardButton("🪟 Microsoft Office 365", callback_data="prod_office")
-    btn_autodesk = InlineKeyboardButton("🅰️ AutoDesk Full Apps", callback_data="prod_autodesk")
-    btn_canva = InlineKeyboardButton("🎨 Canva Admin Account", callback_data="prod_canva")
+    # الصفوف الشبكية مع الكميات والأسعار
+    btn_capcut = InlineKeyboardButton("🎬 CapCut · (10)", callback_data="prod_capcut")
+    btn_chatgpt = InlineKeyboardButton("🤖 ChatGPT · (15)", callback_data="prod_chatgpt")
     
-    markup.add(btn_gemini, btn_chatgpt, btn_capcut, btn_office, btn_autodesk, btn_canva)
+    btn_gemini = InlineKeyboardButton("🔥 Gemini Ai · $3 (4)", callback_data="prod_gemini")
+    btn_office = InlineKeyboardButton("🪟 Microsoft 365 · (8)", callback_data="prod_office")
     
-    btn_pay = InlineKeyboardButton("💳 طرق الدفع المعتمدة (CCP / Binance / RedotPay)", callback_data="show_payments")
+    btn_autodesk = InlineKeyboardButton("🅰️ AUTODESK · (3)", callback_data="prod_autodesk")
+    btn_canva = InlineKeyboardButton("🎨 Canva Pro · (12)", callback_data="prod_canva")
+    
+    markup.add(btn_capcut, btn_chatgpt, btn_gemini, btn_office, btn_autodesk, btn_canva)
+    
+    # منتج مميز مع الكمية
+    btn_bestseller = InlineKeyboardButton("🔥 (💚 BEST SELLER) ChatGPT Plus · (5)", callback_data="prod_chatgpt")
+    markup.add(btn_bestseller)
+    
+    # زر طرق الدفع الرئيسية
+    btn_pay = InlineKeyboardButton("💳 طرق الدفع (CCP / Binance / RedotPay)", callback_data="show_payments")
     markup.add(btn_pay)
     
     bot.send_message(
         message.chat.id, 
-        "مرحباً بك في **Pixora Store** 🌐\nاختر المنتج الذي تفضل شراءه لعرض الوصف والتفاصيل:", 
+        "🌐 **Choose Your Product / اختر منتجك المفضّل:**\n"
+        "مرحباً بك في متجر **Pixora Store**، يرجى اختيار الخدمة المطلوبة:", 
         reply_markup=markup, 
         parse_mode="Markdown"
     )
@@ -47,14 +70,15 @@ def handle_query(call):
             InlineKeyboardButton("💳 شراء عبر CCP", callback_data="pay_ccp"),
             InlineKeyboardButton("🟡 شراء عبر Binance", callback_data="pay_binance"),
             InlineKeyboardButton("💳 شراء عبر RedotPay", callback_data="pay_redotpay"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("🏠 Main Menu / القائمة الرئيسية", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
-            "🌟 **Google Pro (Gemini 18 Months)**\n\n"
-            "📌 **الوصف:** حساب رسمي مدعوم بالذكاء الاصطناعي الأقوى من جوجل لمدة 18 شهر كاملة.\n"
-            "💰 **السعر:** مميز جداً.\n\n"
-            "اختر وسيلة الدفع أدناه لإتمام الطلب وإرسال الإثبات:",
+            "🌟 **Gemini Pro 18 Months**\n\n"
+            "📌 **الوصف:** حساب رسمي مدعوم بالذكاء الاصطناعي الأقوى من جوجل لمدة 18 شهر.\n"
+            "📦 **الكمية المتوفرة:** 4 حسابات جاهزة.\n"
+            "💰 **السعر:** $3\n\n"
+            "اختر وسيلة الدفع لإتمام الطلب:",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -63,15 +87,15 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(
-            InlineKeyboardButton("📚 ChatGPT تعليمي", callback_data="gpt_edu"),
-            InlineKeyboardButton("👤 ChatGPT خاص", callback_data="gpt_private"),
-            InlineKeyboardButton("👥 ChatGPT مشترك", callback_data="gpt_shared"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("📚 ChatGPT تعليمي · (6)", callback_data="gpt_edu"),
+            InlineKeyboardButton("👤 ChatGPT خاص · (4)", callback_data="gpt_private"),
+            InlineKeyboardButton("👥 ChatGPT مشترك · (5)", callback_data="gpt_shared"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
             "🤖 **مشتريات ChatGPT**\n\n"
-            "📌 **الوصف:** اختر نوع الحساب المناسب لك (تعليمي، خاص، أو مشترك) لتبدأ بالتحديد:",
+            "📌 اختر نوع الحساب المناسب لك والكمية المطلوبة:",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -82,15 +106,13 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=3)
         markup.add(
             InlineKeyboardButton("1 شهر", callback_data="pay_prompt"),
-            InlineKeyboardButton("2 شهر", callback_data="pay_prompt"),
             InlineKeyboardButton("3 أشهر", callback_data="pay_prompt"),
-            InlineKeyboardButton("6 أشهر", callback_data="pay_prompt"),
             InlineKeyboardButton("12 شهر", callback_data="pay_prompt"),
             InlineKeyboardButton("⬅️ رجوع", callback_data="prod_chatgpt")
         )
         bot.send_message(
             chat_id,
-            f"📅 لقد اخترت ChatGPT ({type_name}).\nالرجاء اختيار **عدد الشهور** المطلوبة:",
+            f"📅 لقد اخترت ChatGPT ({type_name}).\nاختر المدة المطلوبة:",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -100,30 +122,29 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
             InlineKeyboardButton("💳 الدفع وإتمام الطلب", callback_data="show_payments"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
             "🎬 **CapCut Pro**\n\n"
-            "📌 **الوصف:** اشتراك رسمي لتفعيل كافة ميزات الذكاء الاصطناعي والتصدير المفتوح بدون قوالب مدفوعة.\n\n"
-            "اختر طريقة الدفع للمتابعة:",
+            "📌 اشتراك رسمي لتفعيل كافة ميزات الذكاء الاصطناعي والتصدير المفتوح.\n"
+            "📦 **الكمية المتوفرة:** 10 اشتراكات.",
             reply_markup=markup,
             parse_mode="Markdown"
         )
 
     elif call.data == "prod_office":
         bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=2)
+        markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("⏳ لمدة عام", callback_data="pay_prompt"),
-            InlineKeyboardButton("♾️ مدى الحياة", callback_data="pay_prompt"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("💳 الدفع وإتمام الطلب", callback_data="show_payments"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
             "🪟 **Microsoft Office 365**\n\n"
-            "📌 **الوصف:** حزمة أوفيس الأصلية كاملة (Word, Excel, PowerPoint...) مع مساحة تخزين سحابية.\n"
-            "اختر المدة المناسبة:",
+            "📌 حزمة أوفيس الأصلية كاملة مع مساحة تخزين سحابية.\n"
+            "📦 **الكمية المتوفرة:** 8 مفاتيح تفعيل.",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -133,13 +154,12 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
             InlineKeyboardButton("💳 الدفع وإتمام الطلب", callback_data="show_payments"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
             "🅰️ **AutoDesk Full Apps**\n\n"
-            "📌 **الوصف:** تفعيل برامج الهندسة والتصميم الرسمية (AutoCAD, 3ds Max...) لحسابك الشخصي.\n\n"
-            "اختر طريقة الدفع للمتابعة:",
+            "📌 تفعيل برامج الهندسة والتصميم الرسمية (AutoCAD, 3ds Max...).",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -149,13 +169,12 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
             InlineKeyboardButton("💳 الدفع وإتمام الطلب", callback_data="show_payments"),
-            InlineKeyboardButton("⬅️ العودة للقائمة", callback_data="main_menu")
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
-            "🎨 **Canva Admin Account**\n\n"
-            "📌 **الوصف:** صلاحيات إدارة فريق أو ترقية حسابك الشخصي للاستفادة من قوالب وتصميمات كانفا برو الاحترافية.\n\n"
-            "اختر طريقة الدفع للمتابعة:",
+            "🎨 **Canva Pro / Admin Account**\n\n"
+            "📌 الاستفادة من قوالب وتصميمات كانفا برو الاحترافية.",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -167,18 +186,18 @@ def handle_query(call):
             InlineKeyboardButton("🏦 CCP بريد الجزائر", callback_data="pay_ccp"),
             InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance"),
             InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay"),
-            InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
-            "💳 **اختر وسيلة الدفع المناسبة لك:**\nبعد الدفع، قم بإرسال إيصال الدفع هنا للمشرف لتفعيل طلبك فوراً.",
+            "💳 **اختر وسيلة الدفع المناسبة لك:**\nبعد الدفع، قم بإرسال إيصال الدفع هنا للمشرف لتفعيل طلبك.",
             reply_markup=markup,
             parse_mode="Markdown"
         )
 
     elif call.data == "pay_ccp":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🏦 **معلومات الدفع عبر بريد الجزائر (CCP):**\n`{RIP_CPP}`\n\nأرسل وصل الدفع للمشرف لتأكيد الطلب.", parse_mode="Markdown")
+        bot.send_message(chat_id, f"🏦 **معلومات الدفع عبر بريد الجزائر (CCP):**\n`{RIP_CPP}`\n\nأرسل وصل الدفع لتأكيد الطلب.", parse_mode="Markdown")
     elif call.data == "pay_binance":
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, f"🪙 **معلومات الدفع عبر Binance Pay:**\nID: `{BINANCE_ID}`\n\nأرسل لقطة الشاشة للمشرف.", parse_mode="Markdown")
@@ -190,5 +209,8 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# تشغيل البوت مباشرة
-bot.infinity_polling()
+# تشغيل خادم الويب والبوت معاً
+if __name__ == '__main__':
+    t = Thread(target=run_web)
+    t.start()
+    bot.infinity_polling()
