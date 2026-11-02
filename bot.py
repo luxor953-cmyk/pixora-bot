@@ -1,5 +1,8 @@
+import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
+from threading import Thread
 
 # === إعداداتك الخاصة ===
 BOT_TOKEN = "8884467242:AAGqwLhTOuQdpRdOy5GCuhhAOoxuypM_Y4Y"
@@ -11,12 +14,22 @@ REDOTPAY_ID = "1198898814"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# خادم ويب خفيف لإرضاء منصة Render ومنع خطأ الـ Port timeout
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Pixora Store Bot is Alive!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
 # دالة عرض القائمة الرئيسية والمنتجات الأساسية
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=1)
     
-    # أزرار المنتجات المنظمة
     btn_gemini = InlineKeyboardButton("🌟 Google Pro (Gemini 18M)", callback_data="prod_gemini")
     btn_chatgpt = InlineKeyboardButton("🤖 ChatGPT (خيارات متعددة)", callback_data="prod_chatgpt")
     btn_capcut = InlineKeyboardButton("🎬 CapCut Pro", callback_data="prod_capcut")
@@ -26,7 +39,6 @@ def send_welcome(message):
     
     markup.add(btn_gemini, btn_chatgpt, btn_capcut, btn_office, btn_autodesk, btn_canva)
     
-    # زر وسائل الدفع العام
     btn_pay = InlineKeyboardButton("💳 طرق الدفع المعتمدة (CCP / Binance / RedotPay)", callback_data="show_payments")
     markup.add(btn_pay)
     
@@ -42,7 +54,6 @@ def send_welcome(message):
 def handle_query(call):
     chat_id = call.message.chat.id
     
-    # 1. عرض تفاصيل ووصف Gemini Pro
     if call.data == "prod_gemini":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
@@ -62,7 +73,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # 2. عرض خيارات ChatGPT (تعليمي، خاص، مشترك + المدد)
     elif call.data == "prod_chatgpt":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=2)
@@ -80,7 +90,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # تفعيلات أنواع ChatGPT واختيار المدة (1, 2, 3, 6, 12 شهر)
     elif call.data in ["gpt_edu", "gpt_private", "gpt_shared"]:
         bot.answer_callback_query(call.id)
         type_name = "تعليمي" if call.data == "gpt_edu" else ("خاص" if call.data == "gpt_private" else "مشترك")
@@ -100,7 +109,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # 3. وصف CapCut
     elif call.data == "prod_capcut":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
@@ -117,7 +125,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # 4. وصف Microsoft Office 365
     elif call.data == "prod_office":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=2)
@@ -135,7 +142,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # 5. وصف AutoDesk
     elif call.data == "prod_autodesk":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
@@ -152,7 +158,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # 6. وصف Canva Admin
     elif call.data == "prod_canva":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
@@ -169,7 +174,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # إظهار معلومات الدفع العامة عند الطلب
     elif call.data in ["show_payments", "pay_prompt"]:
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
@@ -186,7 +190,6 @@ def handle_query(call):
             parse_mode="Markdown"
         )
 
-    # تفاصيل الدفع الفردية
     elif call.data == "pay_ccp":
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, f"🏦 **معلومات الدفع عبر بريد الجزائر (CCP):**\n`{RIP_CPP}`\n\nأرسل وصل الدفع للمشرف لتأكيد الطلب.", parse_mode="Markdown")
@@ -197,10 +200,12 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, f"💳 **معلومات الدفع عبر RedotPay:**\nID: `{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة للمشرف.", parse_mode="Markdown")
 
-    # العودة للقائمة الرئيسية
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# تشغيل البوت
-bot.infinity_polling()
+# تشغيل خادم الويب في خلفية مستقلة ليتوافق مع Render
+if __name__ == '__main__':
+    t = Thread(target=run_web)
+    t.start()
+    bot.infinity_polling()
