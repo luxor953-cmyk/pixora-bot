@@ -1,8 +1,7 @@
 import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from flask import Flask
-from threading import Thread
+from flask import Flask, request
 
 # === إعداداتك الخاصة ===
 BOT_TOKEN = "9118344859:AAFqrcRY71z4f3fC87fs91c4z_wDQVHzyfo"
@@ -10,15 +9,19 @@ ADMIN_ID = 514752764
 RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
 REDOTPAY_ID = "1198898814"
+
+# رابط موقعك على Render (استبدله برابط موقعك الفعلي بدون علامة / في النهاية)
+RENDER_URL = "https://pixora-bot-egyp.onrender.com"
 # ======================
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# تصفير أي ويب هوك قديم لمنع خطأ 409 Conflict نهائياً
+# إعداد الـ Webhook تلقائياً مع تليجرام
 try:
     bot.remove_webhook()
-except Exception:
-    pass
+    bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
+except Exception as e:
+    print(f"Webhook setup error: {e}")
 
 # =========================================================================
 # 📦 [قاعدة بيانات المخزون والتسليم الآمن بعد موافقة المشرف]
@@ -48,16 +51,19 @@ STOCK_DATABASE = {
     ]
 }
 
-# خادم ويب خفيف لإرضاء منصة Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Pixora Store is Active & Secure!"
+    return "Pixora Store Webhook is Active & Secure!"
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+# استقبال التحديثات مباشرة من تليجرام عبر الويب هوك
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def receive_update():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return "!", 200
 
 # القائمة الرئيسية
 @bot.message_handler(commands=['start', 'menu'])
@@ -217,4 +223,31 @@ def admin_action(call):
     action = data_parts[0]
 
     if action == "Reject":
-        target_
+        target_chat_id = data_parts[1]
+        bot.send_message(target_chat_id, "❌ عذراً، تم رفض إيصال الدفع من قبل الإدارة أو أن البيانات غير صحيحة. يرجى التواصل معنا للتوضيح.")
+        bot.edit_message_text("❌ تم رفض الإيصال وإبلاغ العميل.", call.message.chat.id, call.message.message_id)
+
+    elif action == "Approve":
+        prod_key = data_parts[1]
+        target_chat_id = data_parts[2]
+
+        if len(STOCK_DATABASE[prod_key]) > 0:
+            item = STOCK_DATABASE[prod_key].pop(0)
+            bot.send_message(
+                target_chat_id,
+                "🎉 **تم تأكيد الدفع بنجاح وتسليم طلبك!**\n\n"
+                f"📦 **بيانات طلبك:**\n`{item}`\n\n"
+                "شكراً لثقتك بمتجر **Pixora Store** 💚",
+                parse_mode="Markdown"
+            )
+            bot.edit_message_text(
+                f"✅ **تمت الموافقة بنجاح وتسليم المنتج تلقائياً:**\n`{item}`",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون! يرجى إضافة مخزون جديد.")
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
