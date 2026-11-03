@@ -9,7 +9,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
 # === إعداداتك الخاصة ===
-BOT_TOKEN = "9118344859:AAFqrcRY71z4f3fC87fs91c4z_wDQVHzyfo"
+BOT_TOKEN = "9118344859:AAHI_iE9fvpIBcJUx68uR0B7KaqdOLdbApw"
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
