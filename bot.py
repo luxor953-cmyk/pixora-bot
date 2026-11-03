@@ -60,7 +60,7 @@ def receive_update():
     return "!", 200
 
 # القائمة الرئيسية
-@app.message_handler(commands=['start', 'menu'])
+@bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=2)
     
@@ -193,7 +193,7 @@ def handle_incoming_messages(message):
             f"🆔 ID: `{chat_id}`\n\n"
             "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
             reply_markup=markup,
-            parse_Mode="Markdown"
+            parse_mode="Markdown"
         )
         bot.send_message(
             chat_id,
@@ -229,18 +229,4 @@ def admin_action(call):
             bot.send_message(
                 target_chat_id,
                 "🎉 **تم تأكيد الدفع بنجاح وتسليم طلبك!**\n\n"
-                f"📦 **بيانات طلبك:**\n`{item}`\n\n"
-                "شكراً لثقتك بمتجر **Pixora Store** 💚",
-                parse_mode="Markdown"
-            )
-            bot.edit_message_text(
-                f"✅ **تمت الموافقة بنجاح وتسليم المنتج:**\n`{item}`",
-                call.message.chat.id,
-                call.message.message_id
-            )
-        else:
-            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون!")
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+                f"📦 **
