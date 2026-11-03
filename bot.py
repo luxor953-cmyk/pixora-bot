@@ -194,6 +194,7 @@ def send_welcome(message):
         InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
     )
 
+    # رسالة الترحيب القوية التي تحفز الزبون على الاشتراك والشراء الفوري
     welcome_text = (
         "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
         "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
@@ -260,4 +261,46 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-@bot
+@bot.message_handler(content_types=['text', 'photo', 'document'])
+def handle_incoming(message):
+    chat_id = message.chat.id
+
+    if message.content_type == 'text':
+        if message.text.startswith('/'):
+            return
+        order_id = message.text.strip()
+
+        if chat_id not in USER_SELECTED_PRODUCT:
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال رقم العملية.")
+            return
+
+        prod_key = USER_SELECTED_PRODUCT[chat_id]
+        info = PRODUCTS_INFO[prod_key]
+
+        if len(STOCK_DATABASE.get(prod_key, [])) == 0:
+            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
+            return
+
+        wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
+        is_valid, status_text = verify_binance_payment(order_id, info["price"])
+
+        if is_valid:
+            item = STOCK_DATABASE[prod_key].pop(0)
+            del USER_SELECTED_PRODUCT[chat_id]
+            bot.edit_message_text(
+                f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n"
+                f"📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\n"
+                f"شكراً لثقتك بمتجر *Pixora Store* 💚",
+                chat_id,
+                wait_msg.message_id,
+                parse_mode="Markdown"
+            )
+        else:
+            bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
+        return
+
+    bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال **رقم العملية (Order ID)** النصي بعد إتمام التحويل للحصول على طلبك فوراً.")
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
