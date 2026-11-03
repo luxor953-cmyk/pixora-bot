@@ -15,8 +15,7 @@ REDOTPAY_ID = "1198898814"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # =========================================================================
-# 📦 [قاعدة بيانات المخزون والتسليم التلقائي]
-# أضف هنا حساباتك، روابطك، أو مفاتيح التفعيل الجديدة لكل صنف بنفس هذا التنسيق:
+# 📦 [قاعدة بيانات المخزون والتسليم الآمن بعد موافقة المشرف]
 # =========================================================================
 STOCK_DATABASE = {
     "capcut": [
@@ -27,8 +26,7 @@ STOCK_DATABASE = {
     "gemini": [
         "https://g.co/gemini/share/sample_link_1",
         "https://g.co/gemini/share/sample_link_2",
-        "https://g.co/gemini/share/sample_link_3",
-        "https://g.co/gemini/share/sample_link_4"
+        "https://g.co/gemini/share/sample_link_3"
     ],
     "office": [
         "Office365_Key_1: acc1@pixora.store / P@ss1",
@@ -44,211 +42,89 @@ STOCK_DATABASE = {
     ]
 }
 
-# خادم ويب خفيف لإرضاء منصة Render وتشغيل الموقع بنجاح
+# خادم ويب خفيف لإرضاء منصة Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Pixora Store is Active & Running with Auto-Delivery!"
+    return "Pixora Store is Active & Secure!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# دالة القائمة الرئيسية مع قراءة الكميات الحقيقية من المخزون تلقائياً
+# القائمة الرئيسية
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=2)
     
-    # حساب الكميات المتوفرة تلقائياً من قاعدة البيانات
     capcut_count = len(STOCK_DATABASE["capcut"])
     gemini_count = len(STOCK_DATABASE["gemini"])
     office_count = len(STOCK_DATABASE["office"])
     autodesk_count = len(STOCK_DATABASE["autodesk"])
     canva_count = len(STOCK_DATABASE["canva"])
     
-    # الصفوف الشبكية مع الكميات الحية والأسعار
     btn_capcut = InlineKeyboardButton(f"🎬 CapCut · ({capcut_count})", callback_data="buy_capcut")
     btn_chatgpt = InlineKeyboardButton("🤖 ChatGPT · (15)", callback_data="prod_chatgpt")
-    
     btn_gemini = InlineKeyboardButton(f"🔥 Gemini Ai · $3 ({gemini_count})", callback_data="buy_gemini")
     btn_office = InlineKeyboardButton(f"🪟 Microsoft 365 · ({office_count})", callback_data="buy_office")
-    
     btn_autodesk = InlineKeyboardButton(f"🅰️ AUTODESK · ({autodesk_count})", callback_data="buy_autodesk")
     btn_canva = InlineKeyboardButton(f"🎨 Canva Pro · ({canva_count})", callback_data="buy_canva")
     
     markup.add(btn_capcut, btn_chatgpt, btn_gemini, btn_office, btn_autodesk, btn_canva)
     
-    # منتج مميز مع الكمية
     btn_bestseller = InlineKeyboardButton("🔥 (💚 BEST SELLER) ChatGPT Plus · (5)", callback_data="prod_chatgpt")
     markup.add(btn_bestseller)
     
-    # زر طرق الدفع الرئيسية
     btn_pay = InlineKeyboardButton("💳 طرق الدفع (CCP / Binance / RedotPay)", callback_data="show_payments")
     markup.add(btn_pay)
     
     bot.send_message(
         message.chat.id, 
         "🌐 **Choose Your Product / اختر منتجك المفضّل:**\n"
-        "مرحباً بك في متجر **Pixora Store** (النظام الآلي الفوري):", 
+        "مرحباً بك في متجر **Pixora Store** (النظام الآمن للمراجعة والتسليم):", 
         reply_markup=markup, 
         parse_mode="Markdown"
     )
 
-# معالجة ضغطات الأزرار وعمليات الشراء والخصم والتسليم التلقائي
+# معالجة الأزرار
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     chat_id = call.message.chat.id
-    user_name = call.from_user.first_name
 
-    # 1. منتج CapCut
-    if call.data == "buy_capcut":
+    products_map = {
+        "buy_capcut": ("🎬 CapCut Pro", "capcut"),
+        "buy_gemini": ("🌟 Gemini Pro", "gemini"),
+        "buy_office": ("🪟 Microsoft 365", "office"),
+        "buy_autodesk": ("🅰️ AUTODESK", "autodesk"),
+        "buy_canva": ("🎨 Canva Pro", "canva")
+    }
+
+    if call.data in products_map:
+        prod_name, prod_key = products_map[call.data]
         bot.answer_callback_query(call.id)
+        stock_len = len(STOCK_DATABASE[prod_key])
+        
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("✅ تأكيد الدفع واستلام الحساب فوراً", callback_data="deliver_capcut"),
+            InlineKeyboardButton("💳 إظهار معلومات الدفع", callback_data="show_payments"),
             InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
-            "🎬 **CapCut Pro**\n\n"
-            "📌 اشتراك رسمي لتفعيل كافة ميزات الذكاء الاصطناعي والتصدير المفتوح.\n"
-            f"📦 **الكمية المتوفرة حالياً:** {len(STOCK_DATABASE['capcut'])}\n\n"
-            "💳 بعد إتمام الدفع عبر Baridimob أو Binance أو RedotPay، اضغط زر التأكيد أدناه لاستلام حسابك في ثوانٍ:",
+            f"📦 **{prod_name}**\n\n"
+            f"📊 **الكمية المتوفرة حالياً:** {stock_len}\n\n"
+            "📌 **خطوات الشراء:**\n"
+            "1️⃣ اضغط على زر (إظهار معلومات الدفع) وحول المبلغ.\n"
+            "2️⃣ قم بـ **إرسال صورة إيصال الدفع (Screenshot)** هنا في المحادثة.\n"
+            "3️⃣ سيقوم المشرف بمراجعة الوصل وإرسال بيانات حسابك فوراً!",
             reply_markup=markup,
             parse_mode="Markdown"
         )
 
-    elif call.data == "deliver_capcut":
-        bot.answer_callback_query(call.id)
-        if len(STOCK_DATABASE["capcut"]) > 0:
-            item = STOCK_DATABASE["capcut"].pop(0) # سحب أول حساب وخصمه تلقائياً
-            bot.send_message(
-                chat_id,
-                "🎉 **تم تأكيد طلبك وتسليم المنتج بنجاح!**\n\n"
-                f"📦 **بيانات الحساب:**\n`{item}`\n\n"
-                "شكراً لثقتك بمتجر **Pixora Store** 💚",
-                parse_mode="Markdown"
-            )
-            bot.send_message(ADMIN_ID, f"🔔 **عملية بيع جديدة (CapCut):**\n👤 العميل: {user_name}\n🔑 تم تسليم: `{item}`", parse_mode="Markdown")
-        else:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج مؤقتاً! يرجى التواصل مع المشرف.")
-
-    # 2. منتج Gemini Ai
-    elif call.data == "buy_gemini":
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            InlineKeyboardButton("✅ تأكيد الدفع واستلام الرابط فوراً", callback_data="deliver_gemini"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        bot.send_message(
-            chat_id,
-            "🌟 **Gemini Pro 18 Months**\n\n"
-            "📌 حساب رسمي مدعوم بالذكاء الاصطناعي الأقوى من جوجل.\n"
-            f"📦 **الكمية المتوفرة:** {len(STOCK_DATABASE['gemini'])}\n"
-            "💰 **السعر:** $3\n\n"
-            "اضغط زر التأكيد أدناه بعد الدفع لاستلام الرابط فوراً:",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "deliver_gemini":
-        bot.answer_callback_query(call.id)
-        if len(STOCK_DATABASE["gemini"]) > 0:
-            item = STOCK_DATABASE["gemini"].pop(0)
-            bot.send_message(
-                chat_id,
-                "🎉 **تم تسليم طلبك بنجاح!**\n\n"
-                f"🔗 **رابط الحساب:**\n`{item}`",
-                parse_mode="Markdown"
-            )
-            bot.send_message(ADMIN_ID, f"🔔 **عملية بيع جديدة (Gemini):**\n👤 العميل: {user_name}\n🔑 تم تسليم: `{item}`", parse_mode="Markdown")
-        else:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية حسابات Gemini مؤقتاً.")
-
-    # 3. منتج Microsoft 365
-    elif call.data == "buy_office":
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            InlineKeyboardButton("✅ تأكيد الدفع واستلام الحساب فوراً", callback_data="deliver_office"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        bot.send_message(
-            chat_id,
-            "🪟 **Microsoft Office 365**\n\n"
-            f"📦 **الكمية المتوفرة:** {len(STOCK_DATABASE['office'])}\n\n"
-            "اضغط زر التأكيد لاستلام مفتاح أو حساب الأوفيس فوراً:",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "deliver_office":
-        bot.answer_callback_query(call.id)
-        if len(STOCK_DATABASE["office"]) > 0:
-            item = STOCK_DATABASE["office"].pop(0)
-            bot.send_message(chat_id, f"🎉 **تم تسليم طلبك بنجاح!**\n\n`{item}`", parse_mode="Markdown")
-            bot.send_message(ADMIN_ID, f"🔔 **بيع Office 365:** العميل {user_name} استلم: `{item}`", parse_mode="Markdown")
-        else:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية Microsoft 365 مؤقتاً.")
-
-    # 4. منتج Autodesk
-    elif call.data == "buy_autodesk":
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            InlineKeyboardButton("✅ تأكيد الدفع واستلام التفعيل فوراً", callback_data="deliver_autodesk"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        bot.send_message(
-            chat_id,
-            "🅰️ **AutoDesk Full Apps**\n\n"
-            f"📦 **الكمية المتوفرة:** {len(STOCK_DATABASE['autodesk'])}\n\n"
-            "اضغط زر التأكيد لاستلام تفعيل أوتوديسك فوراً:",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "deliver_autodesk":
-        bot.answer_callback_query(call.id)
-        if len(STOCK_DATABASE["autodesk"]) > 0:
-            item = STOCK_DATABASE["autodesk"].pop(0)
-            bot.send_message(chat_id, f"🎉 **تم تسليم طلبك بنجاح!**\n\n`{item}`", parse_mode="Markdown")
-            bot.send_message(ADMIN_ID, f"🔔 **بيع Autodesk:** العميل {user_name} استلم: `{item}`", parse_mode="Markdown")
-        else:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية Autodesk مؤقتاً.")
-
-    # 5. منتج Canva Pro
-    elif call.data == "buy_canva":
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            InlineKeyboardButton("✅ تأكيد الدفع واستلام الرابط فوراً", callback_data="deliver_canva"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        bot.send_message(
-            chat_id,
-            "🎨 **Canva Pro / Admin Account**\n\n"
-            f"📦 **الكمية المتوفرة:** {len(STOCK_DATABASE['canva'])}\n\n"
-            "اضغط زر التأكيد لاستلام رابط دعوة كانفا برو فوراً:",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "deliver_canva":
-        bot.answer_callback_query(call.id)
-        if len(STOCK_DATABASE["canva"]) > 0:
-            item = STOCK_DATABASE["canva"].pop(0)
-            bot.send_message(chat_id, f"🎉 **تم تسليم طلبك بنجاح!**\n\n🔗 `{item}`", parse_mode="Markdown")
-            bot.send_message(ADMIN_ID, f"🔔 **بيع Canva Pro:** العميل {user_name} استلم: `{item}`", parse_mode="Markdown")
-        else:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية Canva Pro مؤقتاً.")
-
-    # الأقسام الأخرى وطرق الدفع
     elif call.data == "prod_chatgpt":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "🤖 قسم ChatGPT قيد التحديث للاستلام التلقائي قريباً، تواصل مع المشرف عبر أزرار الدفع.")
+        bot.send_message(chat_id, "🤖 قسم ChatGPT قيد التحديث، تواصل مع المشرف لتفعيل طلبك يدوياً.")
 
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
@@ -265,26 +141,104 @@ def handle_query(call):
             f"🏦 **CCP (بريد الجزائر):**\n`{RIP_CPP}`\n\n"
             f"🪙 **Binance Pay ID:**\n`{BINANCE_ID}`\n\n"
             f"💳 **RedotPay ID:**\n`{REDOTPAY_ID}`\n\n"
-            "بعد التحويل، توجه للمنتج واضغط على زر تأكيد الدفع لاستلام طلبك فوراً!",
+            "⚠️ **مهم جداً:** بعد إتمام التحويل، أرسل **صورة الإيصال** هنا في الشات ليتم تأكيدها وتسليمك المنتج!",
             reply_markup=markup,
             parse_mode="Markdown"
         )
 
     elif call.data == "pay_ccp":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🏦 **RIP Baridimob (CCP):**\n`{RIP_CPP}`", parse_mode="Markdown")
+        bot.send_message(chat_id, f"🏦 **RIP Baridimob (CCP):**\n`{RIP_CPP}`\n\nأرسل صورة الوصل هنا بعد الدفع.", parse_mode="Markdown")
     elif call.data == "pay_binance":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🪙 **Binance ID:** `{BINANCE_ID}`", parse_mode="Markdown")
+        bot.send_message(chat_id, f"🪙 **Binance ID:** `{BINANCE_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
     elif call.data == "pay_redotpay":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"💳 **RedotPay ID:** `{REDOTPAY_ID}`", parse_mode="Markdown")
+        bot.send_message(chat_id, f"💳 **RedotPay ID:** `{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
 
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# تشغيل خادم الويب والبوت معاً
+# استقبال صور الإيصالات من العملاء وتحويلها للمشرف للمراجعة
+@bot.message_handler(content_types=['photo'])
+def handle_receipt(message):
+    chat_id = message.chat.id
+    user_name = message.from_user.first_name
+    user_username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد معرف"
+
+    if chat_id == ADMIN_ID:
+        bot.send_message(chat_id, "⚠️ هذه صورة مرسلة من حسابك كمدير، وليست إيصال عميل.")
+        return
+
+    # إرسال الصورة إليك (المشرف) مع أزرار الموافقة أو الرفض
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ موافقة (CapCut)", callback_data=f"Approve_capcut_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Gemini)", callback_data=f"Approve_gemini_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Office)", callback_data=f"Approve_office_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Canva)", callback_data=f"Approve_canva_{chat_id}"),
+        InlineKeyboardButton("❌ رفض الإيصال", callback_data=f"Reject_{chat_id}")
+    )
+
+    bot.forward_message(ADMIN_ID, chat_id, message.message_id)
+    bot.send_message(
+        ADMIN_ID,
+        f"🔔 **إيصال دفع جديد قيد المراجعة!**\n"
+        f"👤 العميل: {user_name} ({user_username})\n"
+        f"🆔 ID: `{chat_id}`\n\n"
+        "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+    bot.send_message(
+        chat_id,
+        "⏳ **تم استلام إيصال الدفع بنجاح!**\n"
+        "جاري مراجعة التحويل من قبل الإدارة، سيتم إرسال تفاصيل طلبك فور التأكيد.",
+        parse_mode="Markdown"
+    )
+
+# معالجة موافقة أو رفض المشرف من أزرار الإشعار
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("Approve_", "Reject_")))
+def admin_action(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "هذا الزر مخصص للمشرف فقط!")
+        return
+
+    bot.answer_callback_query(call.id)
+    data_parts = call.data.split("_")
+    action = data_parts[0]
+
+    if action == "Reject":
+        target_chat_id = data_parts[1]
+        bot.send_message(target_chat_id, "❌ عذراً، تم رفض إيصال الدفع من قبل الإدارة أو أن البيانات غير صحيحة. يرجى التراجع أو التواصل معنا.")
+        bot.edit_message_text("❌ تم رفض الإيصال وإبلاغ العميل.", call.message.chat.id, call.message.message_id)
+
+    elif action == "Approve":
+        prod_key = data_parts[1]
+        target_chat_id = data_parts[2]
+
+        if len(STOCK_DATABASE[prod_key]) > 0:
+            item = STOCK_DATABASE[prod_key].pop(0) # سحب الحساب وخصمه تلقائياً بعد الموافقة
+            
+            # إرسال الحساب للعميل
+            bot.send_message(
+                target_chat_id,
+                "🎉 **تم تأكيد الدفع بنجاح وتسليم طلبك!**\n\n"
+                f"📦 **بيانات طلبك:**\n`{item}`\n\n"
+                "شكراً لثقتك بمتجر **Pixora Store** 💚",
+                parse_mode="Markdown"
+            )
+            # تحديث رسالة المشرف
+            bot.edit_message_text(
+                f"✅ **تمت الموافقة بنجاح وتسليم المنتج تلقائياً:**\n`{item}`",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون! يرجى إضافة مخزون جديد.")
+
 if __name__ == '__main__':
     t = Thread(target=run_web)
     t.start()
