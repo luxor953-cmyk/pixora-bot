@@ -8,15 +8,14 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
-# === إعداداتك الخاصة ===
-BOT_TOKEN = "9118344859:AAHI_iE9fvpIBcJUx68uR0B7KaqdOLdbApw"
+# === الإعدادات (المفاتيح تُقرأ من Environment Variables في Render) ===
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+BINANCE_API_KEY = os.environ["BINANCE_API_KEY"]
+BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY"]
+
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
-
-# === مفاتيح باينانس الخاصة بك ===
-BINANCE_API_KEY = "d6KILQscYZEbSg4SaOf0YAQ02G8tx6a2IkweYQZZjU8F00hw9YvvivEMuOdppw"
-BINANCE_SECRET_KEY = "qSiNFjXEOqAEAo9yG5w62yas7utcmJ3zlnXC5JRL97AfUTHSOqjdFsqQ3DmhjRiw"
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
@@ -26,7 +25,7 @@ try:
 except Exception as e:
     print("Webhook error:", e)
 
-# جميع المنتجات مع أسمائها وأسعارها (الـ 5 الأساسية + المنتجات الجديدة من الصورة)
+# جميع المنتجات مع أسمائها وأسعارها
 PRODUCTS_INFO = {
     # المنتجات الـ 5 الأساسية
     "capcut": {"name": "🎞️ CapCut", "price": 1.5},
@@ -34,8 +33,8 @@ PRODUCTS_INFO = {
     "office": {"name": "🟩 Microsoft 365", "price": 2.0},
     "autodesk": {"name": "🔺 Autodesk", "price": 3.0},
     "canva": {"name": "🎨 Canva", "price": 2.0},
-    
-    # المنتجات الجديدة من الصورة (الرصيد 0 افتراضياً)
+
+    # باقي المنتجات (المخزون 0 افتراضياً)
     "adobe": {"name": "🔴 Adobe", "price": 2.5},
     "avira": {"name": "🔴 Avira", "price": 2.0},
     "chatgpt": {"name": "🔴 ChatGPT", "price": 3.0},
@@ -64,15 +63,14 @@ PRODUCTS_INFO = {
     "udemy": {"name": "🔴 Udemy", "price": 2.0}
 }
 
-# قاعدة بيانات المخزون (الـ 5 الأساسية متوفرة، والباقي قوائم فارغة [] تعني 0 مخزون)
+# قاعدة بيانات المخزون (قوائم فارغة [] تعني 0 مخزون)
 STOCK_DATABASE = {
     "capcut": ["CapCut_Key_1: user1@pixoras.com / pass123"],
     "gemini": ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"],
     "office": ["Office365_Key_1: acc1@pixora.store / P@ss1", "Office365_Key_2: acc2@pixora.store / P@ss2"],
     "autodesk": ["Autodesk_Key_ABC123"],
     "canva": ["https://www.canva.com/brand/join?inv=sample_1"],
-    
-    # المنتجات الجديدة مخزونها صفر
+
     "adobe": [], "avira": [], "chatgpt": [], "coursera": [], "duolingo": [],
     "elevenlabs": [], "expressvpn": [], "figma": [], "framer": [], "gamma": [],
     "grok": [], "hmavpn": [], "jetbrain": [], "kaspersky": [], "linkedin": [],
@@ -83,11 +81,38 @@ STOCK_DATABASE = {
 USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
 
+# === شعارات المنتجات ===
+# ضع الصور داخل فولدر logos/ بجانب هذا الملف، باسم مفتاح المنتج: logos/capcut.png
+LOGO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logos")
+LOGO_CACHE = {}  # prod_key -> telegram file_id
+
+
+def send_product_card(chat_id, prod_key, caption, markup):
+    """يرسل المنتج بشعاره، ولو الشعار غير موجود يرسل رسالة نصية عادية."""
+    path = os.path.join(LOGO_DIR, prod_key + ".png")
+    try:
+        if prod_key in LOGO_CACHE:
+            bot.send_photo(chat_id, LOGO_CACHE[prod_key], caption=caption,
+                           reply_markup=markup, parse_mode="Markdown")
+            return
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                msg = bot.send_photo(chat_id, f, caption=caption,
+                                     reply_markup=markup, parse_mode="Markdown")
+            LOGO_CACHE[prod_key] = msg.photo[-1].file_id
+            return
+    except Exception as e:
+        print("Logo error:", e)
+    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="Markdown")
+
+
 app = Flask('')
+
 
 @app.route('/')
 def home():
     return "Pixora Store Auto-Delivery Bot is Live!"
+
 
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def receive_update():
@@ -96,10 +121,11 @@ def receive_update():
     bot.process_new_updates([update])
     return "!", 200
 
+
 def verify_binance_payment(order_id, expected_amount):
     if order_id in USED_TRANSACTIONS:
         return False, "رقم العملية هذا تم استخدامه مسبقاً!"
-    
+
     url = "https://api.binance.com/sapi/v1/pay/transactions"
     timestamp = int(time.time() * 1000)
     query_string = urllib.parse.urlencode({"timestamp": timestamp, "limit": 50})
@@ -108,10 +134,10 @@ def verify_binance_payment(order_id, expected_amount):
         query_string.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    
+
     full_url = f"{url}?{query_string}&signature={signature}"
     headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
-    
+
     try:
         response = requests.get(full_url, headers=headers, timeout=10)
         data = response.json()
@@ -129,29 +155,28 @@ def verify_binance_payment(order_id, expected_amount):
     except Exception as e:
         return False, "خطأ في الاتصال: " + str(e)
 
+
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    # ترتيب الأزرار في شبكة من 3 أعمدة تماماً مثل التصميم المطلوب
     markup = InlineKeyboardMarkup(row_width=3)
     buttons = []
-    
+
     for key, info in PRODUCTS_INFO.items():
         count = len(STOCK_DATABASE.get(key, []))
-        
+
         if count == 0:
-            # المنتجات الفارغة تظهر باللون الأحمر
             btn_text = f"{info['name']}"
             buttons.append(InlineKeyboardButton(btn_text, callback_data="sold_out_" + key))
         else:
-            # المنتجات المتوفرة تظهر باللون الأخضر مع السعر
             btn_text = f"🟢 {info['name']} · ${info['price']}"
             buttons.append(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
-            
+
     markup.add(*buttons)
     markup.add(InlineKeyboardButton("🪙 Binance Pay (معلومات الدفع)", callback_data="show_payments"))
-    
+
     welcome_text = "🛍️ **المنتجات**\n\nاختر منتجك المفضل:"
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -168,14 +193,14 @@ def handle_query(call):
             if stock_len == 0:
                 bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
                 return
-                
+
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT[chat_id] = prod_key
             info = PRODUCTS_INFO[prod_key]
-            
+
             markup = InlineKeyboardMarkup(row_width=1)
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-            
+
             msg_text = (
                 f"📦 المنتج: *{info['name']}*\n"
                 f"💰 السعر المطلوب: *{info['price']} USDT*\n"
@@ -184,7 +209,8 @@ def handle_query(call):
                 f"1️⃣ حول المبلغ (`{info['price']} USDT`) إلى Binance Pay ID:\n`{BINANCE_ID}`\n\n"
                 f"2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات، وسيصلك الحساب في نفس الثانية تلقائياً!"
             )
-            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            # هنا يظهر شعار المنتج مع بطاقته
+            send_product_card(chat_id, prod_key, msg_text, markup)
 
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
@@ -195,29 +221,30 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
+
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
     chat_id = message.chat.id
-    
+
     if message.content_type == 'text':
         if message.text.startswith('/'):
             return
         order_id = message.text.strip()
-        
+
         if chat_id not in USER_SELECTED_PRODUCT:
             bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال رقم العملية.")
             return
-            
+
         prod_key = USER_SELECTED_PRODUCT[chat_id]
         info = PRODUCTS_INFO[prod_key]
-        
+
         if len(STOCK_DATABASE.get(prod_key, [])) == 0:
             bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
             return
 
         wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
         is_valid, status_text = verify_binance_payment(order_id, info["price"])
-        
+
         if is_valid:
             item = STOCK_DATABASE[prod_key].pop(0)
             del USER_SELECTED_PRODUCT[chat_id]
@@ -234,6 +261,7 @@ def handle_incoming(message):
         return
 
     bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال **رقم العملية (Order ID)** النصي بعد إتمام التحويل للحصول على طلبك فوراً.")
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
