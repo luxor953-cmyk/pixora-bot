@@ -1,12 +1,11 @@
 import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from flask import Flask, request
+from flask import Flask, request, jsonify
 
 # === إعداداتك الخاصة ===
 BOT_TOKEN = "9118344859:AAFqrcRY71z4f3fC87fs91c4z_wDQVHzyfo"
 ADMIN_ID = 1004439571098
-RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
 REDOTPAY_ID = "1198898814"
 
@@ -21,6 +20,7 @@ try:
 except Exception as e:
     print(f"Webhook setup error: {e}")
 
+# 📦 قاعدة بيانات المخزون الآمن
 STOCK_DATABASE = {
     "capcut": [
         "CapCut_Key_1: user1@pixoras.com / pass123",
@@ -50,7 +50,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Pixora Store Webhook is Active & Secure!"
+    return "Pixora Store Crypto Payment Gateway is Active!"
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_update():
@@ -59,7 +59,8 @@ def receive_update():
     bot.process_new_updates([update])
     return "!", 200
 
-@bot.message_handler(commands=['start', 'menu'])
+# القائمة الرئيسية
+@app.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=2)
     
@@ -78,16 +79,13 @@ def send_welcome(message):
     
     markup.add(btn_capcut, btn_chatgpt, btn_gemini, btn_office, btn_autodesk, btn_canva)
     
-    btn_bestseller = InlineKeyboardButton("🔥 (💚 BEST SELLER) ChatGPT Plus · (5)", callback_data="prod_chatgpt")
-    markup.add(btn_bestseller)
-    
-    btn_pay = InlineKeyboardButton("💳 طرق الدفع (CCP / Binance / RedotPay)", callback_data="show_payments")
+    btn_pay = InlineKeyboardButton("💳 طرق الدفع (Binance / RedotPay)", callback_data="show_payments")
     markup.add(btn_pay)
     
     bot.send_message(
         message.chat.id, 
         "🌐 **Choose Your Product / اختر منتجك المفضّل:**\n"
-        "مرحباً بك في متجر **Pixora Store** (النظام الآمن للمراجعة والتسليم):", 
+        "مرحباً بك في متجر **Pixora Store** (الدفع الرقمي السريع):", 
         reply_markup=markup, 
         parse_mode="Markdown"
     )
@@ -111,17 +109,16 @@ def handle_query(call):
         
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("💳 إظهار معلومات الدفع", callback_data="show_payments"),
+            InlineKeyboardButton("💳 إظهار معلومات الدفع (Binance & RedotPay)", callback_data="show_payments"),
             InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
             f"📦 **{prod_name}**\n\n"
-            f"📊 **الكمية المتوفرة حالياً:** {stock_len}\n\n"
+            f"📊 **الكمية المتوفرة:** {stock_len}\n\n"
             "📌 **خطوات الشراء:**\n"
-            "1️⃣ اضغط على زر (إظهار معلومات الدفع) وحول المبلغ.\n"
-            "2️⃣ قم بـ **إرسال صورة إيصال الدفع (Screenshot)** هنا في المحادثة.\n"
-            "3️⃣ سيقوم المشرف بمراجعة الوصل وإرسال بيانات حسابك فوراً!",
+            "1️⃣ اضغط على زر (إظهار معلومات الدفع) وحول المبلغ المطلوب.\n"
+            "2️⃣ أرسل صورة إيصال التحويل (Screenshot) هنا في المحادثة ليتم تأكيد الطلب وتسليمك المنتج.",
             reply_markup=markup,
             parse_mode="Markdown"
         )
@@ -134,49 +131,43 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(
-            InlineKeyboardButton("🏦 Baridimob (CCP)", callback_data="pay_ccp"),
             InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance"),
             InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay"),
             InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
         )
         bot.send_message(
             chat_id,
-            f"💳 **معلومات الدفع في متجر Pixora Store:**\n\n"
-            f"🏦 **CCP (بريد الجزائر):**\n`{RIP_CPP}`\n\n"
+            f"💳 **طرق الدفع المتاحة في متجر Pixora Store:**\n\n"
             f"🪙 **Binance Pay ID:**\n`{BINANCE_ID}`\n\n"
             f"💳 **RedotPay ID:**\n`{REDOTPAY_ID}`\n\n"
-            "⚠️ **مهم جداً:** بعد إتمام التحويل، أرسل **صورة الإيصال** هنا في الشات ليتم تأكيدها وتسليمك المنتج!",
+            "⚠️ **مهم:** بعد إتمام التحويل، أرسل لقطة الشاشة هنا في المحادثة ليتم تسليمك المنتج فوراً!",
             reply_markup=markup,
             parse_mode="Markdown"
         )
 
-    elif call.data == "pay_ccp":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🏦 **RIP Baridimob (CCP):**\n`{RIP_CPP}`\n\nأرسل صورة الوصل هنا بعد الدفع.", parse_mode="Markdown")
     elif call.data == "pay_binance":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🪙 **Binance ID:** `{BINANCE_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
+        bot.send_message(chat_id, f"🪙 **Binance Pay ID:**\n`{BINANCE_ID}`\n\nأرسل لقطة الشاشة هنا بعد إتمام التحويل.", parse_mode="Markdown")
     elif call.data == "pay_redotpay":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"💳 **RedotPay ID:** `{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
+        bot.send_message(chat_id, f"💳 **RedotPay ID:**\n`{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة هنا بعد إتمام التحويل.", parse_mode="Markdown")
 
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# معالجة استقبال أي محتوى مرسل (صور، ملفات، أو نصوص)
+# معالجة استقبال الإيصالات وتوجيهها للمدير
 @bot.message_handler(content_types=['photo', 'document', 'text'])
 def handle_incoming_messages(message):
     chat_id = message.chat.id
     user_name = message.from_user.first_name
     user_username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد معرف"
 
-    # لو رسالة نصية عادية وليست صورة/ملف (وليست أمر start)
     if message.content_type == 'text':
         if message.text.startswith('/'):
             return
         if chat_id != ADMIN_ID:
-            bot.send_message(chat_id, "📌 فضلاً، أرسل **صورة إيصال الدفع** كصورة أو ملف ليتم مراجعتها من قبل الإدارة.")
+            bot.send_message(chat_id, "📌 فضلاً، أرسل **صورة إيصال الدفع** كصورة أو ملف ليتم مراجعتها من قبل الإدارة وتسليمك الطلب.")
         return
 
     if chat_id == ADMIN_ID:
@@ -202,7 +193,7 @@ def handle_incoming_messages(message):
             f"🆔 ID: `{chat_id}`\n\n"
             "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
             reply_markup=markup,
-            parse_mode="Markdown"
+            parse_Mode="Markdown"
         )
         bot.send_message(
             chat_id,
@@ -226,7 +217,7 @@ def admin_action(call):
 
     if action == "Reject":
         target_chat_id = data_parts[1]
-        bot.send_message(target_chat_id, "❌ عذراً، تم رفض إيصال الدفع من قبل الإدارة أو أن البيانات غير صحيحة. يرجى التواصل معنا للتوضيح.")
+        bot.send_message(target_chat_id, "❌ عذراً، تم رفض إيصال الدفع من قبل الإدارة. يرجى التواصل معنا للتوضيح.")
         bot.edit_message_text("❌ تم رفض الإيصال وإبلاغ العميل.", call.message.chat.id, call.message.message_id)
 
     elif action == "Approve":
@@ -243,12 +234,12 @@ def admin_action(call):
                 parse_mode="Markdown"
             )
             bot.edit_message_text(
-                f"✅ **تمت الموافقة بنجاح وتسليم المنتج تلقائياً:**\n`{item}`",
+                f"✅ **تمت الموافقة بنجاح وتسليم المنتج:**\n`{item}`",
                 call.message.chat.id,
                 call.message.message_id
             )
         else:
-            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون! يرجى إضافة مخزون جديد.")
+            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون!")
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
