@@ -10,22 +10,17 @@ RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
 REDOTPAY_ID = "1198898814"
 
-# رابط موقعك على Render (استبدله برابط موقعك الفعلي بدون علامة / في النهاية)
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
 # ======================
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# إعداد الـ Webhook تلقائياً مع تليجرام
 try:
     bot.remove_webhook()
     bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
 except Exception as e:
     print(f"Webhook setup error: {e}")
 
-# =========================================================================
-# 📦 [قاعدة بيانات المخزون والتسليم الآمن بعد موافقة المشرف]
-# =========================================================================
 STOCK_DATABASE = {
     "capcut": [
         "CapCut_Key_1: user1@pixoras.com / pass123",
@@ -57,7 +52,6 @@ app = Flask('')
 def home():
     return "Pixora Store Webhook is Active & Secure!"
 
-# استقبال التحديثات مباشرة من تليجرام عبر الويب هوك
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def receive_update():
     json_string = request.get_data().decode('utf-8')
@@ -65,7 +59,6 @@ def receive_update():
     bot.process_new_updates([update])
     return "!", 200
 
-# القائمة الرئيسية
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=2)
@@ -99,7 +92,6 @@ def send_welcome(message):
         parse_mode="Markdown"
     )
 
-# معالجة الأزرار
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     chat_id = call.message.chat.id
@@ -172,12 +164,20 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-# استقبال صور الإيصالات أو الملفات من العملاء وتوجيهها للمشرف
-@bot.message_handler(content_types=['photo', 'document'])
-def handle_receipt(message):
+# معالجة استقبال أي محتوى مرسل (صور، ملفات، أو نصوص)
+@bot.message_handler(content_types=['photo', 'document', 'text'])
+def handle_incoming_messages(message):
     chat_id = message.chat.id
     user_name = message.from_user.first_name
     user_username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد معرف"
+
+    # لو رسالة نصية عادية وليست صورة/ملف (وليست أمر start)
+    if message.content_type == 'text':
+        if message.text.startswith('/'):
+            return
+        if chat_id != ADMIN_ID:
+            bot.send_message(chat_id, "📌 فضلاً، أرسل **صورة إيصال الدفع** كصورة أو ملف ليتم مراجعتها من قبل الإدارة.")
+        return
 
     if chat_id == ADMIN_ID:
         bot.send_message(chat_id, "⚠️ هذه صورة مرسلة من حسابك كمدير، وليست إيصال عميل.")
@@ -193,25 +193,27 @@ def handle_receipt(message):
         InlineKeyboardButton("❌ رفض الإيصال", callback_data=f"Reject_{chat_id}")
     )
 
-    bot.forward_message(ADMIN_ID, chat_id, message.message_id)
-    bot.send_message(
-        ADMIN_ID,
-        f"🔔 **إيصال دفع جديد قيد المراجعة!**\n"
-        f"👤 العميل: {user_name} ({user_username})\n"
-        f"🆔 ID: `{chat_id}`\n\n"
-        "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
+    try:
+        bot.forward_message(ADMIN_ID, chat_id, message.message_id)
+        bot.send_message(
+            ADMIN_ID,
+            f"🔔 **إيصال دفع جديد قيد المراجعة!**\n"
+            f"👤 العميل: {user_name} ({user_username})\n"
+            f"🆔 ID: `{chat_id}`\n\n"
+            "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+        bot.send_message(
+            chat_id,
+            "⏳ **تم استلام إيصال الدفع بنجاح!**\n"
+            "جاري مراجعة التحويل من قبل الإدارة، سيتم إرسال تفاصيل طلبك فور التأكيد.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        print(f"Error forwarding receipt to admin: {e}")
+        bot.send_message(chat_id, "⚠️ حدث خطأ أثناء إرسال الإيصال للإدارة. يرجى المحاولة لاحقاً.")
 
-    bot.send_message(
-        chat_id,
-        "⏳ **تم استلام إيصال الدفع بنجاح!**\n"
-        "جاري مراجعة التحويل من قبل الإدارة، سيتم إرسال تفاصيل طلبك فور التأكيد.",
-        parse_mode="Markdown"
-    )
-
-# معالجة موافقة أو رفض المشرف من أزرار الإشعار
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("Approve_", "Reject_")))
 def admin_action(call):
     if call.from_user.id != ADMIN_ID:
