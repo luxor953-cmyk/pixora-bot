@@ -114,7 +114,7 @@ def send_product_card(chat_id, prod_key, caption, markup):
         if os.path.exists(path):
             with open(path, "rb") as f:
                 msg = bot.send_photo(chat_id, f, caption=caption,
-                                     reply_markup=markup, parse_mode="Markdown")
+                                   reply_markup=markup, parse_mode="Markdown")
             LOGO_CACHE[prod_key] = msg.photo[-1].file_id
             return
     except Exception as e:
@@ -170,7 +170,8 @@ def verify_binance_payment(order_id, expected_amount):
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    markup = InlineKeyboardMarkup(row_width=3)
+    # تم تعيين row_width=2 ليكون هناك منتجان في كل صف لتجنب الزحمة
+    markup = InlineKeyboardMarkup(row_width=2)
     buttons = []
 
     for key, info in PRODUCTS_INFO.items():
