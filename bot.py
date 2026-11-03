@@ -248,14 +248,14 @@ def handle_query(call):
         
         pay_msg = (
             f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n"
-            f"1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID:\n`{BINANCE_ID}`\n\n"
+            f"1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n"
             f"2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"
         )
         bot.send_message(chat_id, pay_msg, parse_mode="Markdown")
 
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
-        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID:\n`{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
+        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
         bot.send_message(chat_id, pay_text, parse_mode="Markdown")
 
     elif call.data == "main_menu":
