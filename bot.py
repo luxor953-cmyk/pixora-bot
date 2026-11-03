@@ -4,15 +4,21 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 from threading import Thread
 
-# === إعداداتك الخاصة ===
+# === إعداداتك الخاصة (التوكن الجديد مفعل) ===
 BOT_TOKEN = "9118344859:AAFqrcRY71z4f3fC87fs91c4z_wDQVHzyfo"
 ADMIN_ID = 514752764
 RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
 REDOTPAY_ID = "1198898814"
-# ======================
+# ============================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# تصفير أي ويب هوك قديم لمنع خطأ 409 Conflict نهائياً
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
 
 # =========================================================================
 # 📦 [قاعدة بيانات المخزون والتسليم الآمن بعد موافقة المشرف]
@@ -119,127 +125,3 @@ def handle_query(call):
             "2️⃣ قم بـ **إرسال صورة إيصال الدفع (Screenshot)** هنا في المحادثة.\n"
             "3️⃣ سيقوم المشرف بمراجعة الوصل وإرسال بيانات حسابك فوراً!",
             reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "prod_chatgpt":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "🤖 قسم ChatGPT قيد التحديث، تواصل مع المشرف لتفعيل طلبك يدوياً.")
-
-    elif call.data == "show_payments":
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            InlineKeyboardButton("🏦 Baridimob (CCP)", callback_data="pay_ccp"),
-            InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance"),
-            InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay"),
-            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-        )
-        bot.send_message(
-            chat_id,
-            f"💳 **معلومات الدفع في متجر Pixora Store:**\n\n"
-            f"🏦 **CCP (بريد الجزائر):**\n`{RIP_CPP}`\n\n"
-            f"🪙 **Binance Pay ID:**\n`{BINANCE_ID}`\n\n"
-            f"💳 **RedotPay ID:**\n`{REDOTPAY_ID}`\n\n"
-            "⚠️ **مهم جداً:** بعد إتمام التحويل، أرسل **صورة الإيصال** هنا في الشات ليتم تأكيدها وتسليمك المنتج!",
-            reply_markup=markup,
-            parse_mode="Markdown"
-        )
-
-    elif call.data == "pay_ccp":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🏦 **RIP Baridimob (CCP):**\n`{RIP_CPP}`\n\nأرسل صورة الوصل هنا بعد الدفع.", parse_mode="Markdown")
-    elif call.data == "pay_binance":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"🪙 **Binance ID:** `{BINANCE_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
-    elif call.data == "pay_redotpay":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"💳 **RedotPay ID:** `{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
-
-    elif call.data == "main_menu":
-        bot.answer_callback_query(call.id)
-        send_welcome(call.message)
-
-# استقبال صور الإيصالات من العملاء وتحويلها للمشرف للمراجعة
-@bot.message_handler(content_types=['photo'])
-def handle_receipt(message):
-    chat_id = message.chat.id
-    user_name = message.from_user.first_name
-    user_username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد معرف"
-
-    if chat_id == ADMIN_ID:
-        bot.send_message(chat_id, "⚠️ هذه صورة مرسلة من حسابك كمدير، وليست إيصال عميل.")
-        return
-
-    # إرسال الصورة إليك (المشرف) مع أزرار الموافقة أو الرفض
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("✅ موافقة (CapCut)", callback_data=f"Approve_capcut_{chat_id}"),
-        InlineKeyboardButton("✅ موافقة (Gemini)", callback_data=f"Approve_gemini_{chat_id}"),
-        InlineKeyboardButton("✅ موافقة (Office)", callback_data=f"Approve_office_{chat_id}"),
-        InlineKeyboardButton("✅ موافقة (Canva)", callback_data=f"Approve_canva_{chat_id}"),
-        InlineKeyboardButton("❌ رفض الإيصال", callback_data=f"Reject_{chat_id}")
-    )
-
-    bot.forward_message(ADMIN_ID, chat_id, message.message_id)
-    bot.send_message(
-        ADMIN_ID,
-        f"🔔 **إيصال دفع جديد قيد المراجعة!**\n"
-        f"👤 العميل: {user_name} ({user_username})\n"
-        f"🆔 ID: `{chat_id}`\n\n"
-        "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-
-    bot.send_message(
-        chat_id,
-        "⏳ **تم استلام إيصال الدفع بنجاح!**\n"
-        "جاري مراجعة التحويل من قبل الإدارة، سيتم إرسال تفاصيل طلبك فور التأكيد.",
-        parse_mode="Markdown"
-    )
-
-# معالجة موافقة أو رفض المشرف من أزرار الإشعار
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("Approve_", "Reject_")))
-def admin_action(call):
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "هذا الزر مخصص للمشرف فقط!")
-        return
-
-    bot.answer_callback_query(call.id)
-    data_parts = call.data.split("_")
-    action = data_parts[0]
-
-    if action == "Reject":
-        target_chat_id = data_parts[1]
-        bot.send_message(target_chat_id, "❌ عذراً، تم رفض إيصال الدفع من قبل الإدارة أو أن البيانات غير صحيحة. يرجى التراجع أو التواصل معنا.")
-        bot.edit_message_text("❌ تم رفض الإيصال وإبلاغ العميل.", call.message.chat.id, call.message.message_id)
-
-    elif action == "Approve":
-        prod_key = data_parts[1]
-        target_chat_id = data_parts[2]
-
-        if len(STOCK_DATABASE[prod_key]) > 0:
-            item = STOCK_DATABASE[prod_key].pop(0) # سحب الحساب وخصمه تلقائياً بعد الموافقة
-            
-            # إرسال الحساب للعميل
-            bot.send_message(
-                target_chat_id,
-                "🎉 **تم تأكيد الدفع بنجاح وتسليم طلبك!**\n\n"
-                f"📦 **بيانات طلبك:**\n`{item}`\n\n"
-                "شكراً لثقتك بمتجر **Pixora Store** 💚",
-                parse_mode="Markdown"
-            )
-            # تحديث رسالة المشرف
-            bot.edit_message_text(
-                f"✅ **تمت الموافقة بنجاح وتسليم المنتج تلقائياً:**\n`{item}`",
-                call.message.chat.id,
-                call.message.message_id
-            )
-        else:
-            bot.send_message(ADMIN_ID, "⚠️ تنبيه: عذراً، نفدت كمية هذا المنتج من المخزون! يرجى إضافة مخزون جديد.")
-
-if __name__ == '__main__':
-    t = Thread(target=run_web)
-    t.start()
-    bot.infinity_polling()
