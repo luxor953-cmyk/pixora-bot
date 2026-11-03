@@ -30,7 +30,7 @@ PRODUCTS_INFO = {
     # المنتجات الـ 5 الأساسية مع الوصف التفصيلي
     "capcut": {
         "name": "🎞️ CapCut", 
-        "price": 1.5,
+        "price": 2.0,
         "description": "- Full 30 days private Pro Team account .\n- Maximum 2 devices , with full warranty .\n- Stable Account full 30 days (no 7days renew ).\n- Login to mobile App first next to laptop (desktop App no web) via QR code ."
     },
     "gemini": {
