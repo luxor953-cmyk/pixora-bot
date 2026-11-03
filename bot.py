@@ -26,7 +26,7 @@ try:
 except Exception as e:
     print("Webhook error:", e)
 
-# الأسعار والمنتجات بالصيغة النصية النظيفة
+# الأسعار والمنتجات
 PRODUCTS_INFO = {
     "capcut": {"name": "CapCut Pro", "price": 1.5},
     "gemini": {"name": "Gemini Pro", "price": 2.0},
@@ -35,7 +35,7 @@ PRODUCTS_INFO = {
     "canva": {"name": "Canva Pro", "price": 2.0}
 }
 
-# المخزون بالكميات والأسعار المطلوبة
+# قاعدة بيانات المخزون (إذا أردت تجربة نفاد الكمية، اجعل القائمة فارغة [])
 STOCK_DATABASE = {
     "capcut": [
         "CapCut_Key_1: user1@pixoras.com / pass123"
@@ -109,9 +109,16 @@ def verify_binance_payment(order_id, expected_amount):
 def send_welcome(message):
     markup = InlineKeyboardMarkup(row_width=2)
     for key, info in PRODUCTS_INFO.items():
-        count = len(STOCK_DATABASE[key])
-        btn_text = f"{info['name']} · ${info['price']} ({count})"
-        markup.add(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
+        count = len(STOCK_DATABASE.get(key, []))
+        
+        # التحقق إذا كان المخزون فارغاً يتم وضع علامة حمراء وتغيير شكل الزر
+        if count == 0:
+            btn_text = f"🔴 [نفدت الكمية] {info['name']}"
+            # نضع callback_data وهمي أو مميز لكي لا يتيح الشراء
+            markup.add(InlineKeyboardButton(btn_text, callback_data="sold_out_" + key))
+        else:
+            btn_text = f"{info['name']} · ${info['price']} ({count})"
+            markup.add(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
     
     markup.add(InlineKeyboardButton("🪙 Binance Pay (معلومات الدفع)", callback_data="show_payments"))
     welcome_text = "مرحباً بك في متجر *Pixora Store* 🚀\n(التسليم الفوري الآلي عبر Binance Pay).\nاختر منتجك المفضل:"
@@ -121,13 +128,22 @@ def send_welcome(message):
 def handle_query(call):
     chat_id = call.message.chat.id
 
+    # التعامل مع المنتجات التي نفدت كميتها
+    if call.data.startswith("sold_out_"):
+        bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
+        return
+
     if call.data.startswith("buy_"):
         prod_key = call.data.replace("buy_", "")
         if prod_key in PRODUCTS_INFO:
+            stock_len = len(STOCK_DATABASE.get(prod_key, []))
+            if stock_len == 0:
+                bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
+                return
+                
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT[chat_id] = prod_key
             info = PRODUCTS_INFO[prod_key]
-            stock_len = len(STOCK_DATABASE[prod_key])
             
             markup = InlineKeyboardMarkup(row_width=1)
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
@@ -167,7 +183,7 @@ def handle_incoming(message):
         prod_key = USER_SELECTED_PRODUCT[chat_id]
         info = PRODUCTS_INFO[prod_key]
         
-        if len(STOCK_DATABASE[prod_key]) == 0:
+        if len(STOCK_DATABASE.get(prod_key, [])) == 0:
             bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
             return
 
