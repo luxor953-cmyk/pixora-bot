@@ -16,6 +16,7 @@ BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY"]
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
+SUPPORT_WHATSAPP = "https://wa.me/213555668244"  # رابط الواتساب المباشر الخاص بك
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
@@ -27,7 +28,6 @@ except Exception as e:
 
 # جميع المنتجات مع أسمائها، أسرارها، وأوصافها التفصيلية
 PRODUCTS_INFO = {
-    # المنتجات الـ 5 الأساسية مع الوصف التفصيلي
     "capcut": {
         "name": "🎞️ CapCut", 
         "price": 2.0,
@@ -54,7 +54,6 @@ PRODUCTS_INFO = {
         "description": "- Canva Pro Team Invitation.\n- Unlock all premium templates, fonts, and background remover.\n- Private account safety with full warranty."
     },
 
-    # باقي المنتجات (المخزون 0 افتراضياً مع وصف افتراضي)
     "adobe": {"name": "🔴 Adobe", "price": 2.5, "description": "- Full Adobe Creative Cloud access.\n- Full warranty and stability."},
     "avira": {"name": "🔴 Avira", "price": 2.0, "description": "- Premium Antivirus & Security subscription.\n- Full warranty."},
     "chatgpt": {"name": "🔴 ChatGPT", "price": 3.0, "description": "- ChatGPT Plus account access.\n- Fast GPT-4o and DALL-E generation."},
@@ -83,7 +82,7 @@ PRODUCTS_INFO = {
     "udemy": {"name": "🔴 Udemy", "price": 2.0, "description": "- Premium courses access plan."}
 }
 
-# قاعدة بيانات المخزون (قوائم فارغة [] تعني 0 مخزون)
+# قاعدة بيانات المخزون
 STOCK_DATABASE = {
     "capcut": ["CapCut_Key_1: user1@pixoras.com / pass123"],
     "gemini": ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"],
@@ -103,10 +102,9 @@ USER_SELECTED_PRODUCT = {}
 
 # === شعارات المنتجات ===
 LOGO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logos")
-LOGO_CACHE = {}  # prod_key -> telegram file_id
+LOGO_CACHE = {} 
 
 def send_product_card(chat_id, prod_key, caption, markup):
-    """يرسل المنتج بشعاره، ولو الشعار غير موجود يرسل رسالة نصية عادية."""
     path = os.path.join(LOGO_DIR, prod_key + ".png")
     try:
         if prod_key in LOGO_CACHE:
@@ -185,9 +183,19 @@ def send_welcome(message):
             buttons.append(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
 
     markup.add(*buttons)
-    markup.add(InlineKeyboardButton("🪙 Binance Pay (معلومات الدفع)", callback_data="show_payments"))
+    
+    # أزرار الخدمات الإضافية (بوابة الدفع والدعم الفني عبر الواتساب)
+    markup.add(
+        InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"),
+        InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
+    )
 
-    welcome_text = "🛍️ **المنتجات**\n\nاختر منتجك المفضل:"
+    welcome_text = (
+        "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
+        "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
+        "💎 **التسليم فوري وآلي بالكامل** خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!\n\n"
+        "👇 **اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:**"
+    )
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -211,10 +219,9 @@ def handle_query(call):
             info = PRODUCTS_INFO[prod_key]
 
             markup = InlineKeyboardMarkup(row_width=1)
-            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع", callback_data="pay_steps_" + prod_key))
+            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
 
-            # التنسيق الاحترافي للوصف والتفاصيل لكل منتج
             msg_text = (
                 f"🏷️ **{info['name']}**\n"
                 f"💰 **Price:** `${info['price']}`\n\n"
@@ -267,25 +274,4 @@ def handle_incoming(message):
             return
 
         wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
-        is_valid, status_text = verify_binance_payment(order_id, info["price"])
-
-        if is_valid:
-            item = STOCK_DATABASE[prod_key].pop(0)
-            del USER_SELECTED_PRODUCT[chat_id]
-            bot.edit_message_text(
-                f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n"
-                f"📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\n"
-                f"شكراً لثقتك بمتجر *Pixora Store* 💚",
-                chat_id,
-                wait_msg.message_id,
-                parse_mode="Markdown"
-            )
-        else:
-            bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
-        return
-
-    bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال **رقم العملية (Order ID)** النصي بعد إتمام التحويل للحصول على طلبك فوراً.")
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+        is_valid
