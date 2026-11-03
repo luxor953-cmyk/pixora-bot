@@ -140,7 +140,7 @@ def verify_binance_payment(order_id, expected_amount):
 
     url = "https://api.binance.com/sapi/v1/pay/transactions"
     timestamp = int(time.time() * 1000)
-    query_string = urllib.parse.urlencode({"timestamp": timestamp, "limit": 50})
+    query_string = urllib.parse.urlencode({"timestamp": timestamp, "limit": 100})
     signature = hmac.new(
         BINANCE_SECRET_KEY.encode('utf-8'),
         query_string.encode('utf-8'),
@@ -156,9 +156,10 @@ def verify_binance_payment(order_id, expected_amount):
         if data.get("code") == "000000" and "data" in data:
             for tx in data["data"]:
                 tx_id = str(tx.get("orderId", ""))
+                prepay_id = str(tx.get("prepayId", ""))
                 amount = float(tx.get("amount", 0))
                 currency = tx.get("currency", "")
-                if tx_id == str(order_id).strip() and amount >= expected_amount and currency == "USDT":
+                if (tx_id == str(order_id).strip() or prepay_id == str(order_id).strip()) and amount >= expected_amount and currency == "USDT":
                     USED_TRANSACTIONS.add(order_id)
                     return True, "تم التحقق بنجاح"
             return False, "لم يتم العثور على حوالة بهذا الرقم أو أن المبلغ أقل من المطلوب."
