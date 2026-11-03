@@ -26,34 +26,58 @@ try:
 except Exception as e:
     print("Webhook error:", e)
 
-# الأسعار والمنتجات
+# جميع المنتجات مع أسمائها وأسعارها (الـ 5 الأساسية + المنتجات الجديدة من الصورة)
 PRODUCTS_INFO = {
-    "capcut": {"name": "CapCut Pro", "price": 1.5},
-    "gemini": {"name": "Gemini Pro", "price": 2.0},
-    "office": {"name": "Microsoft 365", "price": 2.0},
-    "autodesk": {"name": "AUTODESK", "price": 3.0},
-    "canva": {"name": "Canva Pro", "price": 2.0}
+    # المنتجات الـ 5 الأساسية
+    "capcut": {"name": "🎞️ CapCut", "price": 1.5},
+    "gemini": {"name": "💠 Gemini", "price": 2.0},
+    "office": {"name": "🟩 Microsoft 365", "price": 2.0},
+    "autodesk": {"name": "🔺 Autodesk", "price": 3.0},
+    "canva": {"name": "🎨 Canva", "price": 2.0},
+    
+    # المنتجات الجديدة من الصورة (الرصيد 0 افتراضياً)
+    "adobe": {"name": "🔴 Adobe", "price": 2.5},
+    "avira": {"name": "🔴 Avira", "price": 2.0},
+    "chatgpt": {"name": "🔴 ChatGPT", "price": 3.0},
+    "coursera": {"name": "🔴 Coursera", "price": 2.0},
+    "duolingo": {"name": "🔴 Duolingo", "price": 0.75},
+    "elevenlabs": {"name": "🔴 ElevenLabs", "price": 3.5},
+    "expressvpn": {"name": "🔴 ExpressVPN", "price": 2.5},
+    "figma": {"name": "🔴 Figma", "price": 2.0},
+    "framer": {"name": "🔴 Framer", "price": 2.0},
+    "gamma": {"name": "🔴 Gamma", "price": 2.0},
+    "grok": {"name": "🔴 Grok", "price": 2.5},
+    "hmavpn": {"name": "🔴 HMA VPN", "price": 0.55},
+    "jetbrain": {"name": "🔴 JetBrain", "price": 3.0},
+    "kaspersky": {"name": "🔴 Kaspersky", "price": 2.0},
+    "linkedin": {"name": "🔴 LinkedIn", "price": 3.0},
+    "lovable": {"name": "🔴 Lovable", "price": 2.5},
+    "muse": {"name": "🔴 Muse", "price": 2.0},
+    "notion": {"name": "🔴 Notion", "price": 2.0},
+    "youtube": {"name": "🔴 YouTube", "price": 2.0},
+    "ilovepdf": {"name": "🔴 iLovePdf", "price": 1.5},
+    "api": {"name": "🔴 API", "price": 5.0},
+    "grammarly": {"name": "🔴 Grammarly", "price": 2.0},
+    "nordvpn": {"name": "🔴 Nord Vpn", "price": 2.0},
+    "scribd": {"name": "🔴 Scribd", "price": 2.0},
+    "wispr": {"name": "🔴 Wispr", "price": 2.0},
+    "udemy": {"name": "🔴 Udemy", "price": 2.0}
 }
 
-# قاعدة بيانات المخزون (إذا أردت تجربة نفاد الكمية، اجعل القائمة فارغة [])
+# قاعدة بيانات المخزون (الـ 5 الأساسية متوفرة، والباقي قوائم فارغة [] تعني 0 مخزون)
 STOCK_DATABASE = {
-    "capcut": [
-        "CapCut_Key_1: user1@pixoras.com / pass123"
-    ],
-    "gemini": [
-        "https://g.co/gemini/share/sample_link_1",
-        "https://g.co/gemini/share/sample_link_2"
-    ],
-    "office": [
-        "Office365_Key_1: acc1@pixora.store / P@ss1",
-        "Office365_Key_2: acc2@pixora.store / P@ss2"
-    ],
-    "autodesk": [
-        "Autodesk_Key_ABC123"
-    ],
-    "canva": [
-        "https://www.canva.com/brand/join?inv=sample_1"
-    ]
+    "capcut": ["CapCut_Key_1: user1@pixoras.com / pass123"],
+    "gemini": ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"],
+    "office": ["Office365_Key_1: acc1@pixora.store / P@ss1", "Office365_Key_2: acc2@pixora.store / P@ss2"],
+    "autodesk": ["Autodesk_Key_ABC123"],
+    "canva": ["https://www.canva.com/brand/join?inv=sample_1"],
+    
+    # المنتجات الجديدة مخزونها صفر
+    "adobe": [], "avira": [], "chatgpt": [], "coursera": [], "duolingo": [],
+    "elevenlabs": [], "expressvpn": [], "figma": [], "framer": [], "gamma": [],
+    "grok": [], "hmavpn": [], "jetbrain": [], "kaspersky": [], "linkedin": [],
+    "lovable": [], "muse": [], "notion": [], "youtube": [], "ilovepdf": [],
+    "api": [], "grammarly": [], "nordvpn": [], "scribd": [], "wispr": [], "udemy": []
 }
 
 USED_TRANSACTIONS = set()
@@ -107,28 +131,32 @@ def verify_binance_payment(order_id, expected_amount):
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    markup = InlineKeyboardMarkup(row_width=2)
+    # ترتيب الأزرار في شبكة من 3 أعمدة تماماً مثل التصميم المطلوب
+    markup = InlineKeyboardMarkup(row_width=3)
+    buttons = []
+    
     for key, info in PRODUCTS_INFO.items():
         count = len(STOCK_DATABASE.get(key, []))
         
-        # التحقق إذا كان المخزون فارغاً يتم وضع علامة حمراء وتغيير شكل الزر
         if count == 0:
-            btn_text = f"🔴 [نفدت الكمية] {info['name']}"
-            # نضع callback_data وهمي أو مميز لكي لا يتيح الشراء
-            markup.add(InlineKeyboardButton(btn_text, callback_data="sold_out_" + key))
+            # المنتجات الفارغة تظهر باللون الأحمر
+            btn_text = f"{info['name']}"
+            buttons.append(InlineKeyboardButton(btn_text, callback_data="sold_out_" + key))
         else:
-            btn_text = f"{info['name']} · ${info['price']} ({count})"
-            markup.add(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
-    
+            # المنتجات المتوفرة تظهر باللون الأخضر مع السعر
+            btn_text = f"🟢 {info['name']} · ${info['price']}"
+            buttons.append(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
+            
+    markup.add(*buttons)
     markup.add(InlineKeyboardButton("🪙 Binance Pay (معلومات الدفع)", callback_data="show_payments"))
-    welcome_text = "مرحباً بك في متجر *Pixora Store* 🚀\n(التسليم الفوري الآلي عبر Binance Pay).\nاختر منتجك المفضل:"
+    
+    welcome_text = "🛍️ **المنتجات**\n\nاختر منتجك المفضل:"
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     chat_id = call.message.chat.id
 
-    # التعامل مع المنتجات التي نفدت كميتها
     if call.data.startswith("sold_out_"):
         bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
         return
