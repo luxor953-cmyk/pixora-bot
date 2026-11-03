@@ -229,4 +229,4 @@ def admin_action(call):
             bot.send_message(
                 target_chat_id,
                 "🎉 **تم تأكيد الدفع بنجاح وتسليم طلبك!**\n\n"
-                f"📦 **
+                f"
