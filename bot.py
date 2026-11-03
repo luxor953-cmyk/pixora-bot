@@ -16,7 +16,7 @@ BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY"]
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
-SUPPORT_WHATSAPP = "https://wa.me/213555668244"  # رابط الواتساب المباشر الخاص بك
+SUPPORT_WHATSAPP = "https://wa.me/213555668244"  # رقم الواتساب المباشر للدعم الفني
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
@@ -184,7 +184,11 @@ def send_welcome(message):
 
     markup.add(*buttons)
     
-    # أزرار الخدمات الإضافية (بوابة الدفع والدعم الفني عبر الواتساب)
+    # صف أزرار التحكم والخدمات الإضافية أسفل القائمة
+    markup.add(
+        InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
+        InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
+    )
     markup.add(
         InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"),
         InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
@@ -220,7 +224,10 @@ def handle_query(call):
 
             markup = InlineKeyboardMarkup(row_width=1)
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
-            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+            markup.add(
+                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
+                InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP)
+            )
 
             msg_text = (
                 f"🏷️ **{info['name']}**\n"
@@ -253,25 +260,4 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         send_welcome(call.message)
 
-@bot.message_handler(content_types=['text', 'photo', 'document'])
-def handle_incoming(message):
-    chat_id = message.chat.id
-
-    if message.content_type == 'text':
-        if message.text.startswith('/'):
-            return
-        order_id = message.text.strip()
-
-        if chat_id not in USER_SELECTED_PRODUCT:
-            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال رقم العملية.")
-            return
-
-        prod_key = USER_SELECTED_PRODUCT[chat_id]
-        info = PRODUCTS_INFO[prod_key]
-
-        if len(STOCK_DATABASE.get(prod_key, [])) == 0:
-            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
-            return
-
-        wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
-        is_valid
+@bot
