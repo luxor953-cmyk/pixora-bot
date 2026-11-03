@@ -87,7 +87,7 @@ PRODUCTS_INFO = {
 STOCK_DATABASE = {
     "capcut": ["CapCut_Key_1: user1@pixoras.com / pass123"],
     "gemini": ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"],
-    "office": ["Office365_Key_1: acc1@pixora.store / P@ss1", "Office365_Key_2: acc2@pixora.store / P@ss2"],
+    "office": ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"],
     "autodesk": ["Autodesk_Key_ABC123"],
     "canva": ["https://www.canva.com/brand/join?inv=sample_1"],
 
