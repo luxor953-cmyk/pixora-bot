@@ -4,13 +4,13 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 from threading import Thread
 
-# === إعداداتك الخاصة (التوكن الجديد مفعل) ===
+# === إعداداتك الخاصة ===
 BOT_TOKEN = "9118344859:AAFqrcRY71z4f3fC87fs91c4z_wDQVHzyfo"
 ADMIN_ID = 514752764
 RIP_CPP = "0079999900229772775"
 BINANCE_ID = "957483337"
 REDOTPAY_ID = "1198898814"
-# ============================================
+# ======================
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -125,3 +125,96 @@ def handle_query(call):
             "2️⃣ قم بـ **إرسال صورة إيصال الدفع (Screenshot)** هنا في المحادثة.\n"
             "3️⃣ سيقوم المشرف بمراجعة الوصل وإرسال بيانات حسابك فوراً!",
             reply_markup=markup,
+            parse_mode="Markdown"
+        )
+
+    elif call.data == "prod_chatgpt":
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, "🤖 قسم ChatGPT قيد التحديث، تواصل مع المشرف لتفعيل طلبك يدوياً.")
+
+    elif call.data == "show_payments":
+        bot.answer_callback_query(call.id)
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            InlineKeyboardButton("🏦 Baridimob (CCP)", callback_data="pay_ccp"),
+            InlineKeyboardButton("🪙 Binance Pay", callback_data="pay_binance"),
+            InlineKeyboardButton("💳 RedotPay ID", callback_data="pay_redotpay"),
+            InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+        )
+        bot.send_message(
+            chat_id,
+            f"💳 **معلومات الدفع في متجر Pixora Store:**\n\n"
+            f"🏦 **CCP (بريد الجزائر):**\n`{RIP_CPP}`\n\n"
+            f"🪙 **Binance Pay ID:**\n`{BINANCE_ID}`\n\n"
+            f"💳 **RedotPay ID:**\n`{REDOTPAY_ID}`\n\n"
+            "⚠️ **مهم جداً:** بعد إتمام التحويل، أرسل **صورة الإيصال** هنا في الشات ليتم تأكيدها وتسليمك المنتج!",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+
+    elif call.data == "pay_ccp":
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, f"🏦 **RIP Baridimob (CCP):**\n`{RIP_CPP}`\n\nأرسل صورة الوصل هنا بعد الدفع.", parse_mode="Markdown")
+    elif call.data == "pay_binance":
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, f"🪙 **Binance ID:** `{BINANCE_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
+    elif call.data == "pay_redotpay":
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, f"💳 **RedotPay ID:** `{REDOTPAY_ID}`\n\nأرسل لقطة الشاشة هنا بعد الدفع.", parse_mode="Markdown")
+
+    elif call.data == "main_menu":
+        bot.answer_callback_query(call.id)
+        send_welcome(call.message)
+
+# استقبال صور الإيصالات أو الملفات من العملاء وتوجيهها للمشرف
+@bot.message_handler(content_types=['photo', 'document'])
+def handle_receipt(message):
+    chat_id = message.chat.id
+    user_name = message.from_user.first_name
+    user_username = f"@{message.from_user.username}" if message.from_user.username else "لا يوجد معرف"
+
+    if chat_id == ADMIN_ID:
+        bot.send_message(chat_id, "⚠️ هذه صورة مرسلة من حسابك كمدير، وليست إيصال عميل.")
+        return
+
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("✅ موافقة (CapCut)", callback_data=f"Approve_capcut_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Gemini)", callback_data=f"Approve_gemini_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Office)", callback_data=f"Approve_office_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Autodesk)", callback_data=f"Approve_autodesk_{chat_id}"),
+        InlineKeyboardButton("✅ موافقة (Canva)", callback_data=f"Approve_canva_{chat_id}"),
+        InlineKeyboardButton("❌ رفض الإيصال", callback_data=f"Reject_{chat_id}")
+    )
+
+    bot.forward_message(ADMIN_ID, chat_id, message.message_id)
+    bot.send_message(
+        ADMIN_ID,
+        f"🔔 **إيصال دفع جديد قيد المراجعة!**\n"
+        f"👤 العميل: {user_name} ({user_username})\n"
+        f"🆔 ID: `{chat_id}`\n\n"
+        "اختر المنتج المناسب للموافقة وإرسال الحساب للعميل تلقائياً:",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+    bot.send_message(
+        chat_id,
+        "⏳ **تم استلام إيصال الدفع بنجاح!**\n"
+        "جاري مراجعة التحويل من قبل الإدارة، سيتم إرسال تفاصيل طلبك فور التأكيد.",
+        parse_mode="Markdown"
+    )
+
+# معالجة موافقة أو رفض المشرف من أزرار الإشعار
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("Approve_", "Reject_")))
+def admin_action(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "هذا الزر مخصص للمشرف فقط!")
+        return
+
+    bot.answer_callback_query(call.id)
+    data_parts = call.data.split("_")
+    action = data_parts[0]
+
+    if action == "Reject":
+        target_
