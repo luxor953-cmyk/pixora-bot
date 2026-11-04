@@ -13,12 +13,57 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
+# قائمة الـ 31 صنفاً الأصلية مع الأوصاف الكاملة للمنتجات الـ 5 الأولى
 RAW_PRODUCTS = [
-    ("capcut", "🎞️ CapCut", 1.3, "CapCut Pro 30 Days - Delivery is automatic."),
-    ("gemini", "💠 Gemini", 3.0, "Gemini AI Pro 18 Months Plan - 5TB Storage."),
-    ("office", "🟩 Microsoft Office 365", 0.30, "Office 365 Plus 5 Devices + 1TB OneDrive."),
-    ("autodesk", "🔺 Autodesk", 3.0, "Autodesk Admin Dashboard 1 Year Access."),
-    ("canva", "🎨 Canva", 4.0, "Canva Edu Pro invite link."),
+    (
+        "capcut",
+        "🎞️ CapCut Pro (30 Days)",
+        1.3,
+        "اشتراك CapCut Pro رسمي لمدة 30 يوماً:\n"
+        "• إزالة العلامة المائية وتصدير بأعلى جودة 4K.\n"
+        "• وصول غير محدود لجميع القوالب والمؤثرات المدفوعة.\n"
+        "• ميزات الذكاء الاصطناعي الكاملة وقص الفيديو التلقائي.\n"
+        "⚡ التسليم: فوري بعد الدفع."
+    ),
+    (
+        "gemini",
+        "💠 Google Gemini Advanced (18 Months)",
+        3.0,
+        "خطة Gemini Advanced مع باقة Google One لمدة 18 شهراً:\n"
+        "• وصول كامل لموديل الذكاء الاصطناعي 1.5 Pro المتقدم.\n"
+        "• مساحة تخزين سحابية ضخمة 2 تيرابايت (2TB).\n"
+        "• دمج مباشر واحترافي مع Gmail و Docs و Drive.\n"
+        "⚡ التسليم: فوري بعد الدفع."
+    ),
+    (
+        "office",
+        "🟩 Microsoft Office 365 Pro",
+        0.30,
+        "حساب رسمي مفعل لـ Microsoft Office 365:\n"
+        "• يشمل Word, Excel, PowerPoint, Outlook كاملة.\n"
+        "• يدعم حتى 5 أجهزة (ويندوز، ماك، أندرويد، آيفون).\n"
+        "• مساحة تخزين سحابية 1TB على OneDrive.\n"
+        "⚡ التسليم: فوري بعد الدفع."
+    ),
+    (
+        "autodesk",
+        "🔺 Autodesk All Apps (1 Year)",
+        3.0,
+        "اشتراك Autodesk رسمي لمدة سنة كاملة:\n"
+        "• يشمل AutoCAD و 3ds Max و Revit و Maya وغيرها.\n"
+        "• لوحة تحكم رسمية وترخيص كامل متوافق مع Windows و Mac.\n"
+        "⚡ التسليم: فوري بعد الدفع."
+    ),
+    (
+        "canva",
+        "🎨 Canva Pro Edu Invite (1 Year)",
+        4.0,
+        "اشتراك Canva Pro رسمي يتم تفعيله على إيميلك الخاص لمدة سنة:\n"
+        "• وصول غير محدود لملايين القوالب والتصاميم والخطوط المدفوعة.\n"
+        "• ميزة إزالة خلفية الصور والفيديوهات بضغطة زر.\n"
+        "• مساحة تخزين سحابية ضخمة وميزات الذكاء الاصطناعي Magic Studio.\n"
+        "⚡ التسليم: فوري بعد الدفع."
+    ),
     ("adobe", "🔴 Adobe", 2.5, "Full Adobe Creative Cloud access."),
     ("avira", "🔴 Avira", 2.0, "Premium Antivirus & Security subscription."),
     ("chatgpt", "🔴 ChatGPT", 3.0, "ChatGPT Plus account access."),
@@ -49,6 +94,7 @@ RAW_PRODUCTS = [
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
+# قاعدة بيانات المخزون: الـ 5 منتجات الأولى فقط التي تحتوي على رصيد
 STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
 STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
@@ -85,7 +131,7 @@ def save_orders(orders_data):
 WELCOME_TEXT = (
     "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
     "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
-    "💎 **التسليم فوري** خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!\n\n"
+    "💎 **التسليم فوري** بعد إتمام الدفع عبر Binance Pay!\n\n"
     "👇 **اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:**"
 )
 
@@ -158,7 +204,6 @@ def handle_query(call):
     msg_id = call.message.message_id
     data = call.data
     
-    # معالجة موافقة/رفض الأدمن بزر واحد
     if data.startswith("admin_approve_"):
         token = data.replace("admin_approve_", "")
         if token in PENDING_ORDERS:
@@ -295,7 +340,6 @@ def handle_incoming(message):
     
     bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
 
-    # إشعار للأدمن بزر الموافقة والرفض
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
         InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
