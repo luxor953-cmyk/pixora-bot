@@ -19,7 +19,6 @@ RENDER_URL = os.environ.get("RENDER_URL", "https://pixora-bot-1.onrender.com").s
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
-app = Flask(__name__)
 
 RAW_PRODUCTS = [
     ("capcut", "🎞️ CapCut", 1.3, "CapCut Pro 30 Days - Delivery is automatic."),
@@ -93,6 +92,8 @@ def get_main_menu_markup():
     )
     return markup
 
+app = Flask(__name__)
+
 @app.route('/')
 def home():
     return "Pixora Store Auto-Delivery Bot is Live!", 200
@@ -114,27 +115,29 @@ def verify_binance_payment(order_id, expected_amount):
     if clean_id in USED_TRANSACTIONS:
         return False, "رقم العملية هذا تم استخدامه مسبقاً من قبل!"
     
-    timestamp = int(time.time() * 1000)
-    url_pay = "https://api.binance.com/sapi/v1/pay/transactions"
-    qs_pay = urllib.parse.urlencode({"timestamp": timestamp, "limit": 100})
-    sig_pay = hmac.new(BINANCE_SECRET_KEY.encode('utf-8'), qs_pay.encode('utf-8'), hashlib.sha256).hexdigest()
-    
+    url = "https://api.binance.com/sapi/v1/pay/transactions"
+    qs = urllib.parse.urlencode({"timestamp": int(time.time() * 1000), "limit": 100})
+    sig = hmac.new(BINANCE_SECRET_KEY.encode('utf-8'), qs.encode('utf-8'), hashlib.sha256).hexdigest()
     try:
-        res = requests.get(f"{url_pay}?{qs_pay}&signature={sig_pay}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=8)
+        res = requests.get(f"{url}?{qs}&signature={sig}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=10)
         data = res.json()
+        print("Binance response:", res.status_code, str(data)[:300])
         
-        if data.get("code") == "000000" and "data" in data:
+        has_data = ("data" in data)
+        is_success = (data.get("code") == "000000")
+        
+        if is_success and has_data:
             for tx in data["data"]:
                 t_id = str(tx.get("orderId", ""))
                 p_id = str(tx.get("prepayId", ""))
                 if (t_id == clean_id or p_id == clean_id) and float(tx.get("amount", 0)) >= expected_amount and tx.get("currency") == "USDT":
                     USED_TRANSACTIONS.add(clean_id)
                     return True, "تم التحقق بنجاح"
-            return False, "لم يتم العثور على حوالة مطابقة في باينانس بهذا الرقم أو المبلغ."
-        
-        return False, f"رد باينانس: {data.get('msg', 'تحقق من مفاتيحك')} (كود: {data.get('code')})"
+            return False, "لم يتم العثور على حوالة بهذا الرقم أو أن المبلغ أقل من المطلوب."
+        return False, f"رد باينانس: {data.get('msg', 'تأكد من صلاحيات الـ API')}"
     except Exception as e:
-        return False, f"تعذر الاتصال بباينانس: {str(e)}"
+        print("Binance error:", e)
+        return False, "خطأ في الاتصال: " + str(e)
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
@@ -283,19 +286,21 @@ def handle_incoming(message):
             bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
         return
         
-    bot.send_message(chat_id, "📌 يرجى إرسال <b>رقم العملية (Order ID)</b> النصي بعد التحويل.", parse_mode="HTML")
+    bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال <b>رقم العملية (Order ID)</b> النصي بعد إتمام التحويل للحصول على طلبك فوراً.", parse_mode="HTML")
 
-def init_app():
+def setup_webhook_delayed():
+    time.sleep(3)
     if BOT_TOKEN and RENDER_URL:
         try:
+            bot.remove_webhook()
+            time.sleep(1)
             target_url = f"{RENDER_URL}/{BOT_TOKEN}"
-            bot.set_webhook(url=target_url)
-            print(f"Webhook registered: {target_url}")
+            res = bot.set_webhook(url=target_url)
+            print(f"Webhook set successfully to {target_url}: {res}")
         except Exception as e:
-            print("Webhook init error:", e)
-
-threading.Thread(target=init_app, daemon=True).start()
+            print("Webhook setup error:", e)
 
 if __name__ == '__main__':
+    threading.Thread(target=setup_webhook_delayed, daemon=True).start()
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
