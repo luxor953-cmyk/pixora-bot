@@ -4,7 +4,6 @@ import hmac
 import hashlib
 import urllib.parse
 import json
-import threading
 import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -123,10 +122,8 @@ def verify_binance_payment(order_id, expected_amount):
         data = res.json()
         print("Binance response:", res.status_code, str(data)[:300])
         
-        has_data = ("data" in data)
-        is_success = (data.get("code") == "000000")
-        
-        if is_success and has_data:
+        # السطر المصحح بالكامل
+        if data.get("code") == "000000" and "data" in data:
             for tx in data["data"]:
                 t_id = str(tx.get("orderId", ""))
                 p_id = str(tx.get("prepayId", ""))
@@ -288,8 +285,7 @@ def handle_incoming(message):
         
     bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال <b>رقم العملية (Order ID)</b> النصي بعد إتمام التحويل للحصول على طلبك فوراً.", parse_mode="HTML")
 
-def setup_webhook_delayed():
-    time.sleep(3)
+def setup_webhook():
     if BOT_TOKEN and RENDER_URL:
         try:
             bot.remove_webhook()
@@ -301,6 +297,6 @@ def setup_webhook_delayed():
             print("Webhook setup error:", e)
 
 if __name__ == '__main__':
-    threading.Thread(target=setup_webhook_delayed, daemon=True).start()
+    setup_webhook()
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
