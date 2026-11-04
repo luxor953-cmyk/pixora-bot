@@ -121,8 +121,6 @@ def verify_binance_payment(order_id, expected_amount):
         res = requests.get(f"{url}?{qs}&signature={sig}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=10)
         data = res.json()
         print("Binance response:", res.status_code, str(data)[:300])
-        
-        # السطر المصحح بالكامل
         if data.get("code") == "000000" and "data" in data:
             for tx in data["data"]:
                 t_id = str(tx.get("orderId", ""))
