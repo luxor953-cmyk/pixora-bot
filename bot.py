@@ -60,7 +60,9 @@ STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"]
 STOCK_DATABASE["autodesk"] = ["Autodesk_Key_ABC123"]
 STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
 
+# سجل العمليات والمشتريات السابقة (يمنع تكرار استخدام نفس رقم العملية ويحفظ سجل المشترين)
 USED_TRANSACTIONS = set()
+USER_ORDERS_HISTORY = {}  # لتسجيل عمليات كل مستخدم {chat_id: [قائمة الطلبات السابقة]}
 USER_SELECTED_PRODUCT = {}
 
 WELCOME_TEXT = (
@@ -98,7 +100,8 @@ def receive_update():
 def verify_binance_payment(order_id, expected_amount):
     clean_id = str(order_id).strip()
     if clean_id in USED_TRANSACTIONS:
-        return False, "رقم العملية هذا تم استخدامه مسبقاً!"
+        return False, "رقم العملية هذا تم استخدامه مسبقاً من قبل!"
+    
     url = "https://api.binance.com/sapi/v1/pay/transactions"
     qs = urllib.parse.urlencode({"timestamp": int(time.time() * 1000), "limit": 100})
     sig = hmac.new(BINANCE_SECRET_KEY.encode('utf-8'), qs.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -177,11 +180,25 @@ def handle_incoming(message):
         if len(STOCK_DATABASE.get(prod_key, [])) == 0:
             bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
             return
+        
         wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
-        is_valid, status_text = verify_binance_payment(message.text.strip(), info["price"])
+        order_id_input = message.text.strip()
+        is_valid, status_text = verify_binance_payment(order_id_input, info["price"])
+        
         if is_valid:
             item = STOCK_DATABASE[prod_key].pop(0)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
+            
+            # حفظ العملية ضمن السجلات الخاصة بالمشتري
+            if chat_id not in USER_ORDERS_HISTORY:
+                USER_ORDERS_HISTORY[chat_id] = []
+            USER_ORDERS_HISTORY[chat_id].append({
+                "product": info['name'],
+                "item": item,
+                "order_id": order_id_input,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
             bot.edit_message_text(f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\nشكراً لثقتك بمتجر *Pixora Store* 💚", chat_id, wait_msg.message_id, parse_mode="Markdown")
         else:
             bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
