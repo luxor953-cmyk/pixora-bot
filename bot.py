@@ -1,4 +1,4 @@
-import os, time, hmac, hashlib, urllib.parse, requests, telebot
+import os, time, hmac, hashlib, urllib.parse, json, requests, telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
@@ -60,10 +60,27 @@ STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"]
 STOCK_DATABASE["autodesk"] = ["Autodesk_Key_ABC123"]
 STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
 
-# سجل العمليات والمشتريات السابقة (يمنع تكرار استخدام نفس رقم العملية ويحفظ سجل المشترين)
 USED_TRANSACTIONS = set()
-USER_ORDERS_HISTORY = {}  # لتسجيل عمليات كل مستخدم {chat_id: [قائمة الطلبات السابقة]}
 USER_SELECTED_PRODUCT = {}
+
+# نظام حفظ واسترجاع السجلات بشكل دائم في ملف orders.json
+ORDERS_FILE = "orders.json"
+
+def load_orders():
+    if os.path.exists(ORDERS_FILE):
+        try:
+            with open(ORDERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_orders(orders_data):
+    try:
+        with open(ORDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(orders_data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("Error saving orders:", e)
 
 WELCOME_TEXT = (
     "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
@@ -81,8 +98,17 @@ def get_main_menu_markup():
         else:
             btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + k))
     markup.add(*btns)
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu"))
-    markup.add(InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"), InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP))
+    markup.add(
+        InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
+        InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
+    )
+    markup.add(
+        InlineKeyboardButton("📜 سجل مشترياتي", callback_data="my_orders"),
+        InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments")
+    )
+    markup.add(
+        InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
+    )
     return markup
 
 app = Flask('')
@@ -143,7 +169,13 @@ def handle_query(call):
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
             msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
-            bot.edit_message_text(msg_text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
+            
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            
     elif call.data.startswith("pay_steps_"):
         prod_key = call.data.replace("pay_steps_", "")
         info = PRODUCTS_INFO[prod_key]
@@ -151,20 +183,54 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"
-        bot.edit_message_text(pay_msg, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="Markdown")
+        
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
-        bot.edit_message_text(pay_text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
+
+    elif call.data == "my_orders":
+        bot.answer_callback_query(call.id)
+        all_orders = load_orders()
+        user_history = all_orders.get(str(chat_id), [])
+        
+        if not user_history:
+            history_text = "📜 **سجل مشترياتي:**\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
+        else:
+            history_text = "📜 **سجل مشترياتي السابقة:**\n\n"
+            for idx, order in enumerate(user_history, 1):
+                history_text += f"{idx}️⃣ **المنتج:** {order['product']}\n🔑 **البيانات:** `{order['item']}`\n🆔 **رقم العملية:** `{order['order_id']}`\n📅 **الوقت:** {order['time']}\n------------------------\n"
+        
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, history_text, reply_markup=markup, parse_mode="Markdown")
+        
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
         try:
-            bot.edit_message_text(WELCOME_TEXT, chat_id=chat_id, message_id=msg_id, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
+            bot.delete_message(chat_id, msg_id)
         except Exception:
-            bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
+            pass
+        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
 
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
@@ -189,17 +255,22 @@ def handle_incoming(message):
             item = STOCK_DATABASE[prod_key].pop(0)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             
-            # حفظ العملية ضمن السجلات الخاصة بالمشتري
-            if chat_id not in USER_ORDERS_HISTORY:
-                USER_ORDERS_HISTORY[chat_id] = []
-            USER_ORDERS_HISTORY[chat_id].append({
+            # حفظ العملية بشكل دائم في ملف orders.json
+            all_orders = load_orders()
+            str_chat_id = str(chat_id)
+            if str_chat_id not in all_orders:
+                all_orders[str_chat_id] = []
+            
+            new_order = {
                 "product": info['name'],
                 "item": item,
                 "order_id": order_id_input,
                 "time": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
+            }
+            all_orders[str_chat_id].append(new_order)
+            save_orders(all_orders)
 
-            bot.edit_message_text(f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\nشكراً لثقتك بمتجر *Pixora Store* 💚", chat_id, wait_msg.message_id, parse_mode="Markdown")
+            bot.edit_message_text(f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\n📜 تم حفظ طلبك في (سجل مشترياتي).\n\nشكراً لثقتك بمتجر *Pixora Store* 💚", chat_id, wait_msg.message_id, parse_mode="Markdown")
         else:
             bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
         return
