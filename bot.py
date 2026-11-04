@@ -18,7 +18,8 @@ BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"  # رقم الواتساب المباشر للدعم الفني
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+# تفعيل الـ Threading (المتعدد الخيوط) لضمان سرعة البوت وعدم تجمده أثناء الاتصال بالخارج
+bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 try:
     bot.remove_webhook()
@@ -154,7 +155,7 @@ def verify_binance_payment(order_id, expected_amount):
         response = requests.get(full_url, headers=headers, timeout=10)
         data = response.json()
         
-        # طباعة الرد في الـ Logs لمعرفة سبب الخطأ بدقة
+        # طباعة الرد في الـ Logs لمعرفة سبب أي خطأ بدقة
         print("Binance response:", response.status_code, str(data)[:300])
 
         if data.get("code") == "000000" and "data" in data:
