@@ -18,6 +18,30 @@ except Exception as e:
     print("Webhook error:", e)
 
 RAW_PRODUCTS = [
+    ("capcut", "🎞️ CapCut", 1.3, 
+     "📱 CAPCUT PRO Individual – 30 DAYS\n\n"
+     "📌 INFORMATIONS\n"
+     "✔️ CapCut Pro account, valid for 29-30 days.\n"
+     "✔️ Format : Email | Password\n"
+     "✔️ Recommended to log in on 1–2 devices, avoid logging in on multiple devices.\n\n"
+     "🛡 Full Warranty\n\n"
+     "⚠️ Important Notes \n"
+     "- Avoid continuous login/logout or logging in on multiple devices.\n"
+     "- Please check the account immediately after receiving it.\n\n"
+     "Delivery is automatic after payment confirmation."),
+     
+    ("gemini", "💠 Gemini", 3.0, 
+     "⚡ 18 Months Plan\n"
+     "⚡ 5TB cloud storage included\n"
+     "⚡ You can add 5 users\n"
+     "⚡ No Shared\n"
+     "⚡ 100% Private \n"
+     "⚡ NO NEED ANY CARD\n"
+     "⚡ The link is delivered via a verified custom domain and redirects to the official Google Gemini website for activation.\n"
+     "🔥 Works in any country, no verification required\n"
+     "🚫 Non Warranty After 1H of Delivery\n\n"
+     "⚡ 100% Genuine Gemini AI Pro Subscription Activated on Your Own Gmail."),
+     
     ("office", "🟩 Microsoft 365", 1.0, 
      "✔️ Microsoft 365 Plus – 100GB/1000GB | 5 Devices\n\n"
      "📱 Full access to Microsoft Office apps.\n\n"
@@ -33,31 +57,7 @@ RAW_PRODUCTS = [
      "- Keep your login credentials safe, forgotten password in not covered by Warranty.\n"
      "- OneDrive Storage is not covered by Warranty always keep backup for your files."),
      
-    ("gemini", "💠 Gemini Ai", 3.0, 
-     "⚡ 18 Months Plan\n"
-     "⚡ 5TB cloud storage included\n"
-     "⚡ You can add 5 users\n"
-     "⚡ No Shared\n"
-     "⚡ 100% Private \n"
-     "⚡ NO NEED ANY CARD\n"
-     "⚡ The link is delivered via a verified custom domain and redirects to the official Google Gemini website for activation.\n"
-     "🔥 Works in any country, no verification required\n"
-     "🚫 Non Warranty After 1H of Delivery\n\n"
-     "⚡ 100% Genuine Gemini AI Pro Subscription Activated on Your Own Gmail."),
-     
-    ("capcut", "🎞️ CapCut Pro", 1.3, 
-     "📱 CAPCUT PRO Individual – 30 DAYS\n\n"
-     "📌 INFORMATIONS\n"
-     "✔️ CapCut Pro account, valid for 29-30 days.\n"
-     "✔️ Format : Email | Password\n"
-     "✔️ Recommended to log in on 1–2 devices, avoid logging in on multiple devices.\n\n"
-     "🛡 Full Warranty\n\n"
-     "⚠️ Important Notes \n"
-     "- Avoid continuous login/logout or logging in on multiple devices.\n"
-     "- Please check the account immediately after receiving it.\n\n"
-     "Delivery is automatic after payment confirmation."),
-     
-    ("autodesk", "🔺 Autodesk Admin", 3.0, 
+    ("autodesk", "🔺 Autodesk", 3.0, 
      "✔️ Autodesk Admin Dashboard Access\n"
      "✔️ Invite & Manage Up to 250 Users\n"
      "✔️ 1 Year Subscription\n"
@@ -87,14 +87,41 @@ RAW_PRODUCTS = [
      "- Maximum 250 invitations, subject to available license entitlements.\n\n"
      "Delivery is automatic after payment confirmation."),
      
-    ("canva", "🎨 Canva Edu Pro", 0.5, 
+    ("canva", "🎨 Canva", 0.5, 
      "🎨 Canva Education Pro – Invite\n\n"
      "After placing your order, please send your Canva registered email address to receive your invitation.\n\n"
      "Make sure to provide the correct email address.\n\n"
      "🏷️ Bulk deals\n"
      "- 10x → $0.10 off each\n"
      "- 20x → $0.15 off each\n"
-     "- 50x → $0.20 off each")
+     "- 50x → $0.20 off each"),
+     
+    ("adobe", "🔴 Adobe", 2.5, "- Full Adobe Creative Cloud access.\n- Full warranty and stability."),
+    ("avira", "🔴 Avira", 2.0, "- Premium Antivirus & Security subscription.\n- Full warranty."),
+    ("chatgpt", "🔴 ChatGPT", 3.0, "- ChatGPT Plus account access.\n- Fast GPT-4o and DALL-E generation."),
+    ("coursera", "🔴 Coursera", 2.0, "- Coursera subscription for professional certificates."),
+    ("duolingo", "🔴 Duolingo", 0.75, "- Duolingo Super 12 Months subscription."),
+    ("elevenlabs", "🔴 ElevenLabs", 3.5, "- AI Voice Generator premium plan."),
+    ("expressvpn", "🔴 ExpressVPN", 2.5, "- High-speed secure VPN subscription."),
+    ("figma", "🔴 Figma", 2.0, "- Figma Pro team access for designers."),
+    ("framer", "🔴 Framer", 2.0, "- Framer Pro web building subscription."),
+    ("gamma", "🔴 Gamma", 2.0, "- AI presentations and docs generator."),
+    ("grok", "🔴 Grok", 2.5, "- xAI Grok premium access."),
+    ("hmavpn", "🔴 HMA VPN", 0.55, "- HideMyAss VPN secure access."),
+    ("jetbrain", "🔴 JetBrain", 3.0, "- All Products Pack license access."),
+    ("kaspersky", "🔴 Kaspersky", 2.0, "- Kaspersky Total Security license."),
+    ("linkedin", "🔴 LinkedIn", 3.0, "- LinkedIn Premium Career/Business access."),
+    ("lovable", "🔴 Lovable", 2.5, "- Full stack AI web app builder."),
+    ("muse", "🔴 Muse", 2.0, "- Muse AI premium tools access."),
+    ("notion", "🔴 Notion", 2.0, "- Notion Pro workspace subscription."),
+    ("youtube", "🔴 YouTube", 2.0, "- YouTube Premium ad-free subscription."),
+    ("ilovepdf", "🔴 iLovePdf", 1.5, "- iLovePDF Premium tools access."),
+    ("api", "🔴 API", 5.0, "- High limit developer API keys."),
+    ("grammarly", "🔴 Grammarly", 2.0, "- Grammarly Premium writing assistant."),
+    ("nordvpn", "🔴 Nord Vpn", 2.0, "- NordVPN secure high-speed servers."),
+    ("scribd", "🔴 Scribd", 2.0, "- Scribd ebooks and audiobooks access."),
+    ("wispr", "🔴 Wispr", 2.0, "- Wispr Flow voice dictation tool."),
+    ("udemy", "🔴 Udemy", 2.0, "- Premium courses access plan.")
 ]
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
@@ -103,8 +130,8 @@ STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
 STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"]
 STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"]
-STOCK_DATABASE["autodesk"] = ["Autodesk_Admin_Key_ABC123"]
-STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_canva_invite_1"]
+STOCK_DATABASE["autodesk"] = ["Autodesk_Key_ABC123"]
+STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
 
 USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
