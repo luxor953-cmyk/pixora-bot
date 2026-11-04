@@ -15,43 +15,78 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 app = Flask(__name__)
 
-RAW_PRODUCTS = [
-    ("gemini_pro_18m", "1 🔥 Gemini Pro 18 Months Link", 3.00, "اشتراك Gemini Pro رسمي رابط تفعيل لمدة 18 شهراً:\n• مساحة سحابية 2TB على Google One.\n• وصول كامل لميزات الذكاء الاصطناعي المتقدمة.\n⚡ التسليم فوري بعد الدفع."),
-    ("duolingo_super_12m", "🦉 Duolingo Super 12 Months", 0.75, "اشتراك Duolingo Super رسمي لمدة 12 شهراً كاملة:\n• قلوب غير محدودة لتعلم اللغات دون توقف.\n• بدون إعلانات نهائياً مع تتبع التقدم.\n⚡ التسليم فوري بعد الدفع."),
-    ("adobe_express_12m", "🎨 Adobe Express 12M", 0.35, "حساب رسمي مفعل Adobe Express Premium لمدة سنة كاملة:\n• تصميم احترافي مع قوالب وخطوط بريميوم.\n• أدوات الذكاء الاصطناعي التوليدي من Adobe Firefly.\n⚡ التسليم فوري بعد الدفع."),
-    ("hma_vpn", "🐺 HMA VPN Android/PC 30-25 Days", 0.55, "حساب HMA VPN مفعل (Android / PC) لمدة 25-30 يوماً:\n• خوادم سريعة جداً وتشفير كامل للخصوصية.\n• فك الحظر عن كافة المواقع والتطبيقات.\n⚡ التسليم فوري بعد الدفع."),
-    ("spotify_prem_3m", "🟢 Spotify Premium 3M", 1.45, "اشتراك Spotify بريميوم لمدة 3 أشهر:\n• استماع بدون إعلانات وبأعلى نقاوة صوت.\n• ميزة التحميل والاستماع في وضع أوفلاين.\n⚡ التسليم فوري بعد الدفع."),
-    ("capcut", "✂️ CapCut", 1.30, ""),
-    ("chatgpt", "🤖 ChatGPT", 18.00, ""),
-    ("gemini_ai", "1️⃣ Gemini Ai", 3.00, ""),
-    ("microsoft_365", "🟩 Microsoft 365", 0.30, ""),
-    ("office_pro_plus_p", "💼 Office Pro Plus (P...)", 2.50, ""),
-    ("windows_phone", "🪟 Windows (Phone...)", 2.50, ""),
-    ("office_pp_online", "💼 Office PP (Online...)", 3.00, ""),
-    ("windows_online", "🪟 Windows (Online...)", 3.50, ""),
-    ("autodesk", "🔺 AUTODESK", 3.00, ""),
-    ("muse_ai", "Ⓜ️ Muse AI", 5.00, ""),
-    ("chatgpt_plus_best", "🤖 🔥(💚BEST SELLER) ChatGPT Plus (G Pay...", 18.00, ""),
-    ("capcut_1y", "🎞️ CapCut Pro (1 Year)", 9.50, ""),
-    ("filmora", "🎬 Wondershare Filmora 13", 8.00, ""),
-    ("canva_pro", "🎨 Canva Pro (1 Year)", 4.00, ""),
-    ("picsart", "📸 PicsArt Gold (1 Year)", 3.00, ""),
-    ("claude_pro", "🧠 Claude Pro (1 Month)", 18.00, ""),
-    ("elevenlabs", "🎙️ ElevenLabs Starter", 5.00, ""),
-    ("midjourney", "🎨 Midjourney Basic", 10.00, ""),
-    ("runway", "📹 Runway Gen-2", 12.00, ""),
-    ("perplexity", "🔍 Perplexity Pro", 6.00, ""),
-    ("windows_11_pro", "🪟 Windows 11 Pro Key", 3.50, ""),
-    ("windows_10_pro", "🪟 Windows 10 Pro Key", 2.50, ""),
-    ("nordvpn_1y", "🛡️ NordVPN (1 Year)", 3.50, ""),
-    ("expressvpn_1m", "⚡ ExpressVPN (1 Month)", 4.00, ""),
-    ("surfshark_1y", "🦈 Surfshark VPN (1 Year)", 3.00, ""),
-    ("kaspersky_1y", "🦠 Kaspersky Total Security", 5.00, "")
+# الأصناف العلوية غير المتوفرة (شبكة ثنائية كما في الصورة الأصلية)
+PRODUCTS_GRID_UPPER = [
+    ("capcut", "✂️ CapCut", 1.30),
+    ("chatgpt", "🤖 ChatGPT", 18.00),
+    ("gemini_ai", "1️⃣ Gemini Ai", 3.00),
+    ("microsoft_365", "🟩 Microsoft 365", 0.30),
+    ("office_pro_plus_p", "💼 Office Pro Plus (P...", 2.50),
+    ("windows_phone", "🪟 Windows (Phone...", 2.50),
+    ("office_pp_online", "💼 Office PP (Online...", 3.00),
+    ("windows_online", "🪟 Windows (Online...", 3.50),
+    ("autodesk", "🔺 AUTODESK", 3.00),
+    ("muse_ai", "Ⓜ️ Muse AI", 5.00),
+    ("chatgpt_best", "🤖 🔥(💚BEST SELLER) ChatGPT Plus (G Pay...", 18.00),
+    ("filmora", "🎬 Wondershare Filmora", 8.00),
+    ("canva_pro", "🎨 Canva Pro", 4.00),
+    ("picsart", "📸 PicsArt Gold", 3.00),
+    ("claude_pro", "🧠 Claude Pro", 18.00),
+    ("elevenlabs", "🎙️ ElevenLabs Starter", 5.00),
+    ("midjourney", "🎨 Midjourney Basic", 10.00),
+    ("runway", "📹 Runway Gen-2", 12.00),
+    ("perplexity", "🔍 Perplexity Pro", 6.00),
+    ("nordvpn", "🛡️ NordVPN Premium", 3.50),
+    ("expressvpn", "⚡ ExpressVPN", 4.00),
+    ("surfshark", "🦈 Surfshark VPN", 3.00),
+    ("kaspersky", "🦠 Kaspersky Security", 5.00),
+    ("windows_11", "🪟 Windows 11 Pro", 3.50),
+    ("windows_10", "🪟 Windows 10 Pro", 2.50),
+    ("github_pack", "🐙 GitHub Student Pack", 7.00)
 ]
 
-PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
+# الأصناف المتوفرة بالأسفل مع الأوصاف والكميات
+PRODUCTS_IN_STOCK_LOWER = [
+    (
+        "gemini_pro_18m",
+        "1 🔥 Gemini Pro 18 Months Link",
+        3.00,
+        "اشتراك Gemini Pro رسمي رابط تفعيل لمدة 18 شهراً:\n• مساحة سحابية 2TB على Google One.\n• وصول كامل لميزات الذكاء الاصطناعي.\n⚡ التسليم فوري بعد التحويل."
+    ),
+    (
+        "duolingo_super_12m",
+        "🦉 Duolingo Super 12 Months",
+        0.75,
+        "اشتراك Duolingo Super رسمي لمدة سنة كاملة:\n• قلوب غير محدودة لتعلم اللغات بدون توقف وبدون إعلانات.\n⚡ التسليم فوري بعد التحويل."
+    ),
+    (
+        "adobe_express_12m",
+        "🎨 Adobe Express 12M",
+        0.35,
+        "حساب رسمي مفعل Adobe Express Premium لمدة سنة كاملة:\n• تصميم احترافي وقوالب بريميوم مع أدوات الذكاء الاصطناعي.\n⚡ التسليم فوري بعد التحويل."
+    ),
+    (
+        "hma_vpn",
+        "🐺 HMA VPN Android/PC 30-25 Days",
+        0.55,
+        "حساب HMA VPN مفعل (Android / PC) لمدة 25-30 يوماً:\n• سرعة عالية وتشفير لحماية خصوصيتك وفك الحجب.\n⚡ التسليم فوري بعد التحويل."
+    ),
+    (
+        "spotify_prem_3m",
+        "🟢 Spotify Premium 3M",
+        1.45,
+        "اشتراك Spotify بريميوم لمدة 3 أشهر:\n• استماع بدون إعلانات وبأعلى دقة وميزة التنزيل أوفلاين.\n⚡ التسليم فوري بعد التحويل."
+    )
+]
 
-STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
+ALL_PRODUCTS = {}
+for k, n, p in PRODUCTS_GRID_UPPER:
+    ALL_PRODUCTS[k] = {"name": n, "price": p, "description": ""}
+
+for k, n, p, d in PRODUCTS_IN_STOCK_LOWER:
+    ALL_PRODUCTS[k] = {"name": n, "price": p, "description": d}
+
+STOCK_DATABASE = {k: [] for k in ALL_PRODUCTS}
 STOCK_DATABASE["gemini_pro_18m"] = ["Gemini_Link_1", "Gemini_Link_2", "Gemini_Link_3", "Gemini_Link_4"]
 STOCK_DATABASE["duolingo_super_12m"] = ["Duo_Key_1", "Duo_Key_2", "Duo_Key_3", "Duo_Key_4", "Duo_Key_5"]
 STOCK_DATABASE["adobe_express_12m"] = [f"Adobe_Acc_{i}" for i in range(1, 11)]
@@ -88,25 +123,41 @@ WELCOME_TEXT = "Choose Your Product:"
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup()
-    for k, info in PRODUCTS_INFO.items():
-        stock_count = len(STOCK_DATABASE.get(k, []))
-        if stock_count > 0:
-            markup.add(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']} ({stock_count})", callback_data=f"buy_{k}"))
-    out_stock_btns = []
-    for k, info in PRODUCTS_INFO.items():
-        if len(STOCK_DATABASE.get(k, [])) == 0:
-            out_stock_btns.append(InlineKeyboardButton(f"❌ {info['name']}", callback_data=f"sold_out_{k}"))
-    for i in range(0, len(out_stock_btns), 2):
-        if i + 1 < len(out_stock_btns):
-            markup.row(out_stock_btns[i], out_stock_btns[i+1])
+
+    # 1. الشبكة العلوية الثنائية (2x2)
+    grid_buttons = []
+    for k, n, p in PRODUCTS_GRID_UPPER:
+        grid_buttons.append(InlineKeyboardButton(n, callback_data=f"select_{k}"))
+
+    for i in range(0, len(grid_buttons), 2):
+        if i + 1 < len(grid_buttons):
+            markup.row(grid_buttons[i], grid_buttons[i+1])
         else:
-            markup.row(out_stock_btns[i])
-    markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+            markup.row(grid_buttons[i])
+
+    # 2. أزرار المنتجات المتوفرة العريضة بالأسفل
+    for k, n, p, d in PRODUCTS_IN_STOCK_LOWER:
+        stock_cnt = len(STOCK_DATABASE.get(k, []))
+        btn_label = f"{n} · ${p} ({stock_cnt})"
+        markup.add(InlineKeyboardButton(btn_label, callback_data=f"select_{k}"))
+
+    # 3. الـ 4 أزرار السفلية الأساسية مرتبة في صفين متوازيين (2x2)
+    markup.row(
+        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
+        InlineKeyboardButton("🛍️ Products", callback_data="main_menu")
+    )
+    markup.row(
+        InlineKeyboardButton("📜 My Orders", callback_data="my_orders"),
+        InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments")
+    )
+    # زر الدعم الفني الإضافي
+    markup.add(InlineKeyboardButton("🛠️ Contact Support", url=SUPPORT_WHATSAPP))
+    
     return markup
 
 @app.route('/')
 def home():
-    return "Pixora Store is Running!", 200
+    return "Pixora Store Bot is Running!", 200
 
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def receive_update():
@@ -134,7 +185,7 @@ def handle_query(call):
         if token in PENDING_ORDERS:
             o = PENDING_ORDERS.pop(token)
             u_id, p_key = o["chat_id"], o["prod_key"]
-            p_name = PRODUCTS_INFO[p_key]["name"]
+            p_name = ALL_PRODUCTS[p_key]["name"]
             if len(STOCK_DATABASE.get(p_key, [])) > 0:
                 item = STOCK_DATABASE[p_key].pop(0)
                 ords = load_orders()
@@ -145,7 +196,7 @@ def handle_query(call):
                     "time": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
                 save_orders(ords)
-                msg = f"🎉 <b>تم تأكيد الدفع بنجاح!</b>\n\n📦 بيانات {p_name}:\n<code>{item}</code>\n\nشكراً لتعاملك مع <b>Pixora Store</b> 💚"
+                msg = f"🎉 <b>تم تأكيد الدفع بنجاح!</b>\n\n📦 بيانات {p_name}:\n<code>{item}</code>\n\n📜 تم حفظ طلبك في (سجل مشترياتي).\nشكراً لتعاملك مع <b>Pixora Store</b> 💚"
                 bot.send_message(u_id, msg, parse_mode="HTML")
                 bot.edit_message_text(f"✅ تم تسليم {p_name} للعميل بنجاح.", chat_id, msg_id)
             else:
@@ -161,22 +212,21 @@ def handle_query(call):
             bot.edit_message_text("❌ تم رفض الطلب.", chat_id, msg_id)
         return
 
-    if data.startswith("sold_out_"):
-        bot.answer_callback_query(call.id, "❌ Sold Out - هذا المنتج غير متوفر حالياً!", show_alert=True)
-
-    elif data.startswith("buy_"):
-        p_key = data.replace("buy_", "")
-        if p_key in PRODUCTS_INFO:
+    if data.startswith("select_"):
+        p_key = data.replace("select_", "")
+        if p_key in ALL_PRODUCTS:
             stock = len(STOCK_DATABASE.get(p_key, []))
             if stock == 0:
-                bot.answer_callback_query(call.id, "❌ نفدت الكمية للتو!", show_alert=True)
+                bot.answer_callback_query(call.id, "❌ Sold Out - هذا المنتج غير متوفر حالياً في المخزن!", show_alert=True)
                 return
+            
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT[chat_id] = p_key
-            info = PRODUCTS_INFO[p_key]
+            info = ALL_PRODUCTS[p_key]
             markup = InlineKeyboardMarkup(row_width=1)
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data=f"pay_steps_{p_key}"))
             markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+            
             desc_part = f"\n📰 <b>Description:</b>\n{info['description']}\n" if info['description'] else ""
             text = f"🏷️ <b>{info['name']}</b>\n💰 <b>Price:</b> <code>${info['price']}</code>\n📦 <b>Stock:</b> <code>{stock}</code>{desc_part}\n🛍️ <b>Buy Quantity:</b> 1"
             safe_delete_message(chat_id, msg_id)
@@ -184,11 +234,34 @@ def handle_query(call):
 
     elif data.startswith("pay_steps_"):
         p_key = data.replace("pay_steps_", "")
-        info = PRODUCTS_INFO[p_key]
+        info = ALL_PRODUCTS[p_key]
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data=f"buy_{p_key}"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data=f"select_{p_key}"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+        
         text = f"🪙 <b>خطوات الدفع عبر Binance Pay:</b>\n\n1️⃣ حول مبلغ (<code>{info['price']} USDT</code>) إلى Binance ID: <code>{BINANCE_ID}</code>\n\n2️⃣ أرسل <b>رقم العملية (Order ID)</b> أو صورة الإشعار هنا في الشات لتأكيد طلبك واستلام حسابك فوراً!"
+        safe_delete_message(chat_id, msg_id)
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+    elif data == "show_payments":
+        bot.answer_callback_query(call.id)
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+        text = f"🪙 <b>معلومات الدفع في متجر Pixora Store:</b>\n\nBinance Pay ID: <code>{BINANCE_ID}</code>\n\nاختر منتجك أولاً من القائمة ثم أرسل إثبات الدفع بعد التحويل."
+        safe_delete_message(chat_id, msg_id)
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+    elif data == "my_orders":
+        bot.answer_callback_query(call.id)
+        ords = load_orders().get(str(chat_id), [])
+        if not ords:
+            text = "📜 <b>سجل مشترياتي:</b>\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
+        else:
+            text = "📜 <b>سجل مشترياتي السابقة:</b>\n\n"
+            for idx, o in enumerate(ords, 1):
+                text += f"{idx}️⃣ <b>المنتج:</b> {o['product']}\n🔑 <b>البيانات:</b> <code>{o['item']}</code>\n🆔 <b>العملية:</b> <code>{o['order_id']}</code>\n📅 <b>الوقت:</b> {o['time']}\n------------------------\n"
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
         safe_delete_message(chat_id, msg_id)
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
@@ -209,7 +282,7 @@ def handle_incoming(message):
         return
 
     p_key = USER_SELECTED_PRODUCT[chat_id]
-    info = PRODUCTS_INFO[p_key]
+    info = ALL_PRODUCTS[p_key]
     order_id = message.text.strip() if message.content_type == 'text' else "صورة إيصال"
     token = f"{chat_id}_{int(time.time())}"
 
