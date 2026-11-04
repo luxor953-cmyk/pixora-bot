@@ -24,7 +24,33 @@ RAW_PRODUCTS = [
     ("gemini", "💠 Gemini", 3.0, "Gemini AI Pro 18 Months Plan - 5TB Storage."),
     ("office", "🟩 Microsoft Office 365", 0.30, "Office 365 Plus 5 Devices + 1TB OneDrive."),
     ("autodesk", "🔺 Autodesk", 3.0, "Autodesk Admin Dashboard 1 Year Access."),
-    ("canva", "🎨 Canva", 4.0, "Canva Edu Pro invite link.")
+    ("canva", "🎨 Canva", 4.0, "Canva Edu Pro invite link."),
+    ("adobe", "🔴 Adobe", 2.5, "Full Adobe Creative Cloud access."),
+    ("avira", "🔴 Avira", 2.0, "Premium Antivirus & Security subscription."),
+    ("chatgpt", "🔴 ChatGPT", 3.0, "ChatGPT Plus account access."),
+    ("coursera", "🔴 Coursera", 2.0, "Coursera subscription for certificates."),
+    ("duolingo", "🔴 Duolingo", 0.75, "Duolingo Super 12 Months."),
+    ("elevenlabs", "🔴 ElevenLabs", 3.5, "AI Voice Generator premium plan."),
+    ("expressvpn", "🔴 ExpressVPN", 2.5, "High-speed secure VPN subscription."),
+    ("figma", "🔴 Figma", 2.0, "Figma Pro team access for designers."),
+    ("framer", "🔴 Framer", 2.0, "Framer Pro web building subscription."),
+    ("gamma", "🔴 Gamma", 2.0, "AI presentations and docs generator."),
+    ("grok", "🔴 Grok", 2.5, "xAI Grok premium access."),
+    ("hmavpn", "🔴 HMA VPN", 0.55, "HideMyAss VPN secure access."),
+    ("jetbrain", "🔴 JetBrain", 3.0, "All Products Pack license access."),
+    ("kaspersky", "🔴 Kaspersky", 2.0, "Kaspersky Total Security license."),
+    ("linkedin", "🔴 LinkedIn", 3.0, "LinkedIn Premium Career/Business access."),
+    ("lovable", "🔴 Lovable", 2.5, "Full stack AI web app builder."),
+    ("muse", "🔴 Muse", 2.0, "Muse AI premium tools access."),
+    ("notion", "🔴 Notion", 2.0, "Notion Pro workspace subscription."),
+    ("youtube", "🔴 YouTube", 2.0, "YouTube Premium ad-free subscription."),
+    ("ilovepdf", "🔴 iLovePdf", 1.5, "iLovePDF Premium tools access."),
+    ("api", "🔴 API", 5.0, "High limit developer API keys."),
+    ("grammarly", "🔴 Grammarly", 2.0, "Grammarly Premium writing assistant."),
+    ("nordvpn", "🔴 Nord Vpn", 2.0, "NordVPN secure high-speed servers."),
+    ("scribd", "🔴 Scribd", 2.0, "Scribd ebooks and audiobooks access."),
+    ("wispr", "🔴 Wispr", 2.0, "Wispr Flow voice dictation tool."),
+    ("udemy", "🔴 Udemy", 2.0, "Premium courses access plan.")
 ]
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
@@ -62,12 +88,12 @@ def save_orders(orders_data):
     except Exception as e:
         print("Error saving orders:", e)
 
-WELCOME_TEXT = """🔥 <b>أهلاً بك في متجر Pixora Store الرقمي الأول!</b> 🚀
-
-⚡ <i>نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.</i>
-💎 <b>التسليم فوري وآلي بالكامل</b> خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!
-
-👇 <b>اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:</b>"""
+WELCOME_TEXT = (
+    "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
+    "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
+    "💎 **التسليم فوري وآلي بالكامل** خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!\n\n"
+    "👇 **اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:**"
+)
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup(row_width=2)
@@ -136,7 +162,7 @@ def verify_binance_payment(order_id, expected_amount):
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="HTML")
+    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -159,19 +185,10 @@ def handle_query(call):
             markup = InlineKeyboardMarkup(row_width=1)
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
-            
-            msg_text = f"""🏷️ <b>{info['name']}</b>
-💰 <b>Price:</b> <code>${info['price']}</code>
-
-📦 <b>Stock:</b> <code>{stock_len}</code>
-📰 <b>Description:</b>
-
-{info['description']}
-
-🛍️ <b>Buy Quantity:</b> 1"""
+            msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
             
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
             
     elif call.data.startswith("pay_steps_"):
         prod_key = call.data.replace("pay_steps_", "")
@@ -179,29 +196,19 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        
-        pay_msg = f"""🪙 <b>خطوات الدفع الفوري عبر Binance Pay:</b>
-
-1️⃣ حول مبلغ (<code>{info['price']} USDT</code>) إلى Binance ID: <code>{BINANCE_ID}</code>
-
-2️⃣ انسخ <b>رقم العملية (Order ID)</b> من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"""
+        pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"
         
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
+        bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="Markdown")
         
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        
-        pay_text = f"""🪙 <b>معلومات الدفع في متجر Pixora Store:</b>
-
-Binance Pay ID: <code>{BINANCE_ID}</code>
-
-اختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."""
+        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
         
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="HTML")
+        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data == "my_orders":
         bot.answer_callback_query(call.id)
@@ -225,7 +232,7 @@ Binance Pay ID: <code>{BINANCE_ID}</code>
         bot.answer_callback_query(call.id)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="HTML")
+        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
 
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
@@ -264,14 +271,13 @@ def handle_incoming(message):
             all_orders[str_chat_id].append(new_order)
             save_orders(all_orders)
 
-            success_text = f"""🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>
-
-📦 بيانات حسابك لمنتج <b>{info['name']}</b>:
-<code>{item}</code>
-
-📜 تم حفظ طلبك في (سجل مشترياتي).
-
-شكراً لثقتك بمتجر <b>Pixora Store</b> 💚"""
+            success_text = (
+                f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n"
+                f"📦 بيانات حسابك لمنتج <b>{info['name']}</b>:\n"
+                f"<code>{item}</code>\n\n"
+                f"📜 تم حفظ طلبك في (سجل مشترياتي).\n\n"
+                f"شكراً لثقتك بمتجر <b>Pixora Store</b> 💚"
+            )
             
             try:
                 bot.edit_message_text(success_text, chat_id, wait_msg.message_id, parse_mode="HTML")
