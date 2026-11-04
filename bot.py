@@ -15,29 +15,22 @@ BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
 BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
-RENDER_URL = os.environ.get("RENDER_URL", "").strip()
+RENDER_URL = os.environ.get("RENDER_URL", "https://pixora-bot-1.onrender.com").strip()
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 app = Flask(__name__)
 
-# قائمة المنتجات الكاملة مع المنتجات التي رصيدها 0
 RAW_PRODUCTS = [
-    ("capcut", "🎞️ CapCut", 1.3, "CapCut Pro 30 Days - التسليم فوري وآلي."),
-    ("gemini", "💠 Gemini", 3.0, "Gemini AI Pro 18 Months Plan - سعة 5TB."),
+    ("capcut", "🎞️ CapCut", 1.3, "CapCut Pro 30 Days - Delivery is automatic."),
+    ("gemini", "💠 Gemini", 3.0, "Gemini AI Pro 18 Months Plan - 5TB Storage."),
     ("office", "🟩 Microsoft Office 365", 0.30, "Office 365 Plus 5 Devices + 1TB OneDrive."),
     ("autodesk", "🔺 Autodesk", 3.0, "Autodesk Admin Dashboard 1 Year Access."),
-    ("canva", "🎨 Canva Edu", 4.0, "رابط دعوة رسمي لحساب Canva Edu Pro مدى الحياة."),
-    ("chatgpt", "🤖 ChatGPT Plus", 5.0, "اشتراك ChatGPT Plus لمدة شهر."),
-    ("netflix", "🍿 Netflix UHD", 3.5, "حساب Netflix بريميوم شاشة واحدة لمدة شهر."),
-    ("spotify", "🎵 Spotify Premium", 2.0, "اشتراك Spotify فردي مدة شهر."),
-    ("nordvpn", "🛡️ NordVPN", 2.5, "حساب NordVPN مدفوع لمدة سنة."),
-    ("crunchyroll", "🍥 Crunchyroll", 1.8, "حساب Crunchyroll Mega Fan لمدة شهر.")
+    ("canva", "🎨 Canva", 4.0, "Canva Edu Pro invite link.")
 ]
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-# قاعدة بيانات المخزون (المنتجات التي رصيدها صفر تركت فارغة [])
 STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
 STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
@@ -76,7 +69,7 @@ WELCOME_TEXT = """🔥 <b>أهلاً بك في متجر Pixora Store الرقم�
 ⚡ <i>نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.</i>
 💎 <b>التسليم فوري وآلي بالكامل</b> خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!
 
-👇 <b>اختر منتجك أدناه، وابدأ طلبك الآن:</b>"""
+👇 <b>اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:</b>"""
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup(row_width=2)
@@ -293,7 +286,6 @@ def handle_incoming(message):
     bot.send_message(chat_id, "📌 يرجى إرسال <b>رقم العملية (Order ID)</b> النصي بعد التحويل.", parse_mode="HTML")
 
 def init_app():
-    time.sleep(2)
     if BOT_TOKEN and RENDER_URL:
         try:
             target_url = f"{RENDER_URL}/{BOT_TOKEN}"
