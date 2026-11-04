@@ -153,6 +153,10 @@ def verify_binance_payment(order_id, expected_amount):
     try:
         response = requests.get(full_url, headers=headers, timeout=10)
         data = response.json()
+        
+        # طباعة الرد في الـ Logs لمعرفة سبب الخطأ بدقة
+        print("Binance response:", response.status_code, str(data)[:300])
+
         if data.get("code") == "000000" and "data" in data:
             for tx in data["data"]:
                 tx_id = str(tx.get("orderId", ""))
@@ -170,7 +174,7 @@ def verify_binance_payment(order_id, expected_amount):
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    # تم تعيين row_width=2 ليكون هناك منتجان في كل صف لتجنب الزحمة
+    # الحفاظ على منتجين في كل صف لتجنب الزحمة
     markup = InlineKeyboardMarkup(row_width=2)
     buttons = []
 
@@ -196,7 +200,7 @@ def send_welcome(message):
         InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
     )
 
-    # رسالة الترحيب القوية التي تحفز الزبون على الاشتراك والشراء الفوري
+    # رسالة الترحيب القوية
     welcome_text = (
         "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
         "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
