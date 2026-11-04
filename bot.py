@@ -5,20 +5,20 @@ import hashlib
 import urllib.parse
 import requests
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from flask import Flask, request
 
-# === الإعدادات (المفاتيح تُقرأ من Environment Variables في Render) ===
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-BINANCE_API_KEY = os.environ["BINANCE_API_KEY"]
-BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY"]
+# === الإعدادات الأساسية ===
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY")
+BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY")
 
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = "https://pixora-bot-egyp.onrender.com"
-SUPPORT_WHATSAPP = "https://wa.me/213555668244"  # رقم الواتساب المباشر للدعم الفني
+SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
-# تفعيل الـ Threading (المتعدد الخيوط) لضمان سرعة البوت وعدم تجمده أثناء الاتصال بالخارج
+# تهيئة البوت مع تفعيل الـ Threading للسرعة ومنع التجمد
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 try:
@@ -27,7 +27,7 @@ try:
 except Exception as e:
     print("Webhook error:", e)
 
-# جميع المنتجات مع أسمائها، أسرارها، وأوصافها التفصيلية
+# === بيانات المنتجات ===
 PRODUCTS_INFO = {
     "capcut": {
         "name": "🎞️ CapCut", 
@@ -54,7 +54,6 @@ PRODUCTS_INFO = {
         "price": 2.0,
         "description": "- Canva Pro Team Invitation.\n- Unlock all premium templates, fonts, and background remover.\n- Private account safety with full warranty."
     },
-
     "adobe": {"name": "🔴 Adobe", "price": 2.5, "description": "- Full Adobe Creative Cloud access.\n- Full warranty and stability."},
     "avira": {"name": "🔴 Avira", "price": 2.0, "description": "- Premium Antivirus & Security subscription.\n- Full warranty."},
     "chatgpt": {"name": "🔴 ChatGPT", "price": 3.0, "description": "- ChatGPT Plus account access.\n- Fast GPT-4o and DALL-E generation."},
@@ -83,14 +82,13 @@ PRODUCTS_INFO = {
     "udemy": {"name": "🔴 Udemy", "price": 2.0, "description": "- Premium courses access plan."}
 }
 
-# قاعدة بيانات المخزون
+# مخزون الحسابات
 STOCK_DATABASE = {
     "capcut": ["CapCut_Key_1: user1@pixoras.com / pass123"],
     "gemini": ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"],
     "office": ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"],
     "autodesk": ["Autodesk_Key_ABC123"],
     "canva": ["https://www.canva.com/brand/join?inv=sample_1"],
-
     "adobe": [], "avira": [], "chatgpt": [], "coursera": [], "duolingo": [],
     "elevenlabs": [], "expressvpn": [], "figma": [], "framer": [], "gamma": [],
     "grok": [], "hmavpn": [], "jetbrain": [], "kaspersky": [], "linkedin": [],
@@ -101,27 +99,30 @@ STOCK_DATABASE = {
 USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
 
-# === شعارات المنتجات ===
 LOGO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logos")
-LOGO_CACHE = {} 
 
-def send_product_card(chat_id, prod_key, caption, markup):
-    path = os.path.join(LOGO_DIR, prod_key + ".png")
-    try:
-        if prod_key in LOGO_CACHE:
-            bot.send_photo(chat_id, LOGO_CACHE[prod_key], caption=caption,
-                           reply_markup=markup, parse_mode="Markdown")
-            return
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                msg = bot.send_photo(chat_id, f, caption=caption,
-                                   reply_markup=markup, parse_mode="Markdown")
-            LOGO_CACHE[prod_key] = msg.photo[-1].file_id
-            return
-    except Exception as e:
-        print("Logo error:", e)
-    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="Markdown")
+# دالة لإنشاء أزرار القائمة الرئيسية
+def get_main_menu_markup():
+    markup = InlineKeyboardMarkup(row_width=2)
+    buttons = []
+    for key, info in PRODUCTS_INFO.items():
+        count = len(STOCK_DATABASE.get(key, []))
+        if count == 0:
+            buttons.append(InlineKeyboardButton(f"{info['name']}", callback_data="sold_out_" + key))
+        else:
+            buttons.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + key))
+    markup.add(*buttons)
+    markup.add(
+        InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
+        InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
+    )
+    markup.add(
+        InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"),
+        InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
+    )
+    return markup
 
+# ==================== خادم Flask ====================
 app = Flask('')
 
 @app.route('/')
@@ -135,6 +136,7 @@ def receive_update():
     bot.process_new_updates([update])
     return "!", 200
 
+# ==================== التحقق من الدفع عبر Binance ====================
 def verify_binance_payment(order_id, expected_amount):
     if order_id in USED_TRANSACTIONS:
         return False, "رقم العملية هذا تم استخدامه مسبقاً!"
@@ -154,8 +156,6 @@ def verify_binance_payment(order_id, expected_amount):
     try:
         response = requests.get(full_url, headers=headers, timeout=10)
         data = response.json()
-        
-        # طباعة الرد في الـ Logs لمعرفة سبب أي خطأ بدقة
         print("Binance response:", response.status_code, str(data)[:300])
 
         if data.get("code") == "000000" and "data" in data:
@@ -173,35 +173,10 @@ def verify_binance_payment(order_id, expected_amount):
     except Exception as e:
         return False, "خطأ في الاتصال: " + str(e)
 
+# ==================== أوامر البوت والتفاعل ====================
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    # الحفاظ على منتجين في كل صف لتجنب الزحمة
-    markup = InlineKeyboardMarkup(row_width=2)
-    buttons = []
-
-    for key, info in PRODUCTS_INFO.items():
-        count = len(STOCK_DATABASE.get(key, []))
-
-        if count == 0:
-            btn_text = f"{info['name']}"
-            buttons.append(InlineKeyboardButton(btn_text, callback_data="sold_out_" + key))
-        else:
-            btn_text = f"🟢 {info['name']} · ${info['price']}"
-            buttons.append(InlineKeyboardButton(btn_text, callback_data="buy_" + key))
-
-    markup.add(*buttons)
-    
-    # صف أزرار التحكم والخدمات الإضافية أسفل القائمة
-    markup.add(
-        InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
-        InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
-    )
-    markup.add(
-        InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"),
-        InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
-    )
-
-    # رسالة الترحيب القوية
+    markup = get_main_menu_markup()
     welcome_text = (
         "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
         "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
@@ -213,6 +188,7 @@ def send_welcome(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     chat_id = call.message.chat.id
+    message_id = call.message.message_id
 
     if call.data.startswith("sold_out_"):
         bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
@@ -245,7 +221,18 @@ def handle_query(call):
                 f"{info['description']}\n\n"
                 f"🛍️ **Buy Quantity:** 1"
             )
-            send_product_card(chat_id, prod_key, msg_text, markup)
+
+            path = os.path.join(LOGO_DIR, prod_key + ".png")
+            try:
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        media = InputMediaPhoto(f, caption=msg_text, parse_mode="Markdown")
+                        bot.edit_message_media(media=media, chat_id=chat_id, message_id=message_id, reply_markup=markup)
+                else:
+                    bot.edit_message_text(msg_text, chat_id=chat_id, message_id=message_id, reply_markup=markup, parse_mode="Markdown")
+            except Exception as e:
+                print("Edit message error:", e)
+                bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
     elif call.data.startswith("pay_steps_"):
         prod_key = call.data.replace("pay_steps_", "")
@@ -266,7 +253,20 @@ def handle_query(call):
 
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
-        send_welcome(call.message)
+        markup = get_main_menu_markup()
+        welcome_text = (
+            "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
+            "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
+            "💎 **التسليم فوري وآلي بالكامل** خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!\n\n"
+            "👇 **اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:**"
+        )
+        try:
+            # محاولة تحديث الرسالة الحالية لتصبح القائمة الرئيسية بدلاً من إرسال رسالة جديدة
+            if chat_id in USER_SELECTED_PRODUCT:
+                del USER_SELECTED_PRODUCT[chat_id]
+            bot.edit_message_text(welcome_text, chat_id=chat_id, message_id=message_id, reply_markup=markup, parse_mode="Markdown")
+        except Exception:
+            bot.send_message(chat_id, welcome_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
@@ -303,11 +303,4 @@ def handle_incoming(message):
                 parse_mode="Markdown"
             )
         else:
-            bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
-        return
-
-    bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال **رقم العملية (Order ID)** النصي بعد إتمام التحويل للحصول على طلبك فوراً.")
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+            bot.edit_message_text(f"❌ لم يكتمل التحقق: {
