@@ -5,10 +5,13 @@ import hashlib
 import urllib.parse
 import requests
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from telebot.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InputMediaPhoto
+)
 from flask import Flask, request
 
-# ==================== الإعدادات الأساسية ====================
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BINANCE_API_KEY = os.environ["BINANCE_API_KEY"]
 BINANCE_SECRET_KEY = os.environ["BINANCE_SECRET_KEY"]
@@ -26,7 +29,6 @@ try:
 except Exception as e:
     print("Webhook error:", e)
 
-# ==================== بيانات المنتجات ====================
 PRODUCTS_INFO = {
     "capcut": {
         "name": "🎞️ CapCut",
@@ -35,7 +37,8 @@ PRODUCTS_INFO = {
             "- Full 30 days private Pro Team account .\n"
             "- Maximum 2 devices , with full warranty .\n"
             "- Stable Account full 30 days (no 7days renew ).\n"
-            "- Login to mobile App first next to laptop (desktop App no web) via QR code ."
+            "- Login to mobile App first next to laptop "
+            "(desktop App no web) via QR code ."
         )
     },
     "gemini": {
@@ -51,7 +54,8 @@ PRODUCTS_INFO = {
         "name": "🟩 Microsoft 365",
         "price": 2.0,
         "description": (
-            "- Official Microsoft 365 account (5 PCs/Macs + 5 Tablets + 5 Phones).\n"
+            "- Official Microsoft 365 account "
+            "(5 PCs/Macs + 5 Tablets + 5 Phones).\n"
             "- 1TB OneDrive Cloud storage included.\n"
             "- Full warranty and multi-device support."
         )
@@ -70,30 +74,157 @@ PRODUCTS_INFO = {
         "price": 2.0,
         "description": (
             "- Canva Pro Team Invitation.\n"
-            "- Unlock all premium templates, fonts, and background remover.\n"
+            "- Unlock all premium templates, fonts, "
+            "and background remover.\n"
             "- Private account safety with full warranty."
         )
     },
-    "adobe": {"name": "🔴 Adobe", "price": 2.5, "description": "- Full Adobe Creative Cloud access.\n- Full warranty and stability."},
-    "avira": {"name": "🔴 Avira", "price": 2.0, "description": "- Premium Antivirus & Security subscription.\n- Full warranty."},
-    "chatgpt": {"name": "🔴 ChatGPT", "price": 3.0, "description": "- ChatGPT Plus account access.\n- Fast GPT-4o and DALL-E generation."},
-    "coursera": {"name": "🔴 Coursera", "price": 2.0, "description": "- Coursera subscription for professional certificates."},
-    "duolingo": {"name": "🔴 Duolingo", "price": 0.75, "description": "- Duolingo Super 12 Months subscription."},
-    "elevenlabs": {"name": "🔴 ElevenLabs", "price": 3.5, "description": "- AI Voice Generator premium plan."},
-    "expressvpn": {"name": "🔴 ExpressVPN", "price": 2.5, "description": "- High-speed secure VPN subscription."},
-    "figma": {"name": "🔴 Figma", "price": 2.0, "description": "- Figma Pro team access for designers."},
-    "framer": {"name": "🔴 Framer", "price": 2.0, "description": "- Framer Pro web building subscription."},
-    "gamma": {"name": "🔴 Gamma", "price": 2.0, "description": "- AI presentations and docs generator."},
-    "grok": {"name": "🔴 Grok", "price": 2.5, "description": "- xAI Grok premium access."},
-    "hmavpn": {"name": "🔴 HMA VPN", "price": 0.55, "description": "- HideMyAss VPN secure access."},
-    "jetbrain": {"name": "🔴 JetBrain", "price": 3.0, "description": "- All Products Pack license access."},
-    "kaspersky": {"name": "🔴 Kaspersky", "price": 2.0, "description": "- Kaspersky Total Security license."},
-    "linkedin": {"name": "🔴 LinkedIn", "price": 3.0, "description": "- LinkedIn Premium Career/Business access."},
-    "lovable": {"name": "🔴 Lovable", "price": 2.5, "description": "- Full stack AI web app builder."},
-    "muse": {"name": "🔴 Muse", "price": 2.0, "description": "- Muse AI premium tools access."},
-    "notion": {"name": "🔴 Notion", "price": 2.0, "description": "- Notion Pro workspace subscription."},
-    "youtube": {"name": "🔴 YouTube", "price": 2.0, "description": "- YouTube Premium ad-free subscription."},
-    "ilovepdf": {"name": "🔴 iLovePdf", "price": 1.5, "description": "- iLovePDF Premium tools access."},
-    "api": {"name": "🔴 API", "price": 5.0, "description": "- High limit developer API keys."},
-    "grammarly": {"name": "🔴 Grammarly", "price": 2.0, "description": "- Grammarly Premium writing assistant."},
-    "nordvpn": {"name
+    "adobe": {
+        "name": "🔴 Adobe",
+        "price": 2.5,
+        "description": (
+            "- Full Adobe Creative Cloud access.\n"
+            "- Full warranty and stability."
+        )
+    },
+    "avira": {
+        "name": "🔴 Avira",
+        "price": 2.0,
+        "description": (
+            "- Premium Antivirus & Security subscription.\n"
+            "- Full warranty."
+        )
+    },
+    "chatgpt": {
+        "name": "🔴 ChatGPT",
+        "price": 3.0,
+        "description": (
+            "- ChatGPT Plus account access.\n"
+            "- Fast GPT-4o and DALL-E generation."
+        )
+    },
+    "coursera": {
+        "name": "🔴 Coursera",
+        "price": 2.0,
+        "description": (
+            "- Coursera subscription for "
+            "professional certificates."
+        )
+    },
+    "duolingo": {
+        "name": "🔴 Duolingo",
+        "price": 0.75,
+        "description": (
+            "- Duolingo Super 12 Months subscription."
+        )
+    },
+    "elevenlabs": {
+        "name": "🔴 ElevenLabs",
+        "price": 3.5,
+        "description": (
+            "- AI Voice Generator premium plan."
+        )
+    },
+    "expressvpn": {
+        "name": "🔴 ExpressVPN",
+        "price": 2.5,
+        "description": (
+            "- High-speed secure VPN subscription."
+        )
+    },
+    "figma": {
+        "name": "🔴 Figma",
+        "price": 2.0,
+        "description": (
+            "- Figma Pro team access for designers."
+        )
+    },
+    "framer": {
+        "name": "🔴 Framer",
+        "price": 2.0,
+        "description": (
+            "- Framer Pro web building subscription."
+        )
+    },
+    "gamma": {
+        "name": "🔴 Gamma",
+        "price": 2.0,
+        "description": (
+            "- AI presentations and docs generator."
+        )
+    },
+    "grok": {
+        "name": "🔴 Grok",
+        "price": 2.5,
+        "description": (
+            "- xAI Grok premium access."
+        )
+    },
+    "hmavpn": {
+        "name": "🔴 HMA VPN",
+        "price": 0.55,
+        "description": (
+            "- HideMyAss VPN secure access."
+        )
+    },
+    "jetbrain": {
+        "name": "🔴 JetBrain",
+        "price": 3.0,
+        "description": (
+            "- All Products Pack license access."
+        )
+    },
+    "kaspersky": {
+        "name": "🔴 Kaspersky",
+        "price": 2.0,
+        "description": (
+            "- Kaspersky Total Security license."
+        )
+    },
+    "linkedin": {
+        "name": "🔴 LinkedIn",
+        "price": 3.0,
+        "description": (
+            "- LinkedIn Premium Career/Business access."
+        )
+    },
+    "lovable": {
+        "name": "🔴 Lovable",
+        "price": 2.5,
+        "description": (
+            "- Full stack AI web app builder."
+        )
+    },
+    "muse": {
+        "name": "🔴 Muse",
+        "price": 2.0,
+        "description": (
+            "- Muse AI premium tools access."
+        )
+    },
+    "notion": {
+        "name": "🔴 Notion",
+        "price": 2.0,
+        "description": (
+            "- Notion Pro workspace subscription."
+        )
+    },
+    "youtube": {
+        "name": "🔴 YouTube",
+        "price": 2.0,
+        "description": (
+            "- YouTube Premium ad-free subscription."
+        )
+    },
+    "ilovepdf": {
+        "name": "🔴 iLovePdf",
+        "price": 1.5,
+        "description": (
+            "- iLovePDF Premium tools access."
+        )
+    },
+    "api": {
+        "name": "🔴 API",
+        "price": 5.0,
+        "description": (
+            "- High limit developer API keys
