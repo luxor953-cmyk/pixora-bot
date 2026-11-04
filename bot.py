@@ -62,12 +62,12 @@ def save_orders(orders_data):
     except Exception as e:
         print("Error saving orders:", e)
 
-WELCOME_TEXT = (
-    "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
-    "⚡ *نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.*\n"
-    "💎 **التسليم فوري وآلي بالكامل** خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!\n\n"
-    "👇 **اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:**"
-)
+WELCOME_TEXT = """🔥 <b>أهلاً بك في متجر Pixora Store الرقمي الأول!</b> 🚀
+
+⚡ <i>نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.</i>
+💎 <b>التسليم فوري وآلي بالكامل</b> خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!
+
+👇 <b>اختر منتجك أدناه، وابدأ تطوير أعمالك أو أدواتك الآن:</b>"""
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup(row_width=2)
@@ -121,53 +121,4 @@ def verify_binance_payment(order_id, expected_amount):
         res = requests.get(f"{url}?{qs}&signature={sig}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=10)
         data = res.json()
         print("Binance response:", res.status_code, str(data)[:300])
-        if data.get("code") == "000000" and "data" in data:
-            for tx in data["data"]:
-                t_id = str(tx.get("orderId", ""))
-                p_id = str(tx.get("prepayId", ""))
-                if (t_id == clean_id or p_id == clean_id) and float(tx.get("amount", 0)) >= expected_amount and tx.get("currency") == "USDT":
-                    USED_TRANSACTIONS.add(clean_id)
-                    return True, "تم التحقق بنجاح"
-            return False, "لم يتم العثور على حوالة بهذا الرقم أو أن المبلغ أقل من المطلوب."
-        return False, f"رد باينانس: {data.get('msg', 'تأكد من صلاحيات الـ API')}"
-    except Exception as e:
-        print("Binance error:", e)
-        return False, "خطأ في الاتصال: " + str(e)
-
-@bot.message_handler(commands=['start', 'menu'])
-def send_welcome(message):
-    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: True)
-def handle_query(call):
-    chat_id = call.message.chat.id
-    msg_id = call.message.message_id
-    
-    if call.data.startswith("sold_out_"):
-        bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
-        
-    elif call.data.startswith("buy_"):
-        prod_key = call.data.replace("buy_", "")
-        if prod_key in PRODUCTS_INFO:
-            stock_len = len(STOCK_DATABASE.get(prod_key, []))
-            if stock_len == 0:
-                bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
-                return
-            bot.answer_callback_query(call.id)
-            USER_SELECTED_PRODUCT[chat_id] = prod_key
-            info = PRODUCTS_INFO[prod_key]
-            markup = InlineKeyboardMarkup(row_width=1)
-            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
-            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
-            msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
-            
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
-            
-    elif call.data.startswith("pay_steps_"):
-        prod_key = call.data.replace("pay_steps_", "")
-        info = PRODUCTS_INFO[prod_key]
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ انسخ **رقم العملية (Order ID)**
+        if data.get("code") == "000000" and "data" in
