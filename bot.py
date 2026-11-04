@@ -18,37 +18,83 @@ except Exception as e:
     print("Webhook error:", e)
 
 RAW_PRODUCTS = [
-    ("capcut", "🎞️ CapCut", 2.0, "- Full 30 days private Pro Team account .\n- Maximum 2 devices , with full warranty .\n- Stable Account full 30 days (no 7days renew ).\n- Login to mobile App first next to laptop (desktop App no web) via QR code ."),
-    ("gemini", "💠 Gemini", 2.0, "- Full access to Gemini Advanced & Pro features.\n- Direct official invite or shared private account.\n- Fast response and full warranty for the duration."),
-    ("office", "🟩 Microsoft 365", 2.0, "- Official Microsoft 365 account (5 PCs/Macs + 5 Tablets + 5 Phones).\n- 1TB OneDrive Cloud storage included.\n- Full warranty and multi-device support."),
-    ("autodesk", "🔺 Autodesk", 3.0, "- Official Autodesk Educational/Pro access.\n- Access to AutoCAD, Revit, Maya, and more.\n- Full warranty and stable subscription."),
-    ("canva", "🎨 Canva", 2.0, "- Canva Pro Team Invitation.\n- Unlock all premium templates, fonts, and background remover.\n- Private account safety with full warranty."),
-    ("adobe", "🔴 Adobe", 2.5, "- Full Adobe Creative Cloud access.\n- Full warranty and stability."),
-    ("avira", "🔴 Avira", 2.0, "- Premium Antivirus & Security subscription.\n- Full warranty."),
-    ("chatgpt", "🔴 ChatGPT", 3.0, "- ChatGPT Plus account access.\n- Fast GPT-4o and DALL-E generation."),
-    ("coursera", "🔴 Coursera", 2.0, "- Coursera subscription for professional certificates."),
-    ("duolingo", "🔴 Duolingo", 0.75, "- Duolingo Super 12 Months subscription."),
-    ("elevenlabs", "🔴 ElevenLabs", 3.5, "- AI Voice Generator premium plan."),
-    ("expressvpn", "🔴 ExpressVPN", 2.5, "- High-speed secure VPN subscription."),
-    ("figma", "🔴 Figma", 2.0, "- Figma Pro team access for designers."),
-    ("framer", "🔴 Framer", 2.0, "- Framer Pro web building subscription."),
-    ("gamma", "🔴 Gamma", 2.0, "- AI presentations and docs generator."),
-    ("grok", "🔴 Grok", 2.5, "- xAI Grok premium access."),
-    ("hmavpn", "🔴 HMA VPN", 0.55, "- HideMyAss VPN secure access."),
-    ("jetbrain", "🔴 JetBrain", 3.0, "- All Products Pack license access."),
-    ("kaspersky", "🔴 Kaspersky", 2.0, "- Kaspersky Total Security license."),
-    ("linkedin", "🔴 LinkedIn", 3.0, "- LinkedIn Premium Career/Business access."),
-    ("lovable", "🔴 Lovable", 2.5, "- Full stack AI web app builder."),
-    ("muse", "🔴 Muse", 2.0, "- Muse AI premium tools access."),
-    ("notion", "🔴 Notion", 2.0, "- Notion Pro workspace subscription."),
-    ("youtube", "🔴 YouTube", 2.0, "- YouTube Premium ad-free subscription."),
-    ("ilovepdf", "🔴 iLovePdf", 1.5, "- iLovePDF Premium tools access."),
-    ("api", "🔴 API", 5.0, "- High limit developer API keys."),
-    ("grammarly", "🔴 Grammarly", 2.0, "- Grammarly Premium writing assistant."),
-    ("nordvpn", "🔴 Nord Vpn", 2.0, "- NordVPN secure high-speed servers."),
-    ("scribd", "🔴 Scribd", 2.0, "- Scribd ebooks and audiobooks access."),
-    ("wispr", "🔴 Wispr", 2.0, "- Wispr Flow voice dictation tool."),
-    ("udemy", "🔴 Udemy", 2.0, "- Premium courses access plan.")
+    ("office", "🟩 Microsoft 365", 1.0, 
+     "✔️ Microsoft 365 Plus – 100GB/1000GB | 5 Devices\n\n"
+     "📱 Full access to Microsoft Office apps.\n\n"
+     "✔️ Format : Email | Password\n\n"
+     "✔️ Word, Excel, PowerPoint, Outlook & more\n"
+     "✔️ Activate on up to 5 devices\n"
+     "✔️ Compatible with Windows, Mac, Android & iOS\n"
+     "✔️ 100GB/1000GB OneDrive cloud storage\n"
+     "✔️ Automatic updates & premium features\n"
+     "✔️ Instant & automatic delivery\n\n"
+     "🛡 2-Year Warranty & Activation Support\n\n"
+     "⚠️ Important Notes :\n"
+     "- Keep your login credentials safe, forgotten password in not covered by Warranty.\n"
+     "- OneDrive Storage is not covered by Warranty always keep backup for your files."),
+     
+    ("gemini", "💠 Gemini Ai", 3.0, 
+     "⚡ 18 Months Plan\n"
+     "⚡ 5TB cloud storage included\n"
+     "⚡ You can add 5 users\n"
+     "⚡ No Shared\n"
+     "⚡ 100% Private \n"
+     "⚡ NO NEED ANY CARD\n"
+     "⚡ The link is delivered via a verified custom domain and redirects to the official Google Gemini website for activation.\n"
+     "🔥 Works in any country, no verification required\n"
+     "🚫 Non Warranty After 1H of Delivery\n\n"
+     "⚡ 100% Genuine Gemini AI Pro Subscription Activated on Your Own Gmail."),
+     
+    ("capcut", "🎞️ CapCut Pro", 1.3, 
+     "📱 CAPCUT PRO Individual – 30 DAYS\n\n"
+     "📌 INFORMATIONS\n"
+     "✔️ CapCut Pro account, valid for 29-30 days.\n"
+     "✔️ Format : Email | Password\n"
+     "✔️ Recommended to log in on 1–2 devices, avoid logging in on multiple devices.\n\n"
+     "🛡 Full Warranty\n\n"
+     "⚠️ Important Notes \n"
+     "- Avoid continuous login/logout or logging in on multiple devices.\n"
+     "- Please check the account immediately after receiving it.\n\n"
+     "Delivery is automatic after payment confirmation."),
+     
+    ("autodesk", "🔺 Autodesk Admin", 3.0, 
+     "✔️ Autodesk Admin Dashboard Access\n"
+     "✔️ Invite & Manage Up to 250 Users\n"
+     "✔️ 1 Year Subscription\n"
+     "✔️ AutoCAD, Revit, Maya, 3ds Max & More\n"
+     "✔️ Full Account Login Credentials\n\n"
+     "🛡 Login Warranty Included\n\n"
+     "✔️ Delivery Format:\n"
+     "Outlook Email | Email Password | Autodesk Password\n\n"
+     "━━━━━━━━━━━━━━━━━━\n"
+     "⚡️ Activation & Setup Guide\n\n"
+     "1️⃣ Login to Your Admin Panel\n"
+     "🔗 https://manage.autodesk.com\n"
+     "2️⃣ Secure Your Account\n"
+     "Update your login credentials and security settings.\n"
+     "🔗 https://profile.autodesk.com/security\n"
+     "3️⃣ Access Autodesk Applications\n"
+     "Explore available Autodesk software.\n"
+     "🔗 https://www.autodesk.com/education/edu-software/overview\n"
+     "4️⃣ Manage Users & Invitations\n"
+     "Invite members and assign available licenses.\n"
+     "🔗 https://manage.autodesk.com/uma/user-list/users\n"
+     "5️⃣ Check Subscription Details\n"
+     "View your licenses and expiration dates.\n"
+     "🔗 https://manage.autodesk.com/billing/subscription-management\n\n"
+     "⚠️ Important Notes:\n"
+     "- Keep your account credentials secure.\n"
+     "- Maximum 250 invitations, subject to available license entitlements.\n\n"
+     "Delivery is automatic after payment confirmation."),
+     
+    ("canva", "🎨 Canva Edu Pro", 0.5, 
+     "🎨 Canva Education Pro – Invite\n\n"
+     "After placing your order, please send your Canva registered email address to receive your invitation.\n\n"
+     "Make sure to provide the correct email address.\n\n"
+     "🏷️ Bulk deals\n"
+     "- 10x → $0.10 off each\n"
+     "- 20x → $0.15 off each\n"
+     "- 50x → $0.20 off each")
 ]
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
@@ -57,13 +103,12 @@ STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
 STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1", "https://g.co/gemini/share/sample_link_2"]
 STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365pp.com  / &$^2^jGq"]
-STOCK_DATABASE["autodesk"] = ["Autodesk_Key_ABC123"]
-STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
+STOCK_DATABASE["autodesk"] = ["Autodesk_Admin_Key_ABC123"]
+STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_canva_invite_1"]
 
 USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
 
-# نظام حفظ واسترجاع السجلات بشكل دائم في ملف orders.json
 ORDERS_FILE = "orders.json"
 
 def load_orders():
@@ -94,7 +139,7 @@ def get_main_menu_markup():
     btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) == 0:
-            btns.append(InlineKeyboardButton(info["name"], callback_data="sold_out_" + k))
+            btns.append(InlineKeyboardButton(f"❌ {info['name']}", callback_data="sold_out_" + k))
         else:
             btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + k))
     markup.add(*btns)
@@ -255,7 +300,6 @@ def handle_incoming(message):
             item = STOCK_DATABASE[prod_key].pop(0)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             
-            # حفظ العملية بشكل دائم في ملف orders.json
             all_orders = load_orders()
             str_chat_id = str(chat_id)
             if str_chat_id not in all_orders:
