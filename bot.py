@@ -207,4 +207,145 @@ def verify_binance_payment(order_id, expected_amount):
         res = requests.get(f"{url}?{qs}&signature={sig}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=10)
         data = res.json()
         print("Binance response:", res.status_code, str(data)[:300])
-        if data.get("code") == "000000" and "
+        if data.get("code") == "000000" and "data" in data:
+            for tx in data["data"]:
+                t_id, p_id = str(tx.get("orderId", "")), str(tx.get("prepayId", ""))
+                if (t_id == clean_id or p_id == clean_id) and float(tx.get("amount", 0)) >= expected_amount and tx.get("currency") == "USDT":
+                    USED_TRANSACTIONS.add(clean_id)
+                    return True, "تم التحقق بنجاح"
+            return False, "لم يتم العثور على حوالة بهذا الرقم أو أن المبلغ أقل من المطلوب."
+        return False, "تعذر الاتصال ببوابة باينانس، تأكد من مفاتيح الـ API."
+    except Exception as e:
+        return False, "خطأ في الاتصال: " + str(e)
+
+@bot.message_handler(commands=['start', 'menu'])
+def send_welcome(message):
+    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    chat_id, msg_id = call.message.chat.id, call.message.message_id
+    if call.data.startswith("sold_out_"):
+        bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
+    elif call.data.startswith("buy_"):
+        prod_key = call.data.replace("buy_", "")
+        if prod_key in PRODUCTS_INFO:
+            stock_len = len(STOCK_DATABASE.get(prod_key, []))
+            if stock_len == 0:
+                bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
+                return
+            bot.answer_callback_query(call.id)
+            USER_SELECTED_PRODUCT[chat_id] = prod_key
+            info = PRODUCTS_INFO[prod_key]
+            markup = InlineKeyboardMarkup(row_width=1)
+            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
+            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+            msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
+            
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            
+    elif call.data.startswith("pay_steps_"):
+        prod_key = call.data.replace("pay_steps_", "")
+        info = PRODUCTS_INFO[prod_key]
+        bot.answer_callback_query(call.id)
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="Markdown")
+        
+    elif call.data == "show_payments":
+        bot.answer_callback_query(call.id)
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
+
+    elif call.data == "my_orders":
+        bot.answer_callback_query(call.id)
+        all_orders = load_orders()
+        user_history = all_orders.get(str(chat_id), [])
+        
+        if not user_history:
+            history_text = "📜 **سجل مشترياتي:**\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
+        else:
+            history_text = "📜 **سجل مشترياتي السابقة:**\n\n"
+            for idx, order in enumerate(user_history, 1):
+                history_text += f"{idx}️⃣ **المنتج:** {order['product']}\n🔑 **البيانات:** `{order['item']}`\n🆔 **رقم العملية:** `{order['order_id']}`\n📅 **الوقت:** {order['time']}\n------------------------\n"
+        
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, history_text, reply_markup=markup, parse_mode="Markdown")
+        
+    elif call.data == "main_menu":
+        bot.answer_callback_query(call.id)
+        USER_SELECTED_PRODUCT.pop(chat_id, None)
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
+
+@bot.message_handler(content_types=['text', 'photo', 'document'])
+def handle_incoming(message):
+    chat_id = message.chat.id
+    if message.content_type == 'text':
+        if message.text.startswith('/'):
+            return
+        if chat_id not in USER_SELECTED_PRODUCT:
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال رقم العملية.")
+            return
+        prod_key = USER_SELECTED_PRODUCT[chat_id]
+        info = PRODUCTS_INFO[prod_key]
+        if len(STOCK_DATABASE.get(prod_key, [])) == 0:
+            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
+            return
+        
+        wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
+        order_id_input = message.text.strip()
+        is_valid, status_text = verify_binance_payment(order_id_input, info["price"])
+        
+        if is_valid:
+            item = STOCK_DATABASE[prod_key].pop(0)
+            USER_SELECTED_PRODUCT.pop(chat_id, None)
+            
+            all_orders = load_orders()
+            str_chat_id = str(chat_id)
+            if str_chat_id not in all_orders:
+                all_orders[str_chat_id] = []
+            
+            new_order = {
+                "product": info['name'],
+                "item": item,
+                "order_id": order_id_input,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            all_orders[str_chat_id].append(new_order)
+            save_orders(all_orders)
+
+            bot.edit_message_text(f"🎉 **تم تأكيد الدفع وتسليم طلبك بنجاح!**\n\n📦 بيانات حسابك لمنتج *{info['name']}*:\n`{item}`\n\n📜 تم حفظ طلبك في (سجل مشترياتي).\n\nشكراً لثقتك بمتجر *Pixora Store* 💚", chat_id, wait_msg.message_id, parse_mode="Markdown")
+        else:
+            bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
+        return
+    bot.send_message(chat_id, "📌 المتجر يعمل بنظام التسليم الآلي عبر Binance Pay. يرجى إرسال **رقم العملية (Order ID)** النصي بعد إتمام التحويل للحصول على طلبك فوراً.", parse_mode="Markdown")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
