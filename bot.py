@@ -15,32 +15,72 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 app = Flask(__name__)
 
-# قائمة المنتجات الأصلية تماماً كما في الصورة (بدون تطبيقات المشاهدة مثل Crunchyroll)
+# قائمة الـ 31 منتجاً كاملة (بدون تطبيقات المشاهدة)
 RAW_PRODUCTS = [
-    # المنتجات التي تتوفر في المخزن (تظهر في الأعلى تلقائياً)
-    ("gemini_pro_18m", "1 🔥 Gemini Pro 18 Months Link", 3.00),
-    ("duolingo_super_12m", "🦉 Duolingo Super 12 Months", 0.75),
-    ("adobe_express_12m", "🎨 Adobe Express 12M", 0.35),
-    ("hma_vpn", "🐺 HMA VPN Android/PC 30-25 Days", 0.55),
-    ("spotify_prem_3m", "🟢 Spotify Premium 3M", 1.45),
-    
-    # باقي المنتجات الأصلية من الصورة
-    ("capcut", "✂️ CapCut", 1.30),
-    ("chatgpt", "🤖 ChatGPT", 18.00),
-    ("gemini_ai", "1️⃣ Gemini Ai", 3.00),
-    ("microsoft_365", "🟩 Microsoft 365", 0.30),
-    ("office_pro_plus_p", "💼 Office Pro Plus (P...)", 2.50),
-    ("windows_phone", "🪟 Windows (Phone...)", 2.50),
-    ("office_pp_online", "💼 Office PP (Online...)", 3.00),
-    ("windows_online", "🪟 Windows (Online...)", 3.50),
-    ("autodesk", "🔺 AUTODESK", 3.00),
-    ("muse_ai", "Ⓜ️ Muse AI", 5.00),
-    ("chatgpt_plus_best", "🤖 🔥(💚BEST SELLER) ChatGPT Plus (G Pay...", 18.00)
+    # --- الـ 5 منتجات المتوفرة (تحتوي على رصيد وأوصاف كاملة وتظهر في الأعلى) ---
+    (
+        "gemini_pro_18m",
+        "1 🔥 Gemini Pro 18 Months Link",
+        3.00,
+        "اشتراك Gemini Pro رسمي رابط تفعيل لمدة 18 شهراً:\n• مساحة سحابية 2TB على Google One.\n• وصول كامل لميزات الذكاء الاصطناعي المتقدمة.\n⚡ التسليم فوري بعد الدفع."
+    ),
+    (
+        "duolingo_super_12m",
+        "🦉 Duolingo Super 12 Months",
+        0.75,
+        "اشتراك Duolingo Super رسمي لمدة 12 شهراً كاملة:\n• قلوب غير محدودة لتعلم اللغات دون توقف.\n• بدون إعلانات نهائياً مع تتبع التقدم.\n⚡ التسليم فوري بعد الدفع."
+    ),
+    (
+        "adobe_express_12m",
+        "🎨 Adobe Express 12M",
+        0.35,
+        "حساب رسمي مفعل Adobe Express Premium لمدة سنة كاملة:\n• تصميم احترافي مع قوالب وخطوط بريميوم.\n• أدوات الذكاء الاصطناعي التوليدي من Adobe Firefly.\n⚡ التسليم فوري بعد الدفع."
+    ),
+    (
+        "hma_vpn",
+        "🐺 HMA VPN Android/PC 30-25 Days",
+        0.55,
+        "حساب HMA VPN مفعل (Android / PC) لمدة 25-30 يوماً:\n• خوادم سريعة جداً وتشفير كامل للخصوصية.\n• فك الحظر عن كافة المواقع والتطبيقات.\n⚡ التسليم فوري بعد الدفع."
+    ),
+    (
+        "spotify_prem_3m",
+        "🟢 Spotify Premium 3M",
+        1.45,
+        "اشتراك Spotify بريميوم لمدة 3 أشهر:\n• استماع بدون إعلانات وبأعلى نقاوة صوت.\n• ميزة التحميل والاستماع في وضع أوفلاين.\n⚡ التسليم فوري بعد الدفع."
+    ),
+
+    # --- الـ 26 منتجاً الأخرى (رصيدها 0 وتظهر في الأسفل بالأحمر) ---
+    ("capcut", "✂️ CapCut", 1.30, ""),
+    ("chatgpt", "🤖 ChatGPT", 18.00, ""),
+    ("gemini_ai", "1️⃣ Gemini Ai", 3.00, ""),
+    ("microsoft_365", "🟩 Microsoft 365", 0.30, ""),
+    ("office_pro_plus_p", "💼 Office Pro Plus (P...)", 2.50, ""),
+    ("windows_phone", "🪟 Windows (Phone...)", 2.50, ""),
+    ("office_pp_online", "💼 Office PP (Online...)", 3.00, ""),
+    ("windows_online", "🪟 Windows (Online...)", 3.50, ""),
+    ("autodesk", "🔺 AUTODESK", 3.00, ""),
+    ("muse_ai", "Ⓜ️ Muse AI", 5.00, ""),
+    ("chatgpt_plus_best", "🤖 🔥(💚BEST SELLER) ChatGPT Plus (G Pay...", 18.00, ""),
+    ("capcut_1y", "🎞️ CapCut Pro (1 Year)", 9.50, ""),
+    ("filmora", "🎬 Wondershare Filmora 13", 8.00, ""),
+    ("canva_pro", "🎨 Canva Pro (1 Year)", 4.00, ""),
+    ("picsart", "📸 PicsArt Gold (1 Year)", 3.00, ""),
+    ("claude_pro", "🧠 Claude Pro (1 Month)", 18.00, ""),
+    ("elevenlabs", "🎙️ ElevenLabs Starter", 5.00, ""),
+    ("midjourney", "🎨 Midjourney Basic", 10.00, ""),
+    ("runway", "📹 Runway Gen-2", 12.00, ""),
+    ("perplexity", "🔍 Perplexity Pro", 6.00, ""),
+    ("windows_11_pro", "🪟 Windows 11 Pro Key", 3.50, ""),
+    ("windows_10_pro", "🪟 Windows 10 Pro Key", 2.50, ""),
+    ("nordvpn_1y", "🛡️ NordVPN (1 Year)", 3.50, ""),
+    ("expressvpn_1m", "⚡ ExpressVPN (1 Month)", 4.00, ""),
+    ("surfshark_1y", "🦈 Surfshark VPN (1 Year)", 3.00, ""),
+    ("kaspersky_1y", "🦠 Kaspersky Total Security", 5.00, "")
 ]
 
-PRODUCTS_INFO = {k: {"name": n, "price": p} for k, n, p in RAW_PRODUCTS}
+PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-# قاعدة بيانات المخزون مطابقة للكميات المكتوبة في الصورة
+# ضبط الرصيد الفعلي للمنتجات الـ 5 فقط، والباقي يبقى فارغاً []
 STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["gemini_pro_18m"] = [
     "Gemini_Link_1", "Gemini_Link_2", "Gemini_Link_3", "Gemini_Link_4"
@@ -82,27 +122,27 @@ WELCOME_TEXT = "Choose Your Product:"
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup()
-    
-    # 1. المنتجات المتوفرة أولاً (صف واحد لكل منتج مع السعر والكمية مثل الصورة الأصلية)
+
+    # 1. المنتجات المتوفرة (رصيد > 0) في الأعلى باللون الأخضر مع السعر والكمية
     for k, info in PRODUCTS_INFO.items():
         stock_count = len(STOCK_DATABASE.get(k, []))
         if stock_count > 0:
-            btn_text = f"{info['name']} · ${info['price']} ({stock_count})"
+            btn_text = f"🟢 {info['name']} · ${info['price']} ({stock_count})"
             markup.add(InlineKeyboardButton(btn_text, callback_data=f"buy_{k}"))
-            
-    # 2. المنتجات ذات الرصيد 0 في شبكة ثنائية (صفوف بـ 2 أزرار كما في الجزء العلوي من صورتك)
+
+    # 2. المنتجات غير المتوفرة (رصيدها 0) باللون الأحمر في صفوف ثنائية
     out_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) == 0:
-            out_stock_btns.append(InlineKeyboardButton(f"{info['name']}", callback_data=f"sold_out_{k}"))
-            
+            out_stock_btns.append(InlineKeyboardButton(f"❌ {info['name']}", callback_data=f"sold_out_{k}"))
+
     for i in range(0, len(out_stock_btns), 2):
         if i + 1 < len(out_stock_btns):
             markup.row(out_stock_btns[i], out_stock_btns[i+1])
         else:
             markup.row(out_stock_btns[i])
 
-    # 3. زر العودة الرئيسي كما في الصورة
+    # 3. زر القائمة الرئيسية السفلي
     markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
     return markup
 
@@ -180,7 +220,8 @@ def handle_query(call):
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data=f"pay_steps_{p_key}"))
             markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
             
-            text = f"🏷️ <b>{info['name']}</b>\n💰 <b>Price:</b> <code>${info['price']}</code>\n📦 <b>Stock:</b> <code>{stock}</code>\n\n🛍️ <b>Buy Quantity:</b> 1"
+            desc_part = f"\n📰 <b>Description:</b>\n{info['description']}\n" if info['description'] else ""
+            text = f"🏷️ <b>{info['name']}</b>\n💰 <b>Price:</b> <code>${info['price']}</code>\n📦 <b>Stock:</b> <code>{stock}</code>{desc_part}\n🛍️ <b>Buy Quantity:</b> 1"
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
