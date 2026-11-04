@@ -1,12 +1,18 @@
 import os
 import time
+import hmac
+import hashlib
+import urllib.parse
 import json
 import threading
+import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
+BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 ADMIN_ID = 1004439571098
 BINANCE_ID = "957483337"
 RENDER_URL = os.environ.get("RENDER_URL", "").strip()
@@ -15,86 +21,32 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 app = Flask(__name__)
 
-# الأصناف العلوية غير المتوفرة (شبكة ثنائية كما في الصورة الأصلية)
-PRODUCTS_GRID_UPPER = [
-    ("capcut", "✂️ CapCut", 1.30),
-    ("chatgpt", "🤖 ChatGPT", 18.00),
-    ("gemini_ai", "1️⃣ Gemini Ai", 3.00),
-    ("microsoft_365", "🟩 Microsoft 365", 0.30),
-    ("office_pro_plus_p", "💼 Office Pro Plus (P...", 2.50),
-    ("windows_phone", "🪟 Windows (Phone...", 2.50),
-    ("office_pp_online", "💼 Office PP (Online...", 3.00),
-    ("windows_online", "🪟 Windows (Online...", 3.50),
-    ("autodesk", "🔺 AUTODESK", 3.00),
-    ("muse_ai", "Ⓜ️ Muse AI", 5.00),
-    ("chatgpt_best", "🤖 🔥(💚BEST SELLER) ChatGPT Plus (G Pay...", 18.00),
-    ("filmora", "🎬 Wondershare Filmora", 8.00),
-    ("canva_pro", "🎨 Canva Pro", 4.00),
-    ("picsart", "📸 PicsArt Gold", 3.00),
-    ("claude_pro", "🧠 Claude Pro", 18.00),
-    ("elevenlabs", "🎙️ ElevenLabs Starter", 5.00),
-    ("midjourney", "🎨 Midjourney Basic", 10.00),
-    ("runway", "📹 Runway Gen-2", 12.00),
-    ("perplexity", "🔍 Perplexity Pro", 6.00),
-    ("nordvpn", "🛡️ NordVPN Premium", 3.50),
-    ("expressvpn", "⚡ ExpressVPN", 4.00),
-    ("surfshark", "🦈 Surfshark VPN", 3.00),
-    ("kaspersky", "🦠 Kaspersky Security", 5.00),
-    ("windows_11", "🪟 Windows 11 Pro", 3.50),
-    ("windows_10", "🪟 Windows 10 Pro", 2.50),
-    ("github_pack", "🐙 GitHub Student Pack", 7.00)
+# قائمة المنتجات الكاملة مع المنتجات التي رصيدها 0
+RAW_PRODUCTS = [
+    ("capcut", "🎞️ CapCut", 1.3, "CapCut Pro 30 Days - التسليم فوري وآلي."),
+    ("gemini", "💠 Gemini", 3.0, "Gemini AI Pro 18 Months Plan - سعة 5TB."),
+    ("office", "🟩 Microsoft Office 365", 0.30, "Office 365 Plus 5 Devices + 1TB OneDrive."),
+    ("autodesk", "🔺 Autodesk", 3.0, "Autodesk Admin Dashboard 1 Year Access."),
+    ("canva", "🎨 Canva Edu", 4.0, "رابط دعوة رسمي لحساب Canva Edu Pro مدى الحياة."),
+    ("chatgpt", "🤖 ChatGPT Plus", 5.0, "اشتراك ChatGPT Plus لمدة شهر."),
+    ("netflix", "🍿 Netflix UHD", 3.5, "حساب Netflix بريميوم شاشة واحدة لمدة شهر."),
+    ("spotify", "🎵 Spotify Premium", 2.0, "اشتراك Spotify فردي مدة شهر."),
+    ("nordvpn", "🛡️ NordVPN", 2.5, "حساب NordVPN مدفوع لمدة سنة."),
+    ("crunchyroll", "🍥 Crunchyroll", 1.8, "حساب Crunchyroll Mega Fan لمدة شهر.")
 ]
 
-# الأصناف المتوفرة بالأسفل مع الأوصاف والكميات
-PRODUCTS_IN_STOCK_LOWER = [
-    (
-        "gemini_pro_18m",
-        "1 🔥 Gemini Pro 18 Months Link",
-        3.00,
-        "اشتراك Gemini Pro رسمي رابط تفعيل لمدة 18 شهراً:\n• مساحة سحابية 2TB على Google One.\n• وصول كامل لميزات الذكاء الاصطناعي.\n⚡ التسليم فوري بعد التحويل."
-    ),
-    (
-        "duolingo_super_12m",
-        "🦉 Duolingo Super 12 Months",
-        0.75,
-        "اشتراك Duolingo Super رسمي لمدة سنة كاملة:\n• قلوب غير محدودة لتعلم اللغات بدون توقف وبدون إعلانات.\n⚡ التسليم فوري بعد التحويل."
-    ),
-    (
-        "adobe_express_12m",
-        "🎨 Adobe Express 12M",
-        0.35,
-        "حساب رسمي مفعل Adobe Express Premium لمدة سنة كاملة:\n• تصميم احترافي وقوالب بريميوم مع أدوات الذكاء الاصطناعي.\n⚡ التسليم فوري بعد التحويل."
-    ),
-    (
-        "hma_vpn",
-        "🐺 HMA VPN Android/PC 30-25 Days",
-        0.55,
-        "حساب HMA VPN مفعل (Android / PC) لمدة 25-30 يوماً:\n• سرعة عالية وتشفير لحماية خصوصيتك وفك الحجب.\n⚡ التسليم فوري بعد التحويل."
-    ),
-    (
-        "spotify_prem_3m",
-        "🟢 Spotify Premium 3M",
-        1.45,
-        "اشتراك Spotify بريميوم لمدة 3 أشهر:\n• استماع بدون إعلانات وبأعلى دقة وميزة التنزيل أوفلاين.\n⚡ التسليم فوري بعد التحويل."
-    )
-]
+PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-ALL_PRODUCTS = {}
-for k, n, p in PRODUCTS_GRID_UPPER:
-    ALL_PRODUCTS[k] = {"name": n, "price": p, "description": ""}
+# قاعدة بيانات المخزون (المنتجات التي رصيدها صفر تركت فارغة [])
+STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
+STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
+STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
+STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365pp.com / &$^2^jGq"]
+STOCK_DATABASE["autodesk"] = ["Autodesk_Key_ABC123"]
+STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
 
-for k, n, p, d in PRODUCTS_IN_STOCK_LOWER:
-    ALL_PRODUCTS[k] = {"name": n, "price": p, "description": d}
-
-STOCK_DATABASE = {k: [] for k in ALL_PRODUCTS}
-STOCK_DATABASE["gemini_pro_18m"] = ["Gemini_Link_1", "Gemini_Link_2", "Gemini_Link_3", "Gemini_Link_4"]
-STOCK_DATABASE["duolingo_super_12m"] = ["Duo_Key_1", "Duo_Key_2", "Duo_Key_3", "Duo_Key_4", "Duo_Key_5"]
-STOCK_DATABASE["adobe_express_12m"] = [f"Adobe_Acc_{i}" for i in range(1, 11)]
-STOCK_DATABASE["hma_vpn"] = ["HMA_VPN_Account_1"]
-STOCK_DATABASE["spotify_prem_3m"] = ["Spotify_Key_1", "Spotify_Key_2"]
-
+USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
-PENDING_ORDERS = {}
 ORDERS_FILE = "orders.json"
 
 def safe_delete_message(chat_id, msg_id):
@@ -117,208 +69,238 @@ def save_orders(orders_data):
         with open(ORDERS_FILE, "w", encoding="utf-8") as f:
             json.dump(orders_data, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print("Save error:", e)
+        print("Error saving orders:", e)
 
-WELCOME_TEXT = "Choose Your Product:"
+WELCOME_TEXT = """🔥 <b>أهلاً بك في متجر Pixora Store الرقمي الأول!</b> 🚀
+
+⚡ <i>نوفر لك أقوى الحسابات والاشتراكات الرقمية المدفوعة بأفضل الأسعار وأعلى ضمان رسمي.</i>
+💎 <b>التسليم فوري وآلي بالكامل</b> خلال ثوانٍ معدودة بعد إتمام الدفع عبر Binance Pay!
+
+👇 <b>اختر منتجك أدناه، وابدأ طلبك الآن:</b>"""
 
 def get_main_menu_markup():
-    markup = InlineKeyboardMarkup()
-
-    # 1. الشبكة العلوية الثنائية (2x2)
-    grid_buttons = []
-    for k, n, p in PRODUCTS_GRID_UPPER:
-        grid_buttons.append(InlineKeyboardButton(n, callback_data=f"select_{k}"))
-
-    for i in range(0, len(grid_buttons), 2):
-        if i + 1 < len(grid_buttons):
-            markup.row(grid_buttons[i], grid_buttons[i+1])
+    markup = InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for k, info in PRODUCTS_INFO.items():
+        if len(STOCK_DATABASE.get(k, [])) == 0:
+            btns.append(InlineKeyboardButton(f"❌ {info['name']}", callback_data="sold_out_" + k))
         else:
-            markup.row(grid_buttons[i])
-
-    # 2. أزرار المنتجات المتوفرة العريضة بالأسفل
-    for k, n, p, d in PRODUCTS_IN_STOCK_LOWER:
-        stock_cnt = len(STOCK_DATABASE.get(k, []))
-        btn_label = f"{n} · ${p} ({stock_cnt})"
-        markup.add(InlineKeyboardButton(btn_label, callback_data=f"select_{k}"))
-
-    # 3. الـ 4 أزرار السفلية الأساسية مرتبة في صفين متوازيين (2x2)
-    markup.row(
-        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"),
-        InlineKeyboardButton("🛍️ Products", callback_data="main_menu")
+            btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + k))
+    markup.add(*btns)
+    markup.add(
+        InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
+        InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
     )
-    markup.row(
-        InlineKeyboardButton("📜 My Orders", callback_data="my_orders"),
+    markup.add(
+        InlineKeyboardButton("📜 سجل مشترياتي", callback_data="my_orders"),
         InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments")
     )
-    # زر الدعم الفني الإضافي
-    markup.add(InlineKeyboardButton("🛠️ Contact Support", url=SUPPORT_WHATSAPP))
-    
+    markup.add(
+        InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP)
+    )
     return markup
 
 @app.route('/')
 def home():
-    return "Pixora Store Bot is Running!", 200
+    return "Pixora Store Auto-Delivery Bot is Live!", 200
 
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def receive_update():
     if request.headers.get('content-type') == 'application/json':
         try:
-            json_str = request.get_data().decode('utf-8')
-            bot.process_new_updates([telebot.types.Update.de_json(json_str)])
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
         except Exception as e:
             print("Update error:", e)
         return "!", 200
-    return "Unsupported", 415
+    return "Unsupported Media Type", 415
+
+def verify_binance_payment(order_id, expected_amount):
+    clean_id = str(order_id).strip()
+    if clean_id in USED_TRANSACTIONS:
+        return False, "رقم العملية هذا تم استخدامه مسبقاً من قبل!"
+    
+    timestamp = int(time.time() * 1000)
+    url_pay = "https://api.binance.com/sapi/v1/pay/transactions"
+    qs_pay = urllib.parse.urlencode({"timestamp": timestamp, "limit": 100})
+    sig_pay = hmac.new(BINANCE_SECRET_KEY.encode('utf-8'), qs_pay.encode('utf-8'), hashlib.sha256).hexdigest()
+    
+    try:
+        res = requests.get(f"{url_pay}?{qs_pay}&signature={sig_pay}", headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=8)
+        data = res.json()
+        
+        if data.get("code") == "000000" and "data" in data:
+            for tx in data["data"]:
+                t_id = str(tx.get("orderId", ""))
+                p_id = str(tx.get("prepayId", ""))
+                if (t_id == clean_id or p_id == clean_id) and float(tx.get("amount", 0)) >= expected_amount and tx.get("currency") == "USDT":
+                    USED_TRANSACTIONS.add(clean_id)
+                    return True, "تم التحقق بنجاح"
+            return False, "لم يتم العثور على حوالة مطابقة في باينانس بهذا الرقم أو المبلغ."
+        
+        return False, f"رد باينانس: {data.get('msg', 'تحقق من مفاتيحك')} (كود: {data.get('code')})"
+    except Exception as e:
+        return False, f"تعذر الاتصال بباينانس: {str(e)}"
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup())
+    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="HTML")
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     chat_id = call.message.chat.id
     msg_id = call.message.message_id
-    data = call.data
-
-    if data.startswith("admin_approve_"):
-        token = data.replace("admin_approve_", "")
-        if token in PENDING_ORDERS:
-            o = PENDING_ORDERS.pop(token)
-            u_id, p_key = o["chat_id"], o["prod_key"]
-            p_name = ALL_PRODUCTS[p_key]["name"]
-            if len(STOCK_DATABASE.get(p_key, [])) > 0:
-                item = STOCK_DATABASE[p_key].pop(0)
-                ords = load_orders()
-                ords.setdefault(str(u_id), []).append({
-                    "product": p_name,
-                    "item": item,
-                    "order_id": o["order_id"],
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
-                save_orders(ords)
-                msg = f"🎉 <b>تم تأكيد الدفع بنجاح!</b>\n\n📦 بيانات {p_name}:\n<code>{item}</code>\n\n📜 تم حفظ طلبك في (سجل مشترياتي).\nشكراً لتعاملك مع <b>Pixora Store</b> 💚"
-                bot.send_message(u_id, msg, parse_mode="HTML")
-                bot.edit_message_text(f"✅ تم تسليم {p_name} للعميل بنجاح.", chat_id, msg_id)
-            else:
-                bot.send_message(u_id, "⚠️ نفد المخزون، يرجى التواصل مع الدعم الفني.")
-                bot.edit_message_text("⚠️ المخزون فارغ لهذا الصنف!", chat_id, msg_id)
-        return
-
-    elif data.startswith("admin_reject_"):
-        token = data.replace("admin_reject_", "")
-        if token in PENDING_ORDERS:
-            o = PENDING_ORDERS.pop(token)
-            bot.send_message(o["chat_id"], "❌ تعذر تأكيد عملية التحويل. يرجى التواصل مع الدعم الفني.")
-            bot.edit_message_text("❌ تم رفض الطلب.", chat_id, msg_id)
-        return
-
-    if data.startswith("select_"):
-        p_key = data.replace("select_", "")
-        if p_key in ALL_PRODUCTS:
-            stock = len(STOCK_DATABASE.get(p_key, []))
-            if stock == 0:
-                bot.answer_callback_query(call.id, "❌ Sold Out - هذا المنتج غير متوفر حالياً في المخزن!", show_alert=True)
-                return
-            
-            bot.answer_callback_query(call.id)
-            USER_SELECTED_PRODUCT[chat_id] = p_key
-            info = ALL_PRODUCTS[p_key]
-            markup = InlineKeyboardMarkup(row_width=1)
-            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data=f"pay_steps_{p_key}"))
-            markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
-            
-            desc_part = f"\n📰 <b>Description:</b>\n{info['description']}\n" if info['description'] else ""
-            text = f"🏷️ <b>{info['name']}</b>\n💰 <b>Price:</b> <code>${info['price']}</code>\n📦 <b>Stock:</b> <code>{stock}</code>{desc_part}\n🛍️ <b>Buy Quantity:</b> 1"
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
-
-    elif data.startswith("pay_steps_"):
-        p_key = data.replace("pay_steps_", "")
-        info = ALL_PRODUCTS[p_key]
-        bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🔙 رجوع", callback_data=f"select_{p_key}"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+    
+    if call.data.startswith("sold_out_"):
+        bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
         
-        text = f"🪙 <b>خطوات الدفع عبر Binance Pay:</b>\n\n1️⃣ حول مبلغ (<code>{info['price']} USDT</code>) إلى Binance ID: <code>{BINANCE_ID}</code>\n\n2️⃣ أرسل <b>رقم العملية (Order ID)</b> أو صورة الإشعار هنا في الشات لتأكيد طلبك واستلام حسابك فوراً!"
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+    elif call.data.startswith("buy_"):
+        prod_key = call.data.replace("buy_", "")
+        if prod_key in PRODUCTS_INFO:
+            stock_len = len(STOCK_DATABASE.get(prod_key, []))
+            if stock_len == 0:
+                bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
+                return
+            bot.answer_callback_query(call.id)
+            USER_SELECTED_PRODUCT[chat_id] = prod_key
+            info = PRODUCTS_INFO[prod_key]
+            markup = InlineKeyboardMarkup(row_width=1)
+            markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
+            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+            
+            msg_text = f"""🏷️ <b>{info['name']}</b>
+💰 <b>Price:</b> <code>${info['price']}</code>
 
-    elif data == "show_payments":
+📦 <b>Stock:</b> <code>{stock_len}</code>
+📰 <b>Description:</b>
+
+{info['description']}
+
+🛍️ <b>Buy Quantity:</b> 1"""
+            
+            safe_delete_message(chat_id, msg_id)
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
+            
+    elif call.data.startswith("pay_steps_"):
+        prod_key = call.data.replace("pay_steps_", "")
+        info = PRODUCTS_INFO[prod_key]
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
-        text = f"🪙 <b>معلومات الدفع في متجر Pixora Store:</b>\n\nBinance Pay ID: <code>{BINANCE_ID}</code>\n\nاختر منتجك أولاً من القائمة ثم أرسل إثبات الدفع بعد التحويل."
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+        markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        
+        pay_msg = f"""🪙 <b>خطوات الدفع الفوري عبر Binance Pay:</b>
 
-    elif data == "my_orders":
+1️⃣ حول مبلغ (<code>{info['price']} USDT</code>) إلى Binance ID: <code>{BINANCE_ID}</code>
+
+2️⃣ انسخ <b>رقم العملية (Order ID)</b> من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"""
+        
+        safe_delete_message(chat_id, msg_id)
+        bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
+        
+    elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
-        ords = load_orders().get(str(chat_id), [])
-        if not ords:
-            text = "📜 <b>سجل مشترياتي:</b>\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        
+        pay_text = f"""🪙 <b>معلومات الدفع في متجر Pixora Store:</b>
+
+Binance Pay ID: <code>{BINANCE_ID}</code>
+
+اختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."""
+        
+        safe_delete_message(chat_id, msg_id)
+        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="HTML")
+
+    elif call.data == "my_orders":
+        bot.answer_callback_query(call.id)
+        all_orders = load_orders()
+        user_history = all_orders.get(str(chat_id), [])
+        
+        if not user_history:
+            history_text = "📜 <b>سجل مشترياتي:</b>\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
         else:
-            text = "📜 <b>سجل مشترياتي السابقة:</b>\n\n"
-            for idx, o in enumerate(ords, 1):
-                text += f"{idx}️⃣ <b>المنتج:</b> {o['product']}\n🔑 <b>البيانات:</b> <code>{o['item']}</code>\n🆔 <b>العملية:</b> <code>{o['order_id']}</code>\n📅 <b>الوقت:</b> {o['time']}\n------------------------\n"
+            history_text = "📜 <b>سجل مشترياتي السابقة:</b>\n\n"
+            for idx, order in enumerate(user_history, 1):
+                history_text += f"{idx}️⃣ <b>المنتج:</b> {order['product']}\n🔑 <b>البيانات:</b> <code>{order['item']}</code>\n🆔 <b>رقم العملية:</b> <code>{order['order_id']}</code>\n📅 <b>الوقت:</b> {order['time']}\n------------------------\n"
+        
         markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu"))
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
-
-    elif data == "main_menu":
+        bot.send_message(chat_id, history_text, reply_markup=markup, parse_mode="HTML")
+        
+    elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup())
+        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="HTML")
 
-@bot.message_handler(content_types=['text', 'photo'])
+@bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
     chat_id = message.chat.id
-    if message.content_type == 'text' and message.text.startswith('/'):
-        return
+    if message.content_type == 'text':
+        if message.text.startswith('/'):
+            return
+        if chat_id not in USER_SELECTED_PRODUCT:
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال رقم العملية.")
+            return
+        prod_key = USER_SELECTED_PRODUCT[chat_id]
+        info = PRODUCTS_INFO[prod_key]
+        if len(STOCK_DATABASE.get(prod_key, [])) == 0:
+            bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
+            return
+        
+        wait_msg = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع عبر Binance تلقائياً...")
+        order_id_input = message.text.strip()
+        is_valid, status_text = verify_binance_payment(order_id_input, info["price"])
+        
+        if is_valid:
+            item = STOCK_DATABASE[prod_key].pop(0)
+            USER_SELECTED_PRODUCT.pop(chat_id, None)
+            
+            all_orders = load_orders()
+            str_chat_id = str(chat_id)
+            if str_chat_id not in all_orders:
+                all_orders[str_chat_id] = []
+            
+            new_order = {
+                "product": info['name'],
+                "item": item,
+                "order_id": order_id_input,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            all_orders[str_chat_id].append(new_order)
+            save_orders(all_orders)
 
-    if chat_id not in USER_SELECTED_PRODUCT:
-        bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة (/start) قبل إرسال بيانات الدفع.")
-        return
+            success_text = f"""🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>
 
-    p_key = USER_SELECTED_PRODUCT[chat_id]
-    info = ALL_PRODUCTS[p_key]
-    order_id = message.text.strip() if message.content_type == 'text' else "صورة إيصال"
-    token = f"{chat_id}_{int(time.time())}"
+📦 بيانات حسابك لمنتج <b>{info['name']}</b>:
+<code>{item}</code>
 
-    PENDING_ORDERS[token] = {
-        "chat_id": chat_id,
-        "prod_key": p_key,
-        "order_id": order_id
-    }
-    USER_SELECTED_PRODUCT.pop(chat_id, None)
-    bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وإرسال بيانات الحساب إليك هنا خلال لحظات...", parse_mode="HTML")
+📜 تم حفظ طلبك في (سجل مشترياتي).
 
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
-        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
-    )
-    user_name = message.from_user.first_name or "عميل"
-    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
-    admin_msg = f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n👤 <b>العميل:</b> {user_name} ({user_username})\n🛍️ <b>المنتج:</b> {info['name']}\n💰 <b>المطلوب:</b> {info['price']} USDT\n🆔 <b>البيان/التحويل:</b> <code>{order_id}</code>\n\n👇 <i>تأكد من وصول المبلغ في تطبيق Binance ثم اضغط تأكيد:</i>"
-
-    try:
-        if message.content_type == 'photo':
-            photo_id = message.photo[-1].file_id
-            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
+شكراً لثقتك بمتجر <b>Pixora Store</b> 💚"""
+            
+            try:
+                bot.edit_message_text(success_text, chat_id, wait_msg.message_id, parse_mode="HTML")
+            except Exception:
+                bot.send_message(chat_id, f"🎉 تم تأكيد الدفع وتسليم طلبك!\n\nالبيانات:\n{item}")
         else:
-            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        print("Admin notify error:", e)
+            bot.edit_message_text(f"❌ لم يكتمل التحقق: {status_text}\n\nتأكد من صحة رقم العملية وأن المبلغ مطابق للسعر.", chat_id, wait_msg.message_id)
+        return
+        
+    bot.send_message(chat_id, "📌 يرجى إرسال <b>رقم العملية (Order ID)</b> النصي بعد التحويل.", parse_mode="HTML")
 
 def init_app():
     time.sleep(2)
     if BOT_TOKEN and RENDER_URL:
         try:
-            bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
+            target_url = f"{RENDER_URL}/{BOT_TOKEN}"
+            bot.set_webhook(url=target_url)
+            print(f"Webhook registered: {target_url}")
         except Exception as e:
-            print("Webhook error:", e)
+            print("Webhook init error:", e)
 
 threading.Thread(target=init_app, daemon=True).start()
 
