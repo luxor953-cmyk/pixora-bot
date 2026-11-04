@@ -1,5 +1,5 @@
 import os, time, hmac, hashlib, urllib.parse, requests, telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -62,8 +62,6 @@ STOCK_DATABASE["canva"] = ["https://www.canva.com/brand/join?inv=sample_1"]
 
 USED_TRANSACTIONS = set()
 USER_SELECTED_PRODUCT = {}
-LOGO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logos")
-LOGO_CACHE = {}
 
 WELCOME_TEXT = (
     "🔥 **أهلاً بك في متجر Pixora Store الرقمي الأول!** 🚀\n\n"
@@ -84,24 +82,6 @@ def get_main_menu_markup():
     markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu"))
     markup.add(InlineKeyboardButton("🪙 Binance Pay", callback_data="show_payments"), InlineKeyboardButton("🛠️ الدعم الفني (WhatsApp)", url=SUPPORT_WHATSAPP))
     return markup
-
-def show_product_in_place(chat_id, msg_id, prod_key, text, markup):
-    path = os.path.join(LOGO_DIR, prod_key + ".png")
-    try:
-        if prod_key in LOGO_CACHE:
-            media = InputMediaPhoto(LOGO_CACHE[prod_key], caption=text, parse_mode="Markdown")
-            bot.edit_message_media(media=media, chat_id=chat_id, message_id=msg_id, reply_markup=markup)
-            return
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                media = InputMediaPhoto(f, caption=text, parse_mode="Markdown")
-                msg = bot.edit_message_media(media=media, chat_id=chat_id, message_id=msg_id, reply_markup=markup)
-                if msg.photo:
-                    LOGO_CACHE[prod_key] = msg.photo[-1].file_id
-            return
-        bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
-    except Exception:
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 app = Flask('')
 
@@ -160,7 +140,7 @@ def handle_query(call):
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
             msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
-            show_product_in_place(chat_id, msg_id, prod_key, msg_text, markup)
+            bot.edit_message_text(msg_text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
     elif call.data.startswith("pay_steps_"):
         prod_key = call.data.replace("pay_steps_", "")
         info = PRODUCTS_INFO[prod_key]
@@ -168,34 +148,20 @@ def handle_query(call):
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ انسخ **رقم العملية (Order ID)** من باينانس وأرسله هنا في الشات لتتلقى حسابك في نفس الثانية!"
-        try:
-            if call.message.content_type == 'photo':
-                bot.edit_message_caption(pay_msg, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
-            else:
-                bot.edit_message_text(pay_msg, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
-        except Exception:
-            bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(pay_msg, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
     elif call.data == "show_payments":
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup(row_width=1)
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل رقم العملية بعد التحويل لتستلم طلبك فوراً."
-        try:
-            bot.edit_message_text(pay_text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
-        except Exception:
-            bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text(pay_text, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
     elif call.data == "main_menu":
         bot.answer_callback_query(call.id)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
-        markup = get_main_menu_markup()
         try:
-            if call.message.content_type == 'photo':
-                bot.delete_message(chat_id, msg_id)
-                bot.send_message(chat_id, WELCOME_TEXT, reply_markup=markup, parse_mode="Markdown")
-            else:
-                bot.edit_message_text(WELCOME_TEXT, chat_id=chat_id, message_id=msg_id, reply_markup=markup, parse_mode="Markdown")
+            bot.edit_message_text(WELCOME_TEXT, chat_id=chat_id, message_id=msg_id, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
         except Exception:
-            bot.send_message(chat_id, WELCOME_TEXT, reply_markup=markup, parse_mode="Markdown")
+            bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
 
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_incoming(message):
