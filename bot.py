@@ -11,6 +11,10 @@ BINANCE_ID = "957483337"
 RENDER_URL = os.environ.get("RENDER_URL", "https://pixora-bot-1.onrender.com").strip()
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
+# التحقق السريع من التوكن قبل البدء
+if not BOT_TOKEN or ":" not in BOT_TOKEN:
+    raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو صيغته خاطئة (يجب أن يحتوي على نقطتين رأسيتين :)")
+
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 # قائمة المنتجات الكاملة مع الأوصاف الأصلية المفصلة
@@ -118,7 +122,6 @@ RAW_PRODUCTS = [
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-# قاعدة بيانات المخزون (المنتجات التي رصيدها فارغ ستظهر كـ غير متوفرة ولكنها باقية في القائمة)
 STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
 STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
 STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
@@ -162,7 +165,6 @@ WELCOME_TEXT = (
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup()
     
-    # 1. المنتجات المتوفرة أولاً (🟢)
     in_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) > 0:
@@ -174,7 +176,6 @@ def get_main_menu_markup():
         else:
             markup.row(in_stock_btns[i])
             
-    # 2. المنتجات غير المتوفرة تبقي ظاهرة في القائمة (❌)
     out_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) == 0:
@@ -186,7 +187,6 @@ def get_main_menu_markup():
         else:
             markup.row(out_stock_btns[i])
 
-    # 3. الأزرار السفلية
     markup.row(
         InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
         InlineKeyboardButton("🛍️ المنتجات", callback_data="main_menu")
@@ -364,43 +364,4 @@ def handle_incoming(message):
     
     bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
 
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
-        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
-    )
-    user_name = message.from_user.first_name or "عميل"
-    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
-    admin_msg = (
-        f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n"
-        f"👤 <b>العميل:</b> {user_name} ({user_username})\n"
-        f"🛍️ <b>المنتج:</b> {info['name']}\n"
-        f"💰 <b>المطلوب:</b> {info['price']} USDT\n"
-        f"🆔 <b>البيان/التحويل:</b> <code>{order_id_input}</code>\n\n"
-        f"👇 <i>تحقق من وصول المبلغ ثم اضغط تأكيد:</i>"
-    )
-
-    try:
-        if message.content_type == 'photo':
-            photo_id = message.photo[-1].file_id
-            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        print("Admin notify error:", e)
-
-def setup_webhook():
-    if BOT_TOKEN and RENDER_URL:
-        try:
-            bot.remove_webhook()
-            time.sleep(1)
-            target_url = f"{RENDER_URL}/{BOT_TOKEN}"
-            res = bot.set_webhook(url=target_url)
-            print(f"Webhook set successfully to {target_url}: {res}")
-        except Exception as e:
-            print("Webhook setup error:", e)
-
-if __name__ == '__main__':
-    setup_webhook()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    markup = InlineKeyboardMarkup(row
