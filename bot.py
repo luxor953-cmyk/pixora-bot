@@ -283,9 +283,9 @@ def handle_query(call):
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT[chat_id] = prod_key
             info = PRODUCTS_INFO[prod_key]
-            markup = InlineKeyboardMarkup(row_width=1)
+            markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
-            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+            markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
             msg_text = f"🏷️ **{info['name']}**\n💰 **Price:** `${info['price']}`\n\n📦 **Stock:** `{stock_len}`\n📰 **Description:**\n\n{info['description']}\n\n🛍️ **Buy Quantity:** 1"
             
             safe_delete_message(chat_id, msg_id)
@@ -295,8 +295,8 @@ def handle_query(call):
         prod_key = data.replace("pay_steps_", "")
         info = PRODUCTS_INFO[prod_key]
         bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
-        markup.add(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+        markup = InlineKeyboardMarkup()
+        markup.row(InlineKeyboardButton("🔙 رجوع للمنتج", callback_data="buy_" + prod_key), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_msg = f"🪙 **خطوات الدفع الفوري عبر Binance Pay:**\n\n1️⃣ حول مبلغ (`{info['price']} USDT`) إلى Binance ID: `{BINANCE_ID}`\n\n2️⃣ أرسل **رقم العملية (Order ID)** أو صورة إشعار التحويل هنا في الشات لتأكيد طلبك فوراً!"
         
         safe_delete_message(chat_id, msg_id)
@@ -304,7 +304,7 @@ def handle_query(call):
         
     elif data == "show_payments":
         bot.answer_callback_query(call.id)
-        markup = InlineKeyboardMarkup(row_width=1)
+        markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل إثبات الدفع بعد التحويل."
         
@@ -323,7 +323,7 @@ def handle_query(call):
             for idx, order in enumerate(user_history, 1):
                 history_text += f"{idx}️⃣ <b>المنتج:</b> {order['product']}\n🔑 <b>البيانات:</b> <code>{order['item']}</code>\n🆔 <b>رقم العملية:</b> <code>{order['order_id']}</code>\n📅 <b>الوقت:</b> {order['time']}\n------------------------\n"
         
-        markup = InlineKeyboardMarkup(row_width=1)
+        markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
         
         safe_delete_message(chat_id, msg_id)
@@ -364,4 +364,16 @@ def handle_incoming(message):
     
     bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
 
-    markup = InlineKeyboardMarkup(row
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
+        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
+    )
+    user_name = message.from_user.first_name or "عميل"
+    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
+    admin_msg = (
+        f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n"
+        f"👤 <b>العميل:</b> {user_name} ({user_username})\n"
+        f"🛍️ <b>المنتج:</b> {info['name']}\n"
+        f"💰 <b>المطلوب:</b> {info['price']} USDT\n"
+        f"🆔 <b>البيان/التحويل:</b> <code>{order_id_input
