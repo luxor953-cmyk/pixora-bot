@@ -10,16 +10,41 @@ BINANCE_ID = "957483337"
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
 if not BOT_TOKEN or ":" not in BOT_TOKEN:
-    raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو غير مدخل في لوحة تحكم Render!")
+    raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو صيغته خاطئة في لوحة تحكم Render!")
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
 RAW_PRODUCTS = [
-    ("capcut", "🎞️ CapCut Pro 1 Month FW", 1.47, "Full 30 days private Pro Team account."),
-    ("gemini", "💠 Gemini Ai · Gemini Pro 18 Months Link", 3.0, "18 Months Plan - 100% Private."),
-    ("office", "📱 Microsoft 365 1Tb 5 Devices Lifetime", 1.0, "Microsoft Office apps full access."),
-    ("autodesk", "🔺 Autodesk all Apps 1 Year", 0.60, "1 year subscription to Autodesk Student."),
-    ("canva", "🎨 Canva Education Panel", 4.0, "Canva Education Panel setup guide.")
+    (
+        "capcut",
+        "🎞️ CapCut Pro 1 Month FW",
+        1.47,
+        "📰 Description:\n- Full 30 days private Pro Team account.\n- Maximum 2 devices, with full warranty."
+    ),
+    (
+        "gemini",
+        "💠 Gemini Ai · Gemini Pro 18 Months Link",
+        3.0,
+        "Description\n⚡ 18 Months Plan\n⚡ 100% Private Active on Your Gmail."
+    ),
+    (
+        "office",
+        "📱 Microsoft 365 1Tb 5 Devices Lifetime",
+        1.0,
+        "Description\n✔️ Microsoft 365 Plus – 5 Devices\n✔️ Word, Excel, PowerPoint & OneDrive"
+    ),
+    (
+        "autodesk",
+        "🔺 Autodesk all Apps 1 Year",
+        0.60,
+        "📰 Description:\n🎓 1 year subscription to Autodesk Student."
+    ),
+    (
+        "canva",
+        "🎨 Canva Education Panel",
+        4.0,
+        "🚀 Canva Education Panel — Quick Setup Guide"
+    )
 ]
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
@@ -72,7 +97,7 @@ def handle_query(call):
         if prod_key in PRODUCTS_INFO:
             bot.answer_callback_query(call.id)
             info = PRODUCTS_INFO[prod_key]
-            bot.send_message(chat_id, f"🏷️ **{info['name']}**\n💰 السعر: `${info['price']}`")
+            bot.send_message(chat_id, f"🏷️ **{info['name']}**\n💰 السعر: `${info['price']}`\n\n{info['description']}")
 
 if __name__ == '__main__':
     try:
@@ -81,5 +106,5 @@ if __name__ == '__main__':
     except Exception:
         pass
     
-    print("🤖 Bot is running...")
+    print("🤖 Bot is running successfully via Polling...")
     bot.infinity_polling(skip_pending=True)
