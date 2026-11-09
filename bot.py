@@ -3,80 +3,83 @@ import time
 import json
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from flask import Flask, request
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "1004439571")) 
 BINANCE_ID = "957483337"
-RENDER_URL = os.environ.get("RENDER_URL", "https://pixora-bot.onrender.com").strip()
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
-# التحقق الصارم من التوكن
 if not BOT_TOKEN or ":" not in BOT_TOKEN:
-    raise ValueError("⚠️ خطأ حرج: متغير البيئة BOT_TOKEN غير موجود أو غير مدخل في لوحة تحكم Render!")
+    raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو غير مدخل في لوحة تحكم Render!")
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
-# قائمة المنتجات الكاملة مع الأوصاف الأصلية المفصلة
 RAW_PRODUCTS = [
-    (
-        "capcut",
-        "🎞️ CapCut Pro 1 Month FW",
-        1.47,
-        "📰 Description:\n"
-        "- Full 30 days private Pro Team account.\n"
-        "- Maximum 2 devices , with full warranty.\n"
-        "- Stable Account full 30 days (no 7days renew ).\n"
-        "- Login to mobile App first next to laptop (desktop App no web) via QR code ."
-    ),
-    (
-        "gemini",
-        "💠 Gemini Ai · Gemini Pro 18 Months Link",
-        3.0,
-        "Description\n"
-        "⚡ 18 Months Plan\n"
-        "⚡ 5TB cloud storage included\n"
-        "⚡ You can add 5 users\n"
-        "⚡ No Shared\n"
-        "⚡ 100% Private \n"
-        "⚡ NO NEED ANY CARD\n"
-        "⚡ The link is delivered via a verified custom domain and redirects to the official Google Gemini website for activation.\n"
-        "🔥 Works in any country, no verification required\n"
-        "🚫 Non Warranty After 1H of Delivery\n\n"
-        "⚡ 100% Genuine Gemini AI Pro Subscription Activated on Your Own Gmail."
-    ),
-    (
-        "office",
-        "📱 Microsoft 365 · Microsoft Office 365 1Tb 5 Devices Lifetime",
-        1.0,
-        "Description\n"
-        "✔️ Microsoft 365 Plus – 100GB/1000GB | 5 Devices\n\n"
-        "📱 Full access to Microsoft Office apps.\n\n"
-        "✔️ Format : Email | Password\n\n"
-        "✔️ Word, Excel, PowerPoint, Outlook & more\n"
-        "✔️ Activate on up to 5 devices\n"
-        "✔️ Compatible with Windows, Mac, Android & iOS\n"
-        "✔️ 100GB/1000GB OneDrive cloud storage\n"
-        "✔️ Automatic updates & premium features\n"
-        "✔️ Instant & automatic delivery\n\n"
-        "🛡 2-Year Warranty & Activation Support\n\n"
-        "⚠️ Important Notes :\n"
-        "- Keep your login credentials safe, forgotten password in not covered by Warranty.\n"
-        "- OneDrive Storage is not covered by Warranty always keep backup for your files."
-    ),
-    (
-        "autodesk",
-        "🔺 Autodesk all Apps 1 Year",
-        0.60,
-        "📰 Description:\n"
-        "🎓 1 year subscription to Autodesk Student.\n"
-        "📧 Invitation in customer's email to Autodesk.\n"
-        "💻 Almost all apps are included (3ds Max, AutoCAD, Fusion 360, Maya, Revit...)\n"
-        "💬 If you want to add a specific app (message us)"
-    ),
-    (
-        "canva",
-        "🎨 Canva Education Panel — Quick Setup Guide",
-        4.0,
-        "🚀 Canva Education Panel — Quick Setup Guide 🎓\n"
-        "1
+    ("capcut", "🎞️ CapCut Pro 1 Month FW", 1.47, "Full 30 days private Pro Team account."),
+    ("gemini", "💠 Gemini Ai · Gemini Pro 18 Months Link", 3.0, "18 Months Plan - 100% Private."),
+    ("office", "📱 Microsoft 365 1Tb 5 Devices Lifetime", 1.0, "Microsoft Office apps full access."),
+    ("autodesk", "🔺 Autodesk all Apps 1 Year", 0.60, "1 year subscription to Autodesk Student."),
+    ("canva", "🎨 Canva Education Panel", 4.0, "Canva Education Panel setup guide.")
+]
+
+PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
+STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
+STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
+STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
+
+USER_SELECTED_PRODUCT = {}
+PENDING_ORDERS = {}
+ORDERS_FILE = "orders.json"
+
+def load_orders():
+    if os.path.exists(ORDERS_FILE):
+        try:
+            with open(ORDERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_orders(orders_data):
+    try:
+        with open(ORDERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(orders_data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("Error saving orders:", e)
+
+WELCOME_TEXT = "🔥 **أهلاً بك في متجر Pixora Store الرقمي!** 🚀\n\nاختر منتجك أدناه:"
+
+def get_main_menu_markup():
+    markup = InlineKeyboardMarkup()
+    for k, info in PRODUCTS_INFO.items():
+        if len(STOCK_DATABASE.get(k, [])) > 0:
+            markup.add(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + k))
+        else:
+            markup.add(InlineKeyboardButton(f"❌ {info['name']}", callback_data="sold_out_" + k))
+    markup.add(InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+    return markup
+
+@bot.message_handler(commands=['start', 'menu'])
+def send_welcome(message):
+    bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    chat_id = call.message.chat.id
+    data = call.data
+    if data.startswith("buy_"):
+        prod_key = data.replace("buy_", "")
+        if prod_key in PRODUCTS_INFO:
+            bot.answer_callback_query(call.id)
+            info = PRODUCTS_INFO[prod_key]
+            bot.send_message(chat_id, f"🏷️ **{info['name']}**\n💰 السعر: `${info['price']}`")
+
+if __name__ == '__main__':
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except Exception:
+        pass
+    
+    print("🤖 Bot is running...")
+    bot.infinity_polling(skip_pending=True)
