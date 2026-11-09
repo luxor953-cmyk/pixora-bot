@@ -371,9 +371,31 @@ def handle_incoming(message):
     )
     user_name = message.from_user.first_name or "عميل"
     user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
-    admin_msg = (
-        f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n"
-        f"👤 <b>العميل:</b> {user_name} ({user_username})\n"
-        f"🛍️ <b>المنتج:</b> {info['name']}\n"
-        f"💰 <b>المطلوب:</b> {info['price']} USDT\n"
-        f"🆔 <b>البيان/التحويل:</b> <code>{order_id_input
+    
+    # تم دمج النص هنا في سطر واحد لتجنب أخطاء الأقواس
+    admin_msg = f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n👤 <b>العميل:</b> {user_name} ({user_username})\n🛍️ <b>المنتج:</b> {info['name']}\n💰 <b>المطلوب:</b> {info['price']} USDT\n🆔 <b>البيان/التحويل:</b> <code>{order_id_input}</code>\n\n👇 <i>تحقق من وصول المبلغ ثم اضغط تأكيد:</i>"
+
+    try:
+        if message.content_type == 'photo':
+            photo_id = message.photo[-1].file_id
+            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
+        else:
+            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        print("Admin notify error:", e)
+
+def setup_webhook():
+    if BOT_TOKEN and RENDER_URL:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            target_url = f"{RENDER_URL}/{BOT_TOKEN}"
+            res = bot.set_webhook(url=target_url)
+            print(f"Webhook set successfully to {target_url}: {res}")
+        except Exception as e:
+            print("Webhook setup error:", e)
+
+if __name__ == '__main__':
+    setup_webhook()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
