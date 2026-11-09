@@ -1,269 +1,127 @@
-import sqlite3
 import os
+import time
+import json
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask, request
 
-# ================= إعداداتك الخاصة =================
-BOT_TOKEN = "8884467242:AAG_QCv0KDRcJ7Bc30YSKr617nBzB4bUb6g"
-ADMIN_ID = 5147527664
-RIP_CCP = "00799999002297772775"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "1004439571")) 
 BINANCE_ID = "957483337"
-REDOTPAY_INFO = "UID: `1198898814`"
-# ===================================================
+SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# التحقق السريع من التوكن قبل البدء
+if not BOT_TOKEN or ":" not in BOT_TOKEN:
+    raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو صيغته خاطئة (يجب أن يحتوي على نقطتين رأسيتين :)")
 
-def init_db():
-    conn = sqlite3.connect("wholesale_store.db")
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance REAL DEFAULT 0.0)")
-    c.execute("""CREATE TABLE IF NOT EXISTS products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT, unit_price REAL, wholesale_price REAL, min_wholesale_qty INTEGER)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS stock (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    product_id INTEGER, code_data TEXT, is_sold INTEGER DEFAULT 0)""")
-    conn.commit()
-    conn.close()
+bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
-init_db()
+# قائمة المنتجات الكاملة مع الأوصاف الأصلية المفصلة
+RAW_PRODUCTS = [
+    (
+        "capcut",
+        "🎞️ CapCut Pro 1 Month FW",
+        1.47,
+        "📰 Description:\n"
+        "- Full 30 days private Pro Team account.\n"
+        "- Maximum 2 devices , with full warranty.\n"
+        "- Stable Account full 30 days (no 7days renew ).\n"
+        "- Login to mobile App first next to laptop (desktop App no web) via QR code ."
+    ),
+    (
+        "gemini",
+        "💠 Gemini Ai · Gemini Pro 18 Months Link",
+        3.0,
+        "Description\n"
+        "⚡ 18 Months Plan\n"
+        "⚡ 5TB cloud storage included\n"
+        "⚡ You can add 5 users\n"
+        "⚡ No Shared\n"
+        "⚡ 100% Private \n"
+        "⚡ NO NEED ANY CARD\n"
+        "⚡ The link is delivered via a verified custom domain and redirects to the official Google Gemini website for activation.\n"
+        "🔥 Works in any country, no verification required\n"
+        "🚫 Non Warranty After 1H of Delivery\n\n"
+        "⚡ 100% Genuine Gemini AI Pro Subscription Activated on Your Own Gmail."
+    ),
+    (
+        "office",
+        "📱 Microsoft 365 · Microsoft Office 365 1Tb 5 Devices Lifetime",
+        1.0,
+        "Description\n"
+        "✔️ Microsoft 365 Plus – 100GB/1000GB | 5 Devices\n\n"
+        "📱 Full access to Microsoft Office apps.\n\n"
+        "✔️ Format : Email | Password\n\n"
+        "✔️ Word, Excel, PowerPoint, Outlook & more\n"
+        "✔️ Activate on up to 5 devices\n"
+        "✔️ Compatible with Windows, Mac, Android & iOS\n"
+        "✔️ 100GB/1000GB OneDrive cloud storage\n"
+        "✔️ Automatic updates & premium features\n"
+        "✔️ Instant & automatic delivery\n\n"
+        "🛡 2-Year Warranty & Activation Support\n\n"
+        "⚠️ Important Notes :\n"
+        "- Keep your login credentials safe, forgotten password in not covered by Warranty.\n"
+        "- OneDrive Storage is not covered by Warranty always keep backup for your files."
+    ),
+    (
+        "autodesk",
+        "🔺 Autodesk all Apps 1 Year",
+        0.60,
+        "📰 Description:\n"
+        "🎓 1 year subscription to Autodesk Student.\n"
+        "📧 Invitation in customer's email to Autodesk.\n"
+        "💻 Almost all apps are included (3ds Max, AutoCAD, Fusion 360, Maya, Revit...)\n"
+        "💬 If you want to add a specific app (message us)"
+    ),
+    (
+        "canva",
+        "🎨 Canva Education Panel — Quick Setup Guide",
+        4.0,
+        "🚀 Canva Education Panel — Quick Setup Guide 🎓\n"
+        "1️⃣ Secure the Email ✉️\n"
+        "Log in to the provided Outlook account and add your personal email or phone number as a recovery method 🔒 (do not change the original account details).\n"
+        "2️⃣ First Login 🕵️‍♂️\n"
+        "Open an Incognito / Private window and sign in using the main Canva account 🔑.\n"
+        "3️⃣ Add Your Personal Account 👨‍🏫\n"
+        "Go to Team Settings ⚙️ → Members 👥 → Invite Members, and invite your personal Canva email as a Teacher / Co-Teacher 📩.\n"
+        "4️⃣ Log Out & Manage 🎛\n"
+        "Accept the invite from your personal email ✅, log out of the main account completely 🚪, and use your personal account to manage the panel (add/remove members) from now on 💻.\n"
+        "⚠️ Important Reminders 🛑\n"
+        "❌ Do not delete the main account or change the team/panel name.\n"
+        "📈 Add members gradually to keep the account safe.\n"
+        "🌍 Keep your login location/IP consistent (avoid switching VPNs frequently)."
+    ),
+    ("adobe", "🔴 Adobe", 2.5, "Full Adobe Creative Cloud access."),
+    ("avira", "🔴 Avira", 2.0, "Premium Antivirus & Security subscription."),
+    ("chatgpt", "🔴 ChatGPT", 3.0, "ChatGPT Plus account access."),
+    ("coursera", "🔴 Coursera", 2.0, "Coursera subscription for certificates."),
+    ("duolingo", "🔴 Duolingo", 0.75, "Duolingo Super 12 Months."),
+    ("elevenlabs", "🔴 ElevenLabs", 3.5, "AI Voice Generator premium plan."),
+    ("expressvpn", "🔴 ExpressVPN", 2.5, "High-speed secure VPN subscription."),
+    ("figma", "🔴 Figma", 2.0, "Figma Pro team access for designers."),
+    ("framer", "🔴 Framer", 2.0, "Framer Pro web building subscription."),
+    ("gamma", "🔴 Gamma", 2.0, "AI presentations and docs generator."),
+    ("grok", "🔴 Grok", 2.5, "xAI Grok premium access."),
+    ("hmavpn", "🔴 HMA VPN", 0.55, "HideMyAss VPN secure access."),
+    ("jetbrain", "🔴 JetBrain", 3.0, "All Products Pack license access."),
+    ("kaspersky", "🔴 Kaspersky", 2.0, "Kaspersky Total Security license."),
+    ("linkedin", "🔴 LinkedIn", 3.0, "LinkedIn Premium Career/Business access."),
+    ("lovable", "🔴 Lovable", 2.5, "Full stack AI web app builder."),
+    ("muse", "🔴 Muse", 2.0, "Muse AI premium tools access."),
+    ("notion", "🔴 Notion", 2.0, "Notion Pro workspace subscription."),
+    ("youtube", "🔴 YouTube", 2.0, "YouTube Premium ad-free subscription."),
+    ("ilovepdf", "🔴 iLovePdf", 1.5, "iLovePDF Premium tools access."),
+    ("api", "🔴 API", 5.0, "High limit developer API keys."),
+    ("grammarly", "🔴 Grammarly", 2.0, "Grammarly Premium writing assistant."),
+    ("nordvpn", "🔴 Nord Vpn", 2.0, "NordVPN secure high-speed servers."),
+    ("scribd", "🔴 Scribd", 2.0, "Scribd ebooks and audiobooks access."),
+    ("wispr", "🔴 Wispr", 2.0, "Wispr Flow voice dictation tool."),
+    ("udemy", "🔴 Udemy", 2.0, "Premium courses access plan.")
+]
 
-def get_user_balance(user_id):
-    conn = sqlite3.connect("wholesale_store.db")
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users (user_id, balance) VALUES (?, 0)", (user_id,))
-    conn.commit()
-    c.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    balance = c.fetchone()[0]
-    conn.close()
-    return round(balance, 2)
+PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-@bot.message_handler(commands=['start'])
-def start_menu(message):
-    user_id = message.from_user.id
-    balance = get_user_balance(user_id)
-    
-    # لوحة المفاتيح الثابتة أسفل الشاشة (مثل الصور الاحترافية)
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn_shop = KeyboardButton("🛒 فتح المتجر")
-    btn_balance = KeyboardButton("💰 رصيدي والإيداع")
-    btn_orders = KeyboardButton("📦 طلباتي")
-    btn_support = KeyboardButton("🛠️ الدعم والمساعدة")
-    markup.add(btn_shop, btn_balance, btn_orders, btn_support)
-    
-    text = (
-        "مرحباً بك في متجرك الرقمي الموثوق 🚀\n\n"
-        f"🆔 معرف حسابك: `{user_id}`\n"
-        f"💵 رصيدك الحالي: *{balance}$*\n\n"
-        "اختر من القائمة أدناه للبدء فوراً:"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
-
-# التعامل مع الأزرار الثابتة أسفل الشاشة
-@bot.message_handler(func=lambda message: message.text in ["🛒 فتح المتجر", "💰 رصيدي والإيداع", "📦 طلباتي", "🛠️ الدعم والمساعدة"])
-def handle_reply_menu(message):
-    text = message.text
-    if text == "🛒 فتح المتجر":
-        show_products_message(message)
-    elif text == "💰 رصيدي والإيداع":
-        recharge_instructions_message(message)
-    elif text == "📦 طلباتي":
-        bot.send_message(message.chat.id, "📦 سجل طلباتك السابقة سيظهر هنا.", parse_mode="Markdown")
-    elif text == "🛠️ الدعم والمساعدة":
-        bot.send_message(message.chat.id, "🛠️ للتواصل مع الدعم الفني، يرجى مراسلة المسؤول مباشرة.", parse_mode="Markdown")
-
-def show_products_message(message):
-    conn = sqlite3.connect("wholesale_store.db")
-    c = conn.cursor()
-    c.execute("SELECT id, name, unit_price, wholesale_price, min_wholesale_qty FROM products")
-    products = c.fetchall()
-    
-    if not products:
-        conn.close()
-        bot.send_message(message.chat.id, "🛒 لا توجد منتجات مضافة حالياً في المتجر!")
-        return
-
-    markup = InlineKeyboardMarkup(row_width=1)
-    for prod in products:
-        p_id, name, u_price, w_price, min_qty = prod
-        c.execute("SELECT COUNT(*) FROM stock WHERE product_id = ? AND is_sold = 0", (p_id,))
-        available_qty = c.fetchone()[0]
-        btn_text = f"{name} | جملة: {w_price}$ (متوفر: {available_qty})"
-        markup.add(InlineKeyboardButton(btn_text, callback_data=f"select_{p_id}"))
-    
-    conn.close()
-    bot.send_message(message.chat.id, "📦 اختر المنتج المطلوب للشراء والتسليم الفوري:", reply_markup=markup)
-
-def recharge_instructions_message(message):
-    text = (
-        "💳 *طرق شحن الرصيد المتاحة:*\n\n"
-        f"1️⃣ *بريدي موب (BaridiMob / CCP):*\nRIP: `{RIP_CCP}`\n\n"
-        f"2️⃣ *بينانس باي (Binance Pay):*\nID: `{BINANCE_ID}`\n\n"
-        f"3️⃣ *ريدوت باي (RedotPay):*\n{REDOTPAY_INFO}\n\n"
-        "📸 *طريقة التأكيد الفوري:*\n"
-        "بعد التحويل، أرسل *صورة الوصل (Screenshot)* هنا في المحادثة واكتب تحتها في الوصف (Caption) قيمة المبلغ بالدولار فقط (مثال: `50`)."
-    )
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data == "show_products")
-def show_products_callback(call):
-    show_products_message(call.message)
-    bot.answer_callback_query(call.id)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_"))
-def select_quantity(call):
-    p_id = int(call.data.split("_")[1])
-    conn = sqlite3.connect("wholesale_store.db")
-    c = conn.cursor()
-    c.execute("SELECT name, unit_price, wholesale_price, min_wholesale_qty FROM products WHERE id = ?", (p_id,))
-    prod = c.fetchone()
-    c.execute("SELECT COUNT(*) FROM stock WHERE product_id = ? AND is_sold = 0", (p_id,))
-    stock_count = c.fetchone()[0]
-    conn.close()
-
-    if stock_count == 0:
-        bot.answer_callback_query(call.id, "عذراً، نفدت كمية هذا المنتج حالياً!", show_alert=True)
-        return
-
-    name, u_price, w_price, min_qty = prod
-    markup = InlineKeyboardMarkup(row_width=3)
-    quantities = [1, 5, 10, 25, 50, 100]
-    buttons = [InlineKeyboardButton(f"شراء {q}", callback_data=f"buy_{p_id}_{q}") for q in quantities if q <= stock_count]
-    markup.add(*buttons)
-    markup.add(InlineKeyboardButton("🔙 رجوع للمنتجات", callback_data="show_products"))
-
-    text = (
-        f"📦 *{name}*\n\n"
-        f"🔹 السعر الفردي: {u_price}$\n"
-        f"🔸 سعر الجملة (من {min_qty} قطع فأكثر): *{w_price}$*\n"
-        f"📊 المتوفر بالمخزن: {stock_count} قطعة\n\n"
-        "اختر الكمية المطلوبة للتسليم الفوري:"
-    )
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
-def process_purchase(call):
-    _, p_id, qty = call.data.split("_")
-    p_id, qty = int(p_id), int(qty)
-    user_id = call.from_user.id
-
-    conn = sqlite3.connect("wholesale_store.db")
-    c = conn.cursor()
-    c.execute("SELECT name, unit_price, wholesale_price, min_wholesale_qty FROM products WHERE id = ?", (p_id,))
-    name, u_price, w_price, min_qty = c.fetchone()
-    c.execute("SELECT id, code_data FROM stock WHERE product_id = ? AND is_sold = 0 LIMIT ?", (p_id, qty))
-    codes = c.fetchall()
-
-    if len(codes) < qty:
-        conn.close()
-        bot.answer_callback_query(call.id, "الكمية المطلوبة لم تعد متوفرة!", show_alert=True)
-        return
-
-    price_per_unit = w_price if qty >= min_qty else u_price
-    total_cost = round(price_per_unit * qty, 2)
-    balance = get_user_balance(user_id)
-
-    if balance < total_cost:
-        conn.close()
-        bot.answer_callback_query(call.id, f"رصيدك غير كافٍ! المطلوب {total_cost}$ ورصيدك {balance}$", show_alert=True)
-        return
-
-    c.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (total_cost, user_id))
-    code_ids = [str(row[0]) for row in codes]
-    c.execute(f"UPDATE stock SET is_sold = 1 WHERE id IN ({','.join(code_ids)})")
-    conn.commit()
-    conn.close()
-
-    file_name = f"order_{user_id}_{p_id}.txt"
-    with open(file_name, "w", encoding="utf-8") as f:
-        f.write(f"=== طلبية: {name} (الكمية: {qty}) ===\n\n")
-        for row in codes:
-            f.write(f"{row[1]}\n")
-
-    with open(file_name, "rb") as f:
-        bot.send_document(
-            call.message.chat.id, f,
-            caption=f"✅ تم الشراء والتسليم بنجاح!\n📦 المنتج: {name}\n🔢 الكمية: {qty}\n💵 المبلغ المخصوم: {total_cost}$"
-        )
-    os.remove(file_name)
-
-@bot.message_handler(content_types=['photo'])
-def handle_payment_receipt(message):
-    user_id = message.from_user.id
-    amount_str = message.caption.strip() if message.caption else ""
-    try:
-        amount = float(amount_str)
-    except:
-        bot.reply_to(message, "⚠️ يرجى إعادة إرسال صورة الوصل مع كتابة *المبلغ بالأرقام فقط* في وصف الصورة (مثال: `25`).", parse_mode="Markdown")
-        return
-
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton(f"✅ موافقة ({amount}$)", callback_data=f"app_{user_id}_{amount}"),
-        InlineKeyboardButton("❌ رفض الوصل", callback_data=f"rej_{user_id}")
-    )
-    bot.send_photo(
-        ADMIN_ID, message.photo[-1].file_id,
-        caption=f"🔔 *طلب شحن رصيد جديد*\n👤 العميل: `{user_id}`\n💵 المبلغ المطلوب: *{amount}$*",
-        parse_mode="Markdown", reply_markup=markup
-    )
-    bot.reply_to(message, "⏳ تم إرسال الوصل للإدارة، سيتم تفعيل رصيدك فور المراجعة!")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("app_", "rej_")))
-def admin_receipt_decision(call):
-    if call.from_user.id != ADMIN_ID: return
-    data = call.data.split("_")
-    action, target_id = data[0], int(data[1])
-    
-    if action == "app":
-        amount = float(data[2])
-        get_user_balance(target_id)
-        conn = sqlite3.connect("wholesale_store.db")
-        c = conn.cursor()
-        c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, target_id))
-        conn.commit()
-        conn.close()
-        bot.edit_message_caption(f"✅ تمت الموافقة وشحن {amount}$ للعميل `{target_id}`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        bot.send_message(target_id, f"🎉 تمت الموافقة على الوصل وإضافة *{amount}$* إلى رصيدك! اضغط /start للتحديث.", parse_mode="Markdown")
-    else:
-        bot.edit_message_caption(f"❌ تم رفض طلب العميل `{target_id}`", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        bot.send_message(target_id, "❌ عذراً، تم رفض وصل الدفع المرسل. يرجى التأكد من البيانات.")
-
-@bot.message_handler(commands=['add_prod'])
-def add_product_admin(message):
-    if message.from_user.id != ADMIN_ID: return
-    try:
-        args = message.text.replace("/add_prod ", "").split("|")
-        name, u_price, w_price, min_qty = args[0].strip(), float(args[1]), float(args[2]), int(args[3])
-        conn = sqlite3.connect("wholesale_store.db")
-        c = conn.cursor()
-        c.execute("INSERT INTO products (name, unit_price, wholesale_price, min_wholesale_qty) VALUES (?, ?, ?, ?)",
-                  (name, u_price, w_price, min_qty))
-        conn.commit()
-        p_id = c.lastrowid
-        conn.close()
-        bot.reply_to(message, f"✅ تم إضافة المنتج: *{name}*\nرقم المنتج لرفع الأكواد له هو: `{p_id}`", parse_mode="Markdown")
-    except:
-        bot.reply_to(message, "الصيغة الصحيحة:\n`/add_prod اسم المنتج | سعر مفرد | سعر جملة | أقل كمية للجملة`", parse_mode="Markdown")
-
-@bot.message_handler(content_types=['document'])
-def upload_bulk_stock(message):
-    if message.from_user.id != ADMIN_ID: return
-    if not message.caption or not message.caption.startswith("/upload"): return
-    try:
-        p_id = int(message.caption.split()[1])
-        file_info = bot.get_file(message.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        lines = [line.strip() for line in downloaded_file.decode('utf-8').splitlines() if line.strip()]
-        conn = sqlite3.connect("wholesale_store.db")
-        c = conn.cursor()
-        for code in lines:
-            c.execute("INSERT INTO stock (product_id, code_data) VALUES (?, ?)", (p_id, code))
-        conn.commit()
-        conn.close()
-        bot.reply_to(message, f"✅ تم إضافة *{len(lines)}* حساب/كود للمنتج رقم `{p_id}` بنجاح!", parse_mode="Markdown")
-    except:
-        bot.reply_to(message, "❌ تأكد من إرسال ملف .txt وكتابة `/upload رقم_المنتج` في وصف الملف.")
-
-print("Bot is running...")
-bot.infinity_polling()
+STOCK_DATABASE = {k: [] for k in PRODUCTS_INFO}
+STOCK_DATABASE["capcut"] = ["CapCut_Key_1: user1@pixoras.com / pass123"]
+STOCK_DATABASE["gemini"] = ["https://g.co/gemini/share/sample_link_1"]
+STOCK_DATABASE["office"] = ["Office365_Key_1: kc5921@o365
