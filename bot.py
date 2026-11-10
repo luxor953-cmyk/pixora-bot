@@ -1,8 +1,10 @@
 import os
 import time
 import json
+import threading
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from flask import Flask
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "1004439571")) 
@@ -119,7 +121,7 @@ RAW_PRODUCTS = [
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-# جميع الكميات مضبوطة على 1 ومتوفرة
+# ضبط جميع كميات المنتجات الـ 31 لتكون متوفرة
 STOCK_DATABASE = {k: [f"بيانات اشتراك {PRODUCTS_INFO[k]['name']} - مفعل وفوري"] for k in PRODUCTS_INFO}
 
 USER_SELECTED_PRODUCT = {}
@@ -160,7 +162,8 @@ def get_main_menu_markup():
     in_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) > 0:
-            in_stock_btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + k))
+            clean_name = info['name'].replace("🔴", "").replace("🟢", "").strip()
+            in_stock_btns.append(InlineKeyboardButton(f"🟢 {clean_name} · ${info['price']}", callback_data="buy_" + k))
     
     for i in range(0, len(in_stock_btns), 2):
         if i + 1 < len(in_stock_btns):
@@ -171,7 +174,8 @@ def get_main_menu_markup():
     out_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
         if len(STOCK_DATABASE.get(k, [])) == 0:
-            out_stock_btns.append(InlineKeyboardButton(f"❌ {info['name']}", callback_data="sold_out_" + k))
+            clean_name = info['name'].replace("🔴", "").replace("🟢", "").strip()
+            out_stock_btns.append(InlineKeyboardButton(f"❌ {clean_name}", callback_data="sold_out_" + k))
             
     for i in range(0, len(out_stock_btns), 2):
         if i + 1 < len(out_stock_btns):
@@ -357,12 +361,28 @@ def handle_incoming(message):
     except Exception as e:
         print("Admin notify error:", e)
 
-if __name__ == '__main__':
+# خادم الـ Flask لإرضاء فحص المنصة (Web Service Port Binding)
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Pixora Store Bot is Active!", 200
+
+def run_telegram_bot():
     try:
         bot.remove_webhook()
         time.sleep(1)
     except Exception:
         pass
-    
-    print("🤖 Pixora Store Bot is running stably via Polling...")
+    print("🤖 Telegram Bot polling started...")
     bot.infinity_polling(skip_pending=True)
+
+if __name__ == '__main__':
+    # تشغيل بوت تيليجرام في خلفية مستقلة
+    bot_thread = threading.Thread(target=run_telegram_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+
+    # فتح المنفذ المطلوب لخدمة الويب في الواجهة الأمامية
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
