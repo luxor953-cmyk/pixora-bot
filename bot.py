@@ -84,28 +84,37 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            # طباعة البيانات في الـ Logs لنراها بدقة
-            print("SUPPLIER RAW DATA:", json.dumps(data, ensure_ascii=False)[:500])
-            
             products_list = []
-            items = data.get("products", data) if isinstance(data, dict) else data
+            
+            # جلب المنتجات بدقة من رد المزود فقط دون أي افتراضات
+            items = []
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get("products", data.get("data", []))
+            
             for item in items:
-                p_name = item.get("name", "منتج رقمي")
-                p_desc = item.get("description", "اشتراك رقمي رسمي مع ضمان كامل.")
+                p_name = item.get("name")
+                if not p_name:
+                    continue
                 
+                p_desc = item.get("description", "")
+                
+                # فلترة المحتوى غير الحلال
                 if not is_halal_product(p_name, p_desc):
                     continue
 
-                p_id = str(item.get("id", item.get("code", "unknown")))
-                
-                # جلب السعر مع دعم كافة الاحتمالات لحقول المزود
-                raw_price = float(item.get("price", item.get("cost", item.get("amount", 1.0))))
-                
-                # إضافة مكسب ثابت (نصف عملة USDT)
+                p_id = str(item.get("id", item.get("code", "")))
+                if not p_id:
+                    continue
+
+                # سحب السعر الحقيقي من المزود
+                raw_price = float(item.get("price", item.get("cost", 0.0)))
+                # إضافة المكسب الثابت (0.50 USDT)
                 p_price = round(raw_price + 0.50, 2)
                 
-                # فحص شامل للمخزون (التحقق من كافة المسميات المحتملة لدى المزود)
-                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", 1))))
+                # سحب المخزون الحقيقي بدقة
+                p_stock = item.get("stock", item.get("quantity", item.get("qty", 0)))
                 if isinstance(p_stock, bool):
                     p_stock = 10 if p_stock else 0
                 else:
@@ -118,10 +127,11 @@ def fetch_supplier_products():
                     "name": p_name,
                     "price": p_price,
                     "stock": p_stock,
-                    "description": p_desc,
+                    "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
                     "priority": priority
                 })
             
+            # ترتيب المنتجات حسب الشركة لتظهر مجمعة بانتظام
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -299,7 +309,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup)
@@ -398,7 +408,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Sync Fixed Active!", 200
+    return "Pixora Store Strict Sync Active!", 200
 
 def keep_alive():
     while True:
