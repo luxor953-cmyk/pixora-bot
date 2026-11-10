@@ -365,7 +365,8 @@ def health_check():
     return "Pixora Store Branded Categories Active!", 200
 
 def keep_alive():
-    while Time.sleep(300):
+    while True:
+        time.sleep(300)
         try:
             url = os.environ.get("RENDER_EXTERNAL_URL")
             if url:
@@ -384,8 +385,8 @@ if __name__ == '__main__':
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port, use_reloader=False), daemon=True).start()
     
     if bot:
-        While True:
-            Try:
-                Bot.infinity_polling(skip_pending=True, timeout=60)
-            Except Exception as e:
-                Time.sleep(5)
+        while True:
+            try:
+                bot.infinity_polling(skip_pending=True, timeout=60)
+            except Exception as e:
+                time.sleep(5)
