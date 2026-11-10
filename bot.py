@@ -203,4 +203,7 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\
+        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل إثبات الدفع بعد التحويل."
+        
+        safe_delete_message(chat_id, msg_id)
+        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
