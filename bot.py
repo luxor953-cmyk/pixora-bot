@@ -35,19 +35,25 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-# دالة لتصنيف المنتجات حسب البراند والخدمة بدقة
-def categorize_product_by_brand(name):
+# دالة تجميع المنتجات حسب عائلة البراند والخطط الخاصة به
+def group_product_by_family(name):
     n = name.lower()
-    if "google" in n or "جوجل" in n or "gemini" in n:
-        return "🌐 خدمات جوجل (Google)"
-    elif "capcut" in n or "كاب كات" in n:
-        return "🎬 خطط كاب كات (CapCut)"
-    elif "canva" in n or "كانفا" in n or "picsart" in n or "adobe" in n or "photoshop" in n:
-        return "🎨 التصميم الجرافيكي"
-    elif "chatgpt" in n or "openai" in n or "claude" in n or "ai" in n or "ذكاء اصطناعي" in n:
-        return "🤖 أدوات الذكاء الاصطناعي"
+    if "capcut" in n or "كاب كات" in n or "كابكات" in n:
+        return "🎬 خطط وتطبيقات CapCut"
+    elif "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
+        return "🌐 عائلة خدمات Google"
+    elif "canva" in n or "كانفا" in n:
+        return "🎨 خطط Canva المتنوعة"
+    elif "chatgpt" in n or "openai" in n:
+        return "🤖 خطط OpenAI و ChatGPT"
+    elif "claude" in n or "انثروبيك" in n:
+        return "🧠 خطط Claude AI"
+    elif "picsart" in n or "بيكسارت" in n:
+        return "✨ خطط PicsArt"
+    elif "adobe" in n or "photoshop" in n or "أدوبي" in n:
+        return "💻 برمجيات Adobe"
     else:
-        return "💻 البرمجيات والخدمات الرقمية"
+        return "📦 خدمات وبرمجيات رقمية أخرى"
 
 def safe_delete_message(chat_id, msg_id):
     try:
@@ -96,7 +102,8 @@ def fetch_supplier_products():
                 p_price = round(raw_price + 0.50, 2)
                 p_stock = item.get("stock", item.get("quantity", 10))
                 
-                cat_name = categorize_product_by_brand(p_name)
+                # تجميع حسب عائلة البراند والخطط
+                cat_name = group_product_by_family(p_name)
                 
                 if cat_name not in categories_map:
                     categories_map[cat_name] = {}
@@ -160,7 +167,7 @@ def purchase_order_from_supplier(product_id, reference_id):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي الأول!\n\nاختر البراند أو التصنيف المطلوب أدناه:"
+WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر عائلة المنتجات أو البراند المطلوب لعرض كافة خططه وأصنافه:"
 
 def get_main_menu_markup(is_admin=False):
     markup = InlineKeyboardMarkup()
@@ -171,7 +178,7 @@ def get_main_menu_markup(is_admin=False):
         return markup
 
     for cat_name in cats.keys():
-        markup.add(InlineKeyboardButton(f"📁 {cat_name}", callback_data="cat_" + cat_name))
+        markup.add(InlineKeyboardButton(cat_name, callback_data="cat_" + cat_name))
 
     markup.row(InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
     if is_admin:
@@ -190,7 +197,7 @@ def get_category_products_markup(cat_name):
             else:
                 markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + p_id))
 
-    markup.row(InlineKeyboardButton("🔙 عودة للتصنيفات", callback_data="main_menu"))
+    markup.row(InlineKeyboardButton("🔙 عودة لقائمة البراندات", callback_data="main_menu"))
     return markup
 
 def get_admin_markup():
@@ -251,7 +258,7 @@ if bot:
             bot.answer_callback_query(call.id)
             USER_CURRENT_CATEGORY[chat_id] = cat_name
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"📁 <b>{cat_name}</b>\n\nاختر المنتج المطلوب:", reply_markup=get_category_products_markup(cat_name), parse_mode="HTML")
+            bot.send_message(chat_id, f"📁 <b>{cat_name}</b>\n\nجميع الخطط والأصناف المتاحة ضمن هذه العائلة:", reply_markup=get_category_products_markup(cat_name), parse_mode="HTML")
 
         elif data.startswith("buy_"):
             prod_key = data.replace("buy_", "")
@@ -266,7 +273,7 @@ if bot:
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup()
                 markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
-                markup.row(InlineKeyboardButton("🔙 رجوع للقائمة", callback_data="cat_" + USER_CURRENT_CATEGORY.get(chat_id, list(cats.keys())[0])))
+                markup.row(InlineKeyboardButton("🔙 رجوع للخطط", callback_data="cat_" + USER_CURRENT_CATEGORY.get(chat_id, list(cats.keys())[0])))
                 
                 msg_text = f"🏷️ {found_info['name']}\n💰 السعر: ${found_info['price']}\n📦 المخزون: {found_info['stock']}\n\n{found_info['description']}"
                 safe_delete_message(chat_id, msg_id)
@@ -362,7 +369,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Branded Categories Active!", 200
+    return "Pixora Store Grouped Families Active!", 200
 
 def keep_alive():
     while True:
