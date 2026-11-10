@@ -15,9 +15,9 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 if not BOT_TOKEN or ":" not in BOT_TOKEN:
     raise ValueError("⚠️ خطأ: متغير البيئة BOT_TOKEN غير موجود أو صيغته خاطئة في لوحة تحكم Render!")
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# قائمة المنتجات الـ 31 الكاملة
+# قائمة المنتجات الكاملة
 RAW_PRODUCTS = [
     (
         "capcut",
@@ -122,7 +122,6 @@ RAW_PRODUCTS = [
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-# ضبط المخزون: أول منتجين (CapCut و Gemini) رصيدهم 0 (فارغ)، والباقي متوفر
 STOCK_DATABASE = {}
 for idx, (k, _, _, _) in enumerate(RAW_PRODUCTS):
     if idx in [0, 1]:  
@@ -323,4 +322,79 @@ def handle_incoming(message):
     info = PRODUCTS_INFO[prod_key]
     
     if len(STOCK_DATABASE.get(prod_key, [])) == 0:
-        bot.send
+        bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
+        return
+
+    order_id_input = message.text.strip() if message.content_type == 'text' else "صورة إيصال التحويل"
+    token = f"{chat_id}_{int(time.time())}"
+
+    PENDING_ORDERS[token] = {
+        "chat_id": chat_id,
+        "prod_key": prod_key,
+        "order_id": order_id_input
+    }
+    USER_SELECTED_PRODUCT.pop(chat_id, None)
+    
+    bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
+
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
+        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
+    )
+    user_name = message.from_user.first_name or "عميل"
+    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
+    
+    admin_msg = f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n👤 <b>العميل:</b> {user_name} ({user_username})\n🛍️ <b>المنتج:</b> {info['name']}\n💰 <b>المطلوب:</b> {info['price']} USDT\n🆔 <b>البيان/التحويل:</b> <code>{order_id_input}</code>\n\n👇 <i>تحقق من وصول المبلغ ثم اضغط تأكيد:</i>"
+
+    try:
+        if message.content_type == 'photo':
+            photo_id = message.photo[-1].file_id
+            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
+        else:
+            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        print("Admin notify error:", e)
+
+# خادم الـ Flask لإرضاء فحص المنصة
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Pixora Store Bot is Active!", 200
+
+def keep_alive():
+    time.sleep(15)
+    while True:
+        try:
+            app_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+            if app_url:
+                requests.get(app_url)
+                print("🔄 Keep-alive ping sent successfully.")
+        except Exception as e:
+            print("Ping error:", e)
+        time.sleep(300)
+
+if __name__ == '__main__':
+    # إجبار التليجرام على إلغاء أي Webhook قديم متبقي لضمان عدم حدوث تضارب
+    try:
+        bot.remove_webhook()
+        time.sleep(2)
+    except Exception:
+        pass
+
+    # تشغيل نظام الإبقاء نشطاً في الخلفية
+    threading.Thread(target=keep_alive, daemon=True).start()
+
+    # تشغيل سيرفر الويب في خلفية مستقلة لإرضاء Render
+    port = int(os.environ.get("PORT", 10000))
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port, use_reloader=False), daemon=True).start()
+
+    # تشغيل البوت مع مسح أي تحديثات معلقة لمنع الخطأ 409
+    print("🤖 Telegram Bot polling started...")
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(5)
