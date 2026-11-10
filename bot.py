@@ -15,8 +15,8 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
 VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
 
-if not BOT_TOKEN:
-    print("⚠️ تحذير: BOT_TOKEN غير موجود، يرجى تأكيده في متغيرات البيئة بـ Render.")
+print(f"DEBUG: BOT_TOKEN status -> {'Loaded' if BOT_TOKEN else 'MISSING'}")
+print(f"DEBUG: RESELLER_KEY status -> {'Loaded' if RESELLER_KEY else 'MISSING'}")
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
@@ -139,4 +139,50 @@ if bot:
                 item_data = "بيانات الحساب المسلمة من الموزع الآلي - تم التحقق بنجاح"
                 
                 ords = load_orders()
-                ords.setdefault(str(u_id), []).append
+                ords.setdefault(str(u_id), []).append({
+                    "product": p_name,
+                    "item": item_data,
+                    "order_id": o["order_id"],
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                save_orders(ords)
+                msg = (
+                    f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n"
+                    f"📦 بيانات حسابك لمنتج <b>{p_name}</b>:\n"
+                    f"<code>{item_data}</code>\n\n"
+                    f"📜 تم حفظ طلبك في (سجل مشترياتي).\n\n"
+                    f"شكراً لثقتك بمتجر <b>Pixora Store</b> 💚"
+                )
+                bot.send_message(u_id, msg, parse_mode="HTML")
+                bot.edit_message_text(f"✅ تم تسليم {p_name} للعميل بنجاح.", chat_id, msg_id)
+            else:
+                bot.answer_callback_query(call.id, "تم اتخاذ إجراء مسبقاً على هذا الطلب.", show_alert=True)
+            return
+
+        elif data.startswith("admin_reject_"):
+            token = data.replace("admin_reject_", "")
+            if token in PENDING_ORDERS:
+                o = PENDING_ORDERS.pop(token)
+                bot.send_message(o["chat_id"], "❌ تعذر تأكيد عملية التحويل. يرجى التواصل مع الدعم الفني للتأكد من المعاملة.")
+                bot.edit_message_text("❌ تم رفض الطلب.", chat_id, msg_id)
+            else:
+                bot.answer_callback_query(call.id, "تم اتخاذ إجراء مسبقاً.", show_alert=True)
+            return
+
+        if data.startswith("sold_out_"):
+            bot.answer_callback_query(call.id, "❌ عذراً، هذا المنتج غير متوفر في المخزن حالياً!", show_alert=True)
+            
+        elif data.startswith("buy_"):
+            prod_key = data.replace("buy_", "")
+            if prod_key in products_info:
+                info = products_info[prod_key]
+                if info['stock'] <= 0:
+                    bot.answer_callback_query(call.id, "❌ عذراً، نفدت كمية هذا المنتج للتو!", show_alert=True)
+                    return
+                bot.answer_callback_query(call.id)
+                USER_SELECTED_PRODUCT[chat_id] = prod_key
+                
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton("🪙 إتمام الشراء / الدفع الفوري", callback_data="pay_steps_" + prod_key))
+                markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+                msg_text = f"
