@@ -18,7 +18,6 @@ VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
-PENDING_ORDERS = {}
 ORDERS_FILE = "orders.json"
 
 def safe_delete_message(chat_id, msg_id):
@@ -73,6 +72,26 @@ def fetch_supplier_products():
         print("Error fetching supplier products:", e)
     return {}
 
+# دالة شراء المنتج أوتوماتيكياً من API المزود
+def purchase_order_from_supplier(product_id, reference_id):
+    if not RESELLER_KEY:
+        return {"success": False, "error": "No reseller key"}
+    
+    headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
+    payload = {
+        "product_id": product_id,
+        "reference": reference_id
+    }
+    try:
+        response = requests.post(f"{VENTEBOT_API_URL}/orders", json=payload, headers=headers, timeout=15)
+        if response.status_code in [200, 201]:
+            data = response.json()
+            return {"success": True, "data": data}
+        else:
+            return {"success": False, "error": response.text}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي الأول!\n\nاختر منتجك أدناه:"
 
 def get_main_menu_markup():
@@ -125,18 +144,23 @@ if bot:
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
             markup.row(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
-            pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) هنا للشات."
+            pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup)
             
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             ords = load_orders().get(str(chat_id), [])
-            text = "📜 سجل مشترياتي:\n\n" + ("لا توجد طلبات سابقة." if not ords else "\n".join([o['product'] for o in ords]))
+            if notords:
+                text = "📜 سجل مشترياتي:\n\nلا توجد طلبات سابقة."
+            else:
+                text = "📜 سجل مشترياتي السابقة:\n\n"
+                for o in ords:
+                    text += f"📦 {o['product']}\n🔑 البيان: <code>{o['item']}</code>\n------------------\n"
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup)
+            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
             
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
@@ -150,25 +174,53 @@ if bot:
         if message.text and message.text.startswith('/'):
             return
         if chat_id not in USER_SELECTED_PRODUCT:
-            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من /start")
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً وضغط إتمام الدفع من /start")
             return
 
         prod_key = USER_SELECTED_PRODUCT.pop(chat_id)
-        order_id = message.text.strip() if message.text else "إيصال مصور"
+        products_info = fetch_supplier_products()
+        info = products_info.get(prod_key, {"name": "منتج رقمي"})
         
-        bot.send_message(chat_id, "⏳ تم استلام بيانات الدفع، جاري مراجعة الطلب وتسليمك الحساب فوراً.")
+        order_reference = message.text.strip() if message.text else f"Photo_{int(time.time())}"
         
-        admin_text = f"🔔 طلب جديد!\nالمنتج: {prod_key}\nرقم العملية: {order_id}\nمن المستخدم: {chat_id}"
-        try:
-            bot.send_message(ADMIN_ID, admin_text)
-        except Exception:
-            pass
+        bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وشراء المنتج من المزود أوتوماتيكياً...")
+
+        # تنفيذ الشراء الآلي عبر الـ API
+        api_result = purchase_order_from_supplier(prod_key, order_reference)
+
+        if api_result["success"]:
+            res_data = api_result["data"]
+            item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
+            
+            # حفظ الطلب في سجل المستخدم
+            ords = load_orders()
+            ords.setdefault(str(chat_id), []).append({
+                "product": info['name'],
+                "item": item_details,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            save_orders(ords)
+
+            success_msg = (
+                f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n"
+                f"📦 منتجك: <b>{info['name']}</b>\n"
+                f"🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>\n\n"
+                f"شكراً لثقتك بمتجر Pixora Store 💚"
+            )
+            bot.send_message(chat_id, success_msg, parse_mode="HTML")
+        else:
+            error_reason = api_result.get("error", "خطأ غير معروف")
+            bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً: {error_reason}\nتم إشعار الإدارة للمتابعة الفورية.")
+            try:
+                bot.send_message(ADMIN_ID, f"⚠️ تنبيه: فشل الشراء الآلي للعميل {chatid} للمنتج {info['name']}.\nالخطأ: {error_reason}")
+            except Exception:
+                pass
 
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Active!", 200
+    return "Pixora Store Full Automation Active!", 200
 
 def keep_alive():
     while True:
