@@ -106,11 +106,9 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
-                # سحب السعر الحقيقي
                 raw_price = float(item.get("price", item.get("cost", item.get("amount", item.get("rate", 0.0)))))
                 p_price = round(raw_price + 0.50, 2)
                 
-                # سحب المخزون الحقيقي
                 p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 0)))))
                 if isinstance(p_stock, bool):
                     p_stock = 10 if p_stock else 0
@@ -120,9 +118,7 @@ def fetch_supplier_products():
                     except:
                         p_stock = 0
 
-                # جلب رابط الصورة إذا كان المزود يوفره
                 p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", ""))))
-
                 priority = get_product_brand_priority(p_name)
                 
                 products_list.append({
@@ -135,6 +131,7 @@ def fetch_supplier_products():
                     "priority": priority
                 })
             
+            # ترتيب المنتجات أولاً حسب الأولوية (الشركة)، ثم ترتيباً أبجدياً حسب اسم المنتج (Alphabetical)
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -307,7 +304,6 @@ if bot:
                 msg_text = f"🏷️ <b>{info['name']}</b>\n💰 السعر: ${info['price']}\n📦 المخزون المتاح: {info['stock']}\n\n{info['description']}"
                 safe_delete_message(chat_id, msg_id)
                 
-                # إرسال الصورة إذا وجد رابطها لدى المزود، أو إرسال النص مباشرة
                 if info.get('image'):
                     try:
                         bot.send_photo(chat_id, info['image'], caption=msg_text, reply_markup=markup, parse_mode="HTML")
@@ -420,7 +416,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Images & Sync Active!", 200
+    return "Pixora Store Alphabetical Active!", 200
 
 def keep_alive():
     while True:
