@@ -46,7 +46,6 @@ def save_orders(orders_data):
     except Exception as e:
         print("Error saving orders:", e)
 
-# جلب المنتجات وإضافة هامش ربح 20% تلقائياً
 def fetch_supplier_products():
     if not RESELLER_KEY:
         return {}
@@ -60,12 +59,8 @@ def fetch_supplier_products():
             for item in items:
                 p_id = str(item.get("id", item.get("code", "unknown")))
                 p_name = item.get("name", "منتج رقمي")
-                
-                # سعر التاجر الأساسي
                 raw_price = float(item.get("price", 1.0))
-                # إضافة هامش ربح 20% وتقريب الناتج لرقمين عشريين
                 p_price = round(raw_price * 1.20, 2)
-                
                 p_stock = item.get("stock", item.get("quantity", 10))
                 p_desc = item.get("description", "اشتراك رقمي رسمي مع ضمان كامل.")
                 
@@ -208,62 +203,4 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل إثبات الدفع بعد التحويل."
-        
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
-
-    elif data == "my_orders":
-        bot.answer_callback_query(call.id)
-        all_orders = load_orders()
-        user_history = all_orders.get(str(chat_id), [])
-        
-        if not user_history:
-            history_text = "📜 <b>سجل مشترياتي:</b>\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
-        else:
-            history_text = "📜 <b>سجل مشترياتي السابقة:</b>\n\n"
-            for idx, order in enumerate(user_history, 1):
-                history_text += f"{idx}️⃣ <b>المنتج:</b> {order['product']}\n🔑 <b>البيانات:</b> <code>{order['item']}</code>\n🆔 <b>رقم العملية:</b> <code>{order['order_id']}</code>\n📅 <b>الوقت:</b> {order['time']}\n------------------------\n"
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, history_text, reply_markup=markup, parse_mode="HTML")
-        
-    elif data == "main_menu":
-        bot.answer_callback_query(call.id)
-        USER_SELECTED_PRODUCT.pop(chat_id, None)
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(), parse_mode="Markdown")
-
-@bot.message_handler(content_types=['text', 'photo'])
-def handle_incoming(message):
-    chat_id = message.chat.id
-    if message.content_type == 'text' and message.text.startswith('/'):
-        return
-
-    if chat_id not in USER_SELECTED_PRODUCT:
-        bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة الرئيسية (/start) قبل إرسال بيانات الدفع.")
-        return
-
-    prod_key = USER_SELECTED_PRODUCT[chat_id]
-    products_info = fetch_supplier_products()
-    info = products_info.get(prod_key, {"name": "منتج رقمي", "price": 1.0})
-
-    order_id_input = message.text.strip() if message.content_type == 'text' else "صورة إيصال التحويل"
-    token = f"{chat_id}_{int(time.time())}"
-
-    PENDING_ORDERS[token] = {
-        "chat_id": chat_id,
-        "prod_key": prod_key,
-        "order_id": order_id_input
-    }
-    USER_SELECTED_PRODUCT.pop(chat_id, None)
-    
-    bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
-
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
-        InlineKeyboardButton("❌
+        pay_text = f"🪙 **معلومات الدفع في
