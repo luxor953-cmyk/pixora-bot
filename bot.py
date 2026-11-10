@@ -285,22 +285,3 @@ def handle_query(call):
         pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\n\nBinance Pay ID: `{BINANCE_ID}`\n\nاختر منتجك أولاً من القائمة الرئيسية ثم أرسل إثبات الدفع بعد التحويل."
         
         safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, pay_text, reply_markup=markup, parse_mode="Markdown")
-
-    elif data == "my_orders":
-        bot.answer_callback_query(call.id)
-        all_orders = load_orders()
-        user_history = all_orders.get(str(chat_id), [])
-        
-        if not user_history:
-            history_text = "📜 <b>سجل مشترياتي:</b>\n\nعذراً، ليس لديك أي عمليات شراء مسجلة حتى الآن."
-        else:
-            history_text = "📜 <b>سجل مشترياتي السابقة:</b>\n\n"
-            for idx, order in enumerate(user_history, 1):
-                history_text += f"{idx}️⃣ <b>المنتج:</b> {order['product']}\n🔑 <b>البيانات:</b> <code>{order['item']}</code>\n🆔 <b>رقم العملية:</b> <code>{order['order_id']}</code>\n📅 <b>الوقت:</b> {order['time']}\n------------------------\n"
-        
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        
-        safe_delete_message(chat_id, msg_id)
-        bot.send_message(chat_id, history_text, reply_markup=markup, parse
