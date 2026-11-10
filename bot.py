@@ -21,7 +21,6 @@ USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
 ORDERS_FILE = "orders.json"
 
-# كلمات محظورة لفلترة أي منتجات أغاني أو أفلام أو مسلسلات نهائياً
 BANNED_KEYWORDS = [
     "spotify", "anghami", "netflix", "shahid", "disney", "apple music", 
     "iptv", "movie", "film", "music", "osn", "watchit", "prime video", 
@@ -35,7 +34,6 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-# دالة لتحديد أولوية الشركة لترتيب المنتجات تحت بعضها
 def get_product_brand_priority(name):
     n = name.lower()
     if "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
@@ -86,6 +84,9 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
+            # طباعة البيانات في الـ Logs لنراها بدقة
+            print("SUPPLIER RAW DATA:", json.dumps(data, ensure_ascii=False)[:500])
+            
             products_list = []
             items = data.get("products", data) if isinstance(data, dict) else data
             for item in items:
@@ -96,11 +97,20 @@ def fetch_supplier_products():
                     continue
 
                 p_id = str(item.get("id", item.get("code", "unknown")))
-                raw_price = float(item.get("price", 1.0))
                 
-                # إضافة مكسب ثابت (نصف عملة USDT) لكل منتج
+                # جلب السعر مع دعم كافة الاحتمالات لحقول المزود
+                raw_price = float(item.get("price", item.get("cost", item.get("amount", 1.0))))
+                
+                # إضافة مكسب ثابت (نصف عملة USDT)
                 p_price = round(raw_price + 0.50, 2)
-                p_stock = item.get("stock", item.get("quantity", 10))
+                
+                # فحص شامل للمخزون (التحقق من كافة المسميات المحتملة لدى المزود)
+                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", 1))))
+                if isinstance(p_stock, bool):
+                    p_stock = 10 if p_stock else 0
+                else:
+                    p_stock = int(p_stock)
+
                 priority = get_product_brand_priority(p_name)
                 
                 products_list.append({
@@ -112,7 +122,6 @@ def fetch_supplier_products():
                     "priority": priority
                 })
             
-            # ترتيب المنتجات بناءً على الشركة/البراند لتظهر مجمعة تحت بعضها
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -186,14 +195,12 @@ def get_main_menu_markup(is_admin=False):
         markup.add(InlineKeyboardButton("⚠️ لا توجد منتجات متاحة حالياً...", callback_data="main_menu"))
         return markup
 
-    # عرض المنتجات مرتبة ومجمعة حسب الشركة والبراند
     for k, info in products_info.items():
         if info['stock'] > 0:
             markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
         else:
             markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
 
-    # الأزرار الرئيسية الثابتة في الأسفل
     markup.row(InlineKeyboardButton("🔍 بحث عن منتج", callback_data="search_product"), InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
     markup.row(InlineKeyboardButton("💳 طرق الدفع", callback_data="payment_methods"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
     
@@ -251,7 +258,7 @@ if bot:
         elif data == "adm_transactions" and is_admin:
             bot.answer_callback_query(call.id)
             txs = api_get_wallet_transactions()
-            text = f"📊 <b>سجل المعاملات المالية:</b>\n<pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌ تعذر جلب سجل المعاملات."
+            text = f"📊 <b>سجل المعاملات المالية:</b>\n<pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌ تعذر جلب سجل المعاملات المالية."
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔙 رجوع لوحة التحكم", callback_data="admin_panel"))
             safe_delete_message(chat_id, msg_id)
@@ -263,7 +270,7 @@ if bot:
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🏠 إلغاء والعودة للرئيسية", callback_data="main_menu"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🔍 <b>البحث عن منتج:</b>\n\nأرسل اسم المنتج أو جزءاً منه (مثل: Canva أو CapCut أو ChatGPT) في رسالة الآن للبحث عنه:", reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, "🔍 <b>البحث عن منتج:</b>\n\nأرسل اسم المنتج أو جزءاً منه في رسالة الآن للبحث عنه:", reply_markup=markup, parse_mode="HTML")
 
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
@@ -292,7 +299,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup)
@@ -324,7 +331,6 @@ if bot:
         if message.text and message.text.startswith('/'):
             return
 
-        # التعامل مع طلب البحث عن منتج
         if USER_WAITING_FOR_SEARCH.get(chat_id):
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
             query = message.text.strip().lower()
@@ -392,7 +398,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Brand Sorted Active!", 200
+    return "Pixora Store Sync Fixed Active!", 200
 
 def keep_alive():
     while True:
