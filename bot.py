@@ -125,7 +125,7 @@ PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in 
 # ضبط المخزون: أول منتجين (CapCut و Gemini) رصيدهم 0 (فارغ)، والباقي متوفر
 STOCK_DATABASE = {}
 for idx, (k, _, _, _) in enumerate(RAW_PRODUCTS):
-    if idx in [0, 1]:  # CapCut و Gemini رصيدهم 0 للتجربة
+    if idx in [0, 1]:  
         STOCK_DATABASE[k] = []
     else:
         STOCK_DATABASE[k] = [f"بيانات اشتراك - مفعل وفوري"]
@@ -323,84 +323,4 @@ def handle_incoming(message):
     info = PRODUCTS_INFO[prod_key]
     
     if len(STOCK_DATABASE.get(prod_key, [])) == 0:
-        bot.send_message(chat_id, "⚠️ عذراً، نفدت كمية هذا المنتج حالياً!")
-        return
-
-    order_id_input = message.text.strip() if message.content_type == 'text' else "صورة إيصال التحويل"
-    token = f"{chat_id}_{int(time.time())}"
-
-    PENDING_ORDERS[token] = {
-        "chat_id": chat_id,
-        "prod_key": prod_key,
-        "order_id": order_id_input
-    }
-    USER_SELECTED_PRODUCT.pop(chat_id, None)
-    
-    bot.send_message(chat_id, "⏳ <b>تم استلام بيانات التحويل بنجاح!</b>\nجاري مراجعة الطلب وتسليم بيانات حسابك فور التأكيد...", parse_mode="HTML")
-
-    markup = InlineKeyboardMarkup()
-    markup.row(
-        InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
-        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
-    )
-    user_name = message.from_user.first_name or "عميل"
-    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
-    
-    admin_msg = f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n👤 <b>العميل:</b> {user_name} ({user_username})\n🛍️ <b>المنتج:</b> {info['name']}\n💰 <b>المطلوب:</b> {info['price']} USDT\n🆔 <b>البيان/التحويل:</b> <code>{order_id_input}</code>\n\n👇 <i>تحقق من وصول المبلغ ثم اضغط تأكيد:</i>"
-
-    try:
-        if message.content_type == 'photo':
-            photo_id = message.photo[-1].file_id
-            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        print("Admin notify error:", e)
-
-# خادم الـ Flask لإرضاء فحص المنصة وتفعيل وظيفة البقاء نشطاً (Self-Ping)
-app = Flask(__name__)
-
-@app.route('/')
-def health_check():
-    return "Pixora Store Bot is Active!", 200
-
-def keep_alive():
-    """هذه الوظيفة ترسل طلباً للسيرفر كل 5 دقائق لمنع دخوله في وضع السبات على Render"""
-    time.sleep(10) # الانتظار قليلاً حتى يعمل السيرفر تماماً
-    while True:
-        try:
-            app_url = os.environ.get("RENDER_EXTERNAL_URL", "")
-            if app_url:
-                requests.get(app_url)
-                print("🔄 Keep-alive ping sent successfully.")
-        except Exception as e:
-            print("Ping error:", e)
-        time.sleep(300) # كل 5 دقائق
-
-def run_telegram_bot():
-    try:
-        bot.remove_webhook()
-        time.sleep(1)
-    except Exception:
-        pass
-    print("🤖 Telegram Bot polling started...")
-    bot.infinity_polling(skip_pending=True)
-
-if __name__ == '__main__':
-    try:
-        bot.remove_webhook()
-        time.sleep(2)
-    except Exception:
-        pass
-
-    # تشغيل نظام إبقاء السيرفر نشطاً في الخلفية
-    threading.Thread(target=keep_alive, daemon=True).start()
-
-    # تشغيل بوت تيليجرام في خلفية مستقلة
-    bot_thread = threading.Thread(target=run_telegram_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
-
-    # فتح المنفذ المطلوب لخدمة الويب في الواجهة الأمامية
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+        bot.send
