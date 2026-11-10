@@ -16,7 +16,7 @@ if not BOT_TOKEN or ":" not in BOT_TOKEN:
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True)
 
-# قائمة المنتجات الـ 31 الكاملة مع الأوصاف الأصلية المفصلة
+# قائمة المنتجات الـ 31 الكاملة
 RAW_PRODUCTS = [
     (
         "capcut",
@@ -121,7 +121,13 @@ RAW_PRODUCTS = [
 
 PRODUCTS_INFO = {k: {"name": n, "price": p, "description": d} for k, n, p, d in RAW_PRODUCTS}
 
-STOCK_DATABASE = {k: [f"بيانات اشتراك {PRODUCTS_INFO[k]['name']} - مفعل وفوري"] for k in PRODUCTS_INFO}
+# ضبط المخزون: أول منتجين (CapCut و Gemini) رصيدهم 0 (فارغ)، والباقي متوفر
+STOCK_DATABASE = {}
+for idx, (k, _, _, _) in enumerate(RAW_PRODUCTS):
+    if idx in [0, 1]:  # CapCut و Gemini رصيدهم 0 للتجربة
+        STOCK_DATABASE[k] = []
+    else:
+        STOCK_DATABASE[k] = [f"بيانات اشتراك - مفعل وفوري"]
 
 USER_SELECTED_PRODUCT = {}
 PENDING_ORDERS = {}
@@ -160,27 +166,19 @@ def get_main_menu_markup():
     markup = InlineKeyboardMarkup()
     in_stock_btns = []
     for k, info in PRODUCTS_INFO.items():
+        clean_name = info['name'].replace("🔴", "").replace("🟢", "").replace("🎞️", "").replace("💠", "").replace("📱", "").replace("🔺", "").replace("🎨", "").strip()
         if len(STOCK_DATABASE.get(k, [])) > 0:
-            clean_name = info['name'].replace("🔴", "").replace("🟢", "").strip()
-            in_stock_btns.append(InlineKeyboardButton(f"🟢 {clean_name} · ${info['price']}", callback_data="buy_" + k))
+            # المتاح يظهر بجانبه علامة صح بالأخضر
+            in_stock_btns.append(InlineKeyboardButton(f"✅ {clean_name} · ${info['price']}", callback_data="buy_" + k))
+        else:
+            # غير المتاح يظهر بجانبه علامة إكس بالأحمر
+            in_stock_btns.append(InlineKeyboardButton(f"❌ {clean_name} (نفد)", callback_data="sold_out_" + k))
     
     for i in range(0, len(in_stock_btns), 2):
         if i + 1 < len(in_stock_btns):
             markup.row(in_stock_btns[i], in_stock_btns[i+1])
         else:
             markup.row(in_stock_btns[i])
-            
-    out_stock_btns = []
-    for k, info in PRODUCTS_INFO.items():
-        if len(STOCK_DATABASE.get(k, [])) == 0:
-            clean_name = info['name'].replace("🔴", "").replace("🟢", "").strip()
-            out_stock_btns.append(InlineKeyboardButton(f"❌ {clean_name}", callback_data="sold_out_" + k))
-            
-    for i in range(0, len(out_stock_btns), 2):
-        if i + 1 < len(out_stock_btns):
-            markup.row(out_stock_btns[i], out_stock_btns[i+1])
-        else:
-            markup.row(out_stock_btns[i])
 
     markup.row(
         InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"),
