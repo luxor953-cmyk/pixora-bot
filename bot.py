@@ -18,7 +18,7 @@ VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
-USER_CURRENT_CATEGORY = {}
+USER_WAITING_FOR_SEARCH = {}
 ORDERS_FILE = "orders.json"
 
 # كلمات محظورة لفلترة أي منتجات أغاني أو أفلام أو مسلسلات نهائياً
@@ -35,25 +35,25 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-# دالة تجميع المنتجات حسب عائلة البراند والخطط الخاصة به
-def group_product_by_family(name):
+# دالة لتحديد أولوية الشركة لترتيب المنتجات تحت بعضها
+def get_product_brand_priority(name):
     n = name.lower()
-    if "capcut" in n or "كاب كات" in n or "كابكات" in n:
-        return "🎬 خطط وتطبيقات CapCut"
-    elif "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
-        return "🌐 عائلة خدمات Google"
+    if "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
+        return 1
+    elif "capcut" in n or "كاب كات" in n or "كابكات" in n:
+        return 2
     elif "canva" in n or "كانفا" in n:
-        return "🎨 خطط Canva المتنوعة"
+        return 3
     elif "chatgpt" in n or "openai" in n:
-        return "🤖 خطط OpenAI و ChatGPT"
+        return 4
     elif "claude" in n or "انثروبيك" in n:
-        return "🧠 خطط Claude AI"
+        return 5
     elif "picsart" in n or "بيكسارت" in n:
-        return "✨ خطط PicsArt"
-    elif "adobe" in n or "photoshop" in n or "أدوبي" in n:
-        return "💻 برمجيات Adobe"
+        return 6
+    elif "adobe" in n or "photoshop" in n:
+        return 7
     else:
-        return "📦 خدمات وبرمجيات رقمية أخرى"
+        return 8
 
 def safe_delete_message(chat_id, msg_id):
     try:
@@ -86,7 +86,7 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            categories_map = {}
+            products_list = []
             items = data.get("products", data) if isinstance(data, dict) else data
             for item in items:
                 p_name = item.get("name", "منتج رقمي")
@@ -101,20 +101,29 @@ def fetch_supplier_products():
                 # إضافة مكسب ثابت (نصف عملة USDT) لكل منتج
                 p_price = round(raw_price + 0.50, 2)
                 p_stock = item.get("stock", item.get("quantity", 10))
+                priority = get_product_brand_priority(p_name)
                 
-                # تجميع حسب عائلة البراند والخطط
-                cat_name = group_product_by_family(p_name)
-                
-                if cat_name not in categories_map:
-                    categories_map[cat_name] = {}
-                    
-                categories_map[cat_name][p_id] = {
+                products_list.append({
+                    "id": p_id,
                     "name": p_name,
                     "price": p_price,
                     "stock": p_stock,
-                    "description": p_desc
+                    "description": p_desc,
+                    "priority": priority
+                })
+            
+            # ترتيب المنتجات بناءً على الشركة/البراند لتظهر مجمعة تحت بعضها
+            products_list.sort(key=lambda x: (x['priority'], x['name']))
+            
+            ordered_map = {}
+            for p in products_list:
+                ordered_map[p['id']] = {
+                    "name": p['name'],
+                    "price": p['price'],
+                    "stock": p['stock'],
+                    "description": p['description']
                 }
-            return categories_map
+            return ordered_map
     except Exception as e:
         print("Error fetching supplier products:", e)
     return {}
@@ -167,37 +176,30 @@ def purchase_order_from_supplier(product_id, reference_id):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر عائلة المنتجات أو البراند المطلوب لعرض كافة خططه وأصنافه:"
+WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر المنتج المطلوب من القائمة أدناه:"
 
 def get_main_menu_markup(is_admin=False):
     markup = InlineKeyboardMarkup()
-    cats = fetch_supplier_products()
+    products_info = fetch_supplier_products()
     
-    if not cats:
+    if not products_info:
         markup.add(InlineKeyboardButton("⚠️ لا توجد منتجات متاحة حالياً...", callback_data="main_menu"))
         return markup
 
-    for cat_name in cats.keys():
-        markup.add(InlineKeyboardButton(cat_name, callback_data="cat_" + cat_name))
+    # عرض المنتجات مرتبة ومجمعة حسب الشركة والبراند
+    for k, info in products_info.items():
+        if info['stock'] > 0:
+            markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+        else:
+            markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
 
-    markup.row(InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
+    # الأزرار الرئيسية الثابتة في الأسفل
+    markup.row(InlineKeyboardButton("🔍 بحث عن منتج", callback_data="search_product"), InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
+    markup.row(InlineKeyboardButton("💳 طرق الدفع", callback_data="payment_methods"), InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
+    
     if is_admin:
         markup.row(InlineKeyboardButton("🛠️ لوحة تحكم الإدارة", callback_data="admin_panel"))
-    markup.add(InlineKeyboardButton("🛠️ الدعم الفني", url=SUPPORT_WHATSAPP))
-    return markup
-
-def get_category_products_markup(cat_name):
-    markup = InlineKeyboardMarkup()
-    cats = fetch_supplier_products()
-    
-    if cat_name in cats:
-        for p_id, info in cats[cat_name].items():
-            if info['stock'] > 0:
-                markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + p_id))
-            else:
-                markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + p_id))
-
-    markup.row(InlineKeyboardButton("🔙 عودة لقائمة البراندات", callback_data="main_menu"))
+        
     return markup
 
 def get_admin_markup():
@@ -210,8 +212,10 @@ def get_admin_markup():
 if bot:
     @bot.message_handler(commands=['start', 'menu'])
     def send_welcome(message):
-        is_admin = (message.chat.id == ADMIN_ID)
-        bot.send_message(message.chat.id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
+        chat_id = message.chat.id
+        USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+        is_admin = (chat_id == ADMIN_ID)
+        bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
 
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
@@ -219,7 +223,7 @@ if bot:
         msg_id = call.message.message_id
         data = call.data
         is_admin = (chat_id == ADMIN_ID)
-        cats = fetch_supplier_products()
+        products_info = fetch_supplier_products()
 
         if data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
@@ -253,44 +257,43 @@ if bot:
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
-        elif data.startswith("cat_"):
-            cat_name = data.replace("cat_", "")
+        elif data == "search_product":
             bot.answer_callback_query(call.id)
-            USER_CURRENT_CATEGORY[chat_id] = cat_name
+            USER_WAITING_FOR_SEARCH[chat_id] = True
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🏠 إلغاء والعودة للرئيسية", callback_data="main_menu"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"📁 <b>{cat_name}</b>\n\nجميع الخطط والأصناف المتاحة ضمن هذه العائلة:", reply_markup=get_category_products_markup(cat_name), parse_mode="HTML")
+            bot.send_message(chat_id, "🔍 <b>البحث عن منتج:</b>\n\nأرسل اسم المنتج أو جزءاً منه (مثل: Canva أو CapCut أو ChatGPT) في رسالة الآن للبحث عنه:", reply_markup=markup, parse_mode="HTML")
+
+        elif data == "payment_methods":
+            bot.answer_callback_query(call.id)
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            pay_info = f"💳 <b>طرق الدفع المتاحة في متجر Pixora Store:</b>\n\n- التحويل الفوري عبر عملات USDT الرقمية.\n- Binance ID الخاص بالمزود: <code>{BINANCE_ID}</code>\n\nبعد اختيار المنتج وضغط إتمام الدفع، أرسل رقم العملية أو الإيصال هنا للشات لتتم معالجة طلبك وتسليمه فوراً."
+            safe_delete_message(chat_id, msg_id)
+            bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
 
         elif data.startswith("buy_"):
             prod_key = data.replace("buy_", "")
-            found_info = None
-            for cat_name, prod_dict in cats.items():
-                if prod_key in prod_dict:
-                    found_info = prod_dict[prod_key]
-                    break
-            
-            if found_info:
+            if prod_key in products_info:
+                info = products_info[prod_key]
                 bot.answer_callback_query(call.id)
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup()
                 markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
-                markup.row(InlineKeyboardButton("🔙 رجوع للخطط", callback_data="cat_" + USER_CURRENT_CATEGORY.get(chat_id, list(cats.keys())[0])))
+                markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
                 
-                msg_text = f"🏷️ {found_info['name']}\n💰 السعر: ${found_info['price']}\n📦 المخزون: {found_info['stock']}\n\n{found_info['description']}"
+                msg_text = f"🏷️ {info['name']}\n💰 السعر: ${info['price']}\n📦 المخزون: {info['stock']}\n\n{info['description']}"
                 safe_delete_message(chat_id, msg_id)
                 bot.send_message(chat_id, msg_text, reply_markup=markup)
                 
         elif data.startswith("pay_"):
             prod_key = data.replace("pay_", "")
-            found_price = 1.0
-            for cat_name, prod_dict in cats.items():
-                if prod_key in prod_dict:
-                    found_price = prod_dict[prod_key]['price']
-                    break
-            
+            info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
-            pay_msg = f"🪙 تحويل مبلغ (${found_price} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
+            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup)
             
@@ -311,7 +314,7 @@ if bot:
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
-            USER_CURRENT_CATEGORY.pop(chat_id, None)
+            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
 
@@ -320,17 +323,37 @@ if bot:
         chat_id = message.chat.id
         if message.text and message.text.startswith('/'):
             return
+
+        # التعامل مع طلب البحث عن منتج
+        if USER_WAITING_FOR_SEARCH.get(chat_id):
+            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+            query = message.text.strip().lower()
+            products_info = fetch_supplier_products()
+            
+            markup = InlineKeyboardMarkup()
+            found_count = 0
+            for k, info in products_info.items():
+                if query in info['name'].lower() or query in info['description'].lower():
+                    found_count += 1
+                    if info['stock'] > 0:
+                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+                    else:
+                        markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
+            
+            markup.row(InlineKeyboardButton("🏠 عودة للرئيسية", callback_data="main_menu"))
+            if found_count > 0:
+                bot.send_message(chat_id, f"🔍 نتائج البحث عن: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
+            else:
+                bot.send_message(chat_id, f"❌ لم يتم العثور على أي منتج يطابق بحثك: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
+            return
+
         if chat_id not in USER_SELECTED_PRODUCT:
-            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً وضغط إتمام الدفع من /start")
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً أو استخدام القائمة الرئيسية من /start")
             return
 
         prod_key = USER_SELECTED_PRODUCT.pop(chat_id)
-        cats = fetch_supplier_products()
-        info = {"name": "منتج رقمي"}
-        for cat_name, prod_dict in cats.items():
-            if prod_key in prod_dict:
-                info = prod_dict[prod_key]
-                break
+        products_info = fetch_supplier_products()
+        info = products_info.get(prod_key, {"name": "منتج رقمي"})
         
         order_reference = message.text.strip() if message.text else f"Photo_{int(time.time())}"
         
@@ -369,7 +392,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Grouped Families Active!", 200
+    return "Pixora Store Brand Sorted Active!", 200
 
 def keep_alive():
     while True:
