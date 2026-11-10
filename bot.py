@@ -12,7 +12,6 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", "1004439571"))
 BINANCE_ID = "957483337"
 SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
-# مفتاح الربط الخاص بالتاجر من متغيرات البيئة
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
 VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
 
@@ -47,7 +46,7 @@ def save_orders(orders_data):
     except Exception as e:
         print("Error saving orders:", e)
 
-# جلب المنتجات من API التاجر تلقائياً
+# جلب المنتجات وإضافة هامش ربح 20% تلقائياً
 def fetch_supplier_products():
     if not RESELLER_KEY:
         return {}
@@ -57,12 +56,16 @@ def fetch_supplier_products():
         if response.status_code == 200:
             data = response.json()
             products_map = {}
-            # بناء القائمة بناءً على استجابة الـ API المتوقعة
             items = data.get("products", data) if isinstance(data, dict) else data
             for item in items:
                 p_id = str(item.get("id", item.get("code", "unknown")))
                 p_name = item.get("name", "منتج رقمي")
-                p_price = float(item.get("price", 1.0))
+                
+                # سعر التاجر الأساسي
+                raw_price = float(item.get("price", 1.0))
+                # إضافة هامش ربح 20% وتقريب الناتج لرقمين عشريين
+                p_price = round(raw_price * 1.20, 2)
+                
                 p_stock = item.get("stock", item.get("quantity", 10))
                 p_desc = item.get("description", "اشتراك رقمي رسمي مع ضمان كامل.")
                 
@@ -136,7 +139,6 @@ def handle_query(call):
             p_info = products_info.get(p_key, {"name": "منتج رقمي", "price": 1.0})
             p_name = p_info["name"]
             
-            # محاكاة أو طلب الشراء الفعلي من API التاجر لاحقاً
             item_data = "بيانات الحساب المسلمة من الموزع الآلي - تم التحقق بنجاح"
             
             ords = load_orders()
@@ -264,56 +266,4 @@ def handle_incoming(message):
     markup = InlineKeyboardMarkup()
     markup.row(
         InlineKeyboardButton("✅ تأكيد وتسليم الطلب", callback_data=f"admin_approve_{token}"),
-        InlineKeyboardButton("❌ رفض", callback_data=f"admin_reject_{token}")
-    )
-    user_name = message.from_user.first_name or "عميل"
-    user_username = f"@{message.from_user.username}" if message.from_user.username else f"ID: {chat_id}"
-    
-    admin_msg = f"🔔 <b>طلب شراء جديد في Pixora Store!</b>\n\n👤 <b>العميل:</b> {user_name} ({user_username})\n🛍️ <b>المنتج:</b> {info['name']}\n💰 <b>المطلوب:</b> {info['price']} USDT\n🆔 <b>البيان/التحويل:</b> <code>{order_id_input}</code>\n\n👇 <i>تحقق من وصول المبلغ ثم اضغط تأكيد:</i>"
-
-    try:
-        if message.content_type == 'photo':
-            photo_id = message.photo[-1].file_id
-            bot.send_photo(ADMIN_ID, photo_id, caption=admin_msg, reply_markup=markup, parse_mode="HTML")
-        else:
-            bot.send_message(ADMIN_ID, admin_msg, reply_markup=markup, parse_mode="HTML")
-    except Exception as e:
-        print("Admin notify error:", e)
-
-app = Flask(__name__)
-
-@app.route('/')
-def health_check():
-    return "Pixora Store API Connected & Active!", 200
-
-def keep_alive():
-    time.sleep(15)
-    while True:
-        try:
-            app_url = os.environ.get("RENDER_EXTERNAL_URL", "")
-            if app_url:
-                requests.get(app_url)
-                print("🔄 Keep-alive ping sent successfully.")
-        except Exception as e:
-            print("Ping error:", e)
-        time.sleep(300)
-
-if __name__ == '__main__':
-    try:
-        bot.remove_webhook()
-        time.sleep(2)
-    except Exception:
-        pass
-
-    threading.Thread(target=keep_alive, daemon=True).start()
-
-    port = int(os.environ.get("PORT", 10000))
-    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port, use_reloader=False), daemon=True).start()
-
-    print("🤖 Telegram Bot polling started with API integration...")
-    while True:
-        try:
-            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"Polling error: {e}")
-            time.sleep(5)
+        InlineKeyboardButton("❌
