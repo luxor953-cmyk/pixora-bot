@@ -84,41 +84,44 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            products_list = []
             
-            # جلب المنتجات بدقة من رد المزود فقط دون أي افتراضات
+            # طباعة الرد الخام في الـ Logs لنرى الحقول الحقيقية للمزود
+            print("*** RAW SUPPLIER JSON RESPONSE ***", json.dumps(data, ensure_ascii=False))
+            
+            products_list = []
             items = []
             if isinstance(data, list):
                 items = data
             elif isinstance(data, dict):
-                items = data.get("products", data.get("data", []))
+                items = data.get("products", data.get("data", data.get("items", [])))
             
             for item in items:
-                p_name = item.get("name")
+                p_name = item.get("name", item.get("title", ""))
                 if not p_name:
                     continue
                 
-                p_desc = item.get("description", "")
+                p_desc = item.get("description", item.get("desc", ""))
                 
-                # فلترة المحتوى غير الحلال
                 if not is_halal_product(p_name, p_desc):
                     continue
 
-                p_id = str(item.get("id", item.get("code", "")))
+                p_id = str(item.get("id", item.get("code", item.get("product_id", ""))))
                 if not p_id:
                     continue
 
-                # سحب السعر الحقيقي من المزود
-                raw_price = float(item.get("price", item.get("cost", 0.0)))
-                # إضافة المكسب الثابت (0.50 USDT)
+                # التقاط السعر بدقة من أي اسم محتمل للحقل لدى المزود
+                raw_price = float(item.get("price", item.get("cost", item.get("amount", item.get("rate", 0.0)))))
                 p_price = round(raw_price + 0.50, 2)
                 
-                # سحب المخزون الحقيقي بدقة
-                p_stock = item.get("stock", item.get("quantity", item.get("qty", 0)))
+                # التقاط المخزون بدقة من أي اسم محتمل
+                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 0)))))
                 if isinstance(p_stock, bool):
                     p_stock = 10 if p_stock else 0
                 else:
-                    p_stock = int(p_stock)
+                    try:
+                        p_stock = int(p_stock)
+                    except:
+                        p_stock = 0
 
                 priority = get_product_brand_priority(p_name)
                 
@@ -131,7 +134,6 @@ def fetch_supplier_products():
                     "priority": priority
                 })
             
-            # ترتيب المنتجات حسب الشركة لتظهر مجمعة بانتظام
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -408,7 +410,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Strict Sync Active!", 200
+    return "Pixora Store Debug Active!", 200
 
 def keep_alive():
     while True:
