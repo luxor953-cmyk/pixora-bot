@@ -2,6 +2,7 @@ import os
 import time
 import json
 import threading
+import requests
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
@@ -168,10 +169,8 @@ def get_main_menu_markup():
     for k, info in PRODUCTS_INFO.items():
         clean_name = info['name'].replace("🔴", "").replace("🟢", "").replace("🎞️", "").replace("💠", "").replace("📱", "").replace("🔺", "").replace("🎨", "").strip()
         if len(STOCK_DATABASE.get(k, [])) > 0:
-            # المتاح يظهر بجانبه علامة صح بالأخضر
             in_stock_btns.append(InlineKeyboardButton(f"✅ {clean_name} · ${info['price']}", callback_data="buy_" + k))
         else:
-            # غير المتاح يظهر بجانبه علامة إكس بالأحمر
             in_stock_btns.append(InlineKeyboardButton(f"❌ {clean_name} (نفد)", callback_data="sold_out_" + k))
     
     for i in range(0, len(in_stock_btns), 2):
@@ -358,12 +357,25 @@ def handle_incoming(message):
     except Exception as e:
         print("Admin notify error:", e)
 
-# خادم الـ Flask لإرضاء فحص المنصة (Web Service Port Binding)
+# خادم الـ Flask لإرضاء فحص المنصة وتفعيل وظيفة البقاء نشطاً (Self-Ping)
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
     return "Pixora Store Bot is Active!", 200
+
+def keep_alive():
+    """هذه الوظيفة ترسل طلباً للسيرفر كل 5 دقائق لمنع دخوله في وضع السبات على Render"""
+    time.sleep(10) # الانتظار قليلاً حتى يعمل السيرفر تماماً
+    while True:
+        try:
+            app_url = os.environ.get("RENDER_EXTERNAL_URL", "")
+            if app_url:
+                requests.get(app_url)
+                print("🔄 Keep-alive ping sent successfully.")
+        except Exception as e:
+            print("Ping error:", e)
+        time.sleep(300) # كل 5 دقائق
 
 def run_telegram_bot():
     try:
@@ -380,6 +392,9 @@ if __name__ == '__main__':
         time.sleep(2)
     except Exception:
         pass
+
+    # تشغيل نظام إبقاء السيرفر نشطاً في الخلفية
+    threading.Thread(target=keep_alive, daemon=True).start()
 
     # تشغيل بوت تيليجرام في خلفية مستقلة
     bot_thread = threading.Thread(target=run_telegram_bot)
