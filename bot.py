@@ -203,4 +203,4 @@ def handle_query(call):
         bot.answer_callback_query(call.id)
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-        pay_text = f"🪙 **معلومات الدفع في
+        pay_text = f"🪙 **معلومات الدفع في متجر Pixora Store:**\
