@@ -20,6 +20,20 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 USER_SELECTED_PRODUCT = {}
 ORDERS_FILE = "orders.json"
 
+# كلمات محظورة لفلترة أي منتجات أغاني أو أفلام أو مسلسلات نهائياً
+BANNED_KEYWORDS = [
+    "spotify", "anghami", "netflix", "shahid", "disney", "apple music", 
+    "iptv", "movie", "film", "music", "osn", "watchit", "prime video", 
+    "اغاني", "موسيقى", "أفلام", "مسلسلات", "سينما"
+]
+
+def is_halal_product(name, description=""):
+    text = f"{name} {description}".lower()
+    for word in BANNED_KEYWORDS:
+        if word in text:
+            return False
+    return True
+
 def safe_delete_message(chat_id, msg_id):
     try:
         if bot:
@@ -54,12 +68,20 @@ def fetch_supplier_products():
             products_map = {}
             items = data.get("products", data) if isinstance(data, dict) else data
             for item in items:
-                p_id = str(item.get("id", item.get("code", "unknown")))
                 p_name = item.get("name", "منتج رقمي")
-                raw_price = float(item.get("price", 1.0))
-                p_price = round(raw_price * 1.20, 2)
-                p_stock = item.get("stock", item.get("quantity", 10))
                 p_desc = item.get("description", "اشتراك رقمي رسمي مع ضمان كامل.")
+                
+                # فلترة المنتجات المحرمة (أغاني، أفلام، مسلسلات)
+                if not is_halal_product(p_name, p_desc):
+                    continue
+
+                p_id = str(item.get("id", item.get("code", "unknown")))
+                raw_price = float(item.get("price", 1.0))
+                
+                # إضافة مكسب ثابت (نصف عملة USDT) لكل منتج
+                p_price = round(raw_price + 0.50, 2)
+                
+                p_stock = item.get("stock", item.get("quantity", 10))
                 
                 products_map[p_id] = {
                     "name": p_name,
@@ -127,7 +149,7 @@ def get_main_menu_markup(is_admin=False):
     products_info = fetch_supplier_products()
     
     if not products_info:
-        markup.add(InlineKeyboardButton("⚠️ جارِ تحديث المنتجات...", callback_data="main_menu"))
+        markup.add(InlineKeyboardButton("⚠️ لا توجد منتجات متاحة حالياً...", callback_data="main_menu"))
         return markup
 
     for k, info in products_info.items():
@@ -289,7 +311,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Full Admin & Automation Active!", 200
+    return "Pixora Store Halal & Automation Active!", 200
 
 def keep_alive():
     while True:
