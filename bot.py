@@ -84,11 +84,8 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            
-            # طباعة الرد الخام في الـ Logs لنرى الحقول الحقيقية للمزود
-            print("*** RAW SUPPLIER JSON RESPONSE ***", json.dumps(data, ensure_ascii=False))
-            
             products_list = []
+            
             items = []
             if isinstance(data, list):
                 items = data
@@ -109,11 +106,11 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
-                # التقاط السعر بدقة من أي اسم محتمل للحقل لدى المزود
+                # سحب السعر الحقيقي
                 raw_price = float(item.get("price", item.get("cost", item.get("amount", item.get("rate", 0.0)))))
                 p_price = round(raw_price + 0.50, 2)
                 
-                # التقاط المخزون بدقة من أي اسم محتمل
+                # سحب المخزون الحقيقي
                 p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 0)))))
                 if isinstance(p_stock, bool):
                     p_stock = 10 if p_stock else 0
@@ -123,6 +120,9 @@ def fetch_supplier_products():
                     except:
                         p_stock = 0
 
+                # جلب رابط الصورة إذا كان المزود يوفره
+                p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", ""))))
+
                 priority = get_product_brand_priority(p_name)
                 
                 products_list.append({
@@ -131,6 +131,7 @@ def fetch_supplier_products():
                     "price": p_price,
                     "stock": p_stock,
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
+                    "image": p_image,
                     "priority": priority
                 })
             
@@ -142,7 +143,8 @@ def fetch_supplier_products():
                     "name": p['name'],
                     "price": p['price'],
                     "stock": p['stock'],
-                    "description": p['description']
+                    "description": p['description'],
+                    "image": p['image']
                 }
             return ordered_map
     except Exception as e:
@@ -302,9 +304,17 @@ if bot:
                 markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
                 markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
                 
-                msg_text = f"🏷️ {info['name']}\n💰 السعر: ${info['price']}\n📦 المخزون: {info['stock']}\n\n{info['description']}"
+                msg_text = f"🏷️ <b>{info['name']}</b>\n💰 السعر: ${info['price']}\n📦 المخزون المتاح: {info['stock']}\n\n{info['description']}"
                 safe_delete_message(chat_id, msg_id)
-                bot.send_message(chat_id, msg_text, reply_markup=markup)
+                
+                # إرسال الصورة إذا وجد رابطها لدى المزود، أو إرسال النص مباشرة
+                if info.get('image'):
+                    try:
+                        bot.send_photo(chat_id, info['image'], caption=msg_text, reply_markup=markup, parse_mode="HTML")
+                        return
+                    except Exception:
+                        pass
+                bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
                 
         elif data.startswith("pay_"):
             prod_key = data.replace("pay_", "")
@@ -314,7 +324,7 @@ if bot:
             markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, pay_msg, reply_markup=markup)
+            bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
             
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
@@ -410,7 +420,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Debug Active!", 200
+    return "Pixora Store Images & Sync Active!", 200
 
 def keep_alive():
     while True:
