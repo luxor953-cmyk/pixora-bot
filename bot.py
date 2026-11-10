@@ -34,25 +34,6 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-def get_product_brand_priority(name):
-    n = name.lower()
-    if "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
-        return 1
-    elif "capcut" in n or "كاب كات" in n or "كابكات" in n:
-        return 2
-    elif "canva" in n or "كانفا" in n:
-        return 3
-    elif "chatgpt" in n or "openai" in n:
-        return 4
-    elif "claude" in n or "انثروبيك" in n:
-        return 5
-    elif "picsart" in n or "بيكسارت" in n:
-        return 6
-    elif "adobe" in n or "photoshop" in n:
-        return 7
-    else:
-        return 8
-
 def safe_delete_message(chat_id, msg_id):
     try:
         if bot:
@@ -84,8 +65,11 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            products_list = []
             
+            # طباعة الرد الخام بالكامل لنرى المفاتيح الصحيحة
+            print("=== SUPPLIER RAW JSON ===", json.dumps(data, ensure_ascii=False))
+            
+            products_list = []
             items = []
             if isinstance(data, list):
                 items = data
@@ -93,10 +77,7 @@ def fetch_supplier_products():
                 items = data.get("products", data.get("data", data.get("items", [])))
             
             for item in items:
-                p_name = item.get("name", item.get("title", ""))
-                if not p_name:
-                    continue
-                
+                p_name = item.get("name", item.get("title", item.get("product_name", "منتج رقمي")))
                 p_desc = item.get("description", item.get("desc", ""))
                 
                 if not is_halal_product(p_name, p_desc):
@@ -106,20 +87,19 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
+                # سحب السعر الخام كما هو من المزود بدون أي تلاعب
                 raw_price = float(item.get("price", item.get("cost", item.get("amount", item.get("rate", 0.0)))))
                 p_price = round(raw_price + 0.50, 2)
                 
-                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 0)))))
-                if isinstance(p_stock, bool):
-                    p_stock = 10 if p_stock else 0
-                else:
-                    try:
-                        p_stock = int(p_stock)
-                    except:
-                        p_stock = 0
+                # سحب المخزون بدقة
+                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 1)))))
+                try:
+                    p_stock = int(p_stock)
+                except:
+                    p_stock = 10
 
-                p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", ""))))
-                priority = get_product_brand_priority(p_name)
+                # جلب رابط الصورة
+                p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", item.get("thumbnail", "")))))
                 
                 products_list.append({
                     "id": p_id,
@@ -127,12 +107,11 @@ def fetch_supplier_products():
                     "price": p_price,
                     "stock": p_stock,
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
-                    "image": p_image,
-                    "priority": priority
+                    "image": p_image
                 })
             
-            # ترتيب المنتجات أولاً حسب الأولوية (الشركة)، ثم ترتيباً أبجدياً حسب اسم المنتج (Alphabetical)
-            products_list.sort(key=lambda x: (x['priority'], x['name']))
+            # ترتيب أبجدي مباشر لجميع المنتجات لتسهيل التصفح
+            products_list.sort(key=lambda x: x['name'])
             
             ordered_map = {}
             for p in products_list:
@@ -416,7 +395,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Alphabetical Active!", 200
+    return "Pixora Store Clean Alphabetical Active!", 200
 
 def keep_alive():
     while True:
