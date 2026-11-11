@@ -116,7 +116,7 @@ def fetch_supplier_products():
 
                 raw_cost = float(item.get("price_usd", 0.0))
                 
-                # جعل منتج الاختبار سعره صفراً تماماً للتجربة المجانية
+                # جعل منتج الاختبار سعره صفراً تماماً
                 if "test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05:
                     p_price = 0.0
                 else:
@@ -137,7 +137,6 @@ def fetch_supplier_products():
                     "brand_group": brand_group
                 })
             
-            # ترتيب البراندات والأصناف أبجدياً بشكل متصل
             products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
             
             ordered_map = {}
@@ -343,6 +342,37 @@ if bot:
             if prod_key in products_info:
                 info = products_info[prod_key]
                 bot.answer_callback_query(call.id)
+                
+                # إذا كان المنتج مجانياً (سعر الصفر للتيست)، نقوم بالشراء وتسليمه فوراً بدون مطالبة برقم دفع!
+                if info['price'] == 0.0:
+                    safe_delete_message(chat_id, msg_id)
+                    bot.send_message(chat_id, "⏳ جاري تنفيذ طلب التجربة المجاني أوتوماتيكياً...")
+                    
+                    api_result = purchase_order_from_supplier(prod_key, "Free_Test_Order")
+                    if api_result["success"]:
+                        res_data = api_result["data"]
+                        item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
+                        
+                        ords = load_orders()
+                        ords.setdefault(str(chat_id), []).append({
+                            "product": info['name'],
+                            "item": item_details,
+                            "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                        save_orders(ords)
+
+                        success_msg = (
+                            f"🎉 <b>تم اختبار الشراء والتسليم بنجاح (منتج تجريبي مجاني)!</b>\n\n"
+                            f"📦 منتجك: <b>{info['name']}</b>\n"
+                            f"🔑 <b>بيانات التجربة:</b>\n<code>{item_details}</code>\n\n"
+                            f"شكراً لتجربتك لمتجر Pixora Store 💚"
+                        )
+                        bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
+                    else:
+                        bot.send_message(chat_id, f"❌ حدث خطأ في اختبار المزود: {api_result.get('error', 'خطأ')}", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
+                    return
+
+                # المنتجات المدفوعة: تطلب رقم التحويل كالمعتاد
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup()
                 markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
@@ -364,7 +394,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🏠 عودة للرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
@@ -463,7 +493,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Zero Price Test Active!", 200
+    return "Pixora Store Instant Free Test Active!", 200
 
 def keep_alive():
     while True:
