@@ -116,7 +116,6 @@ def fetch_supplier_products():
 
                 raw_cost = float(item.get("price_usd", 0.0))
                 
-                # جعل منتج الاختبار سعره صفراً تماماً
                 if "test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05:
                     p_price = 0.0
                 else:
@@ -191,7 +190,16 @@ def purchase_order_from_supplier(product_id, reference_id):
         return {"success": False, "error": "No reseller key"}
     
     headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
-    payload = {"product_id": int(product_id) if product_id.isdigit() else product_id, "reference": reference_id}
+    
+    # إضافة idempotency_key المطلوبة من المزود لمنع تكرار الطلبات
+    idempotency_val = f"pixora_{int(time.time())}_{product_id}"
+    
+    payload = {
+        "product_id": int(product_id) if product_id.isdigit() else product_id,
+        "reference": reference_id,
+        "idempotency_key": idempotency_val
+    }
+    
     try:
         response = requests.post(f"{VENTEBOT_API_URL}/orders", json=payload, headers=headers, timeout=15)
         if response.status_code in [200, 201]:
@@ -343,7 +351,6 @@ if bot:
                 info = products_info[prod_key]
                 bot.answer_callback_query(call.id)
                 
-                # إذا كان المنتج مجانياً (سعر الصفر للتيست)، نقوم بالشراء وتسليمه فوراً بدون مطالبة برقم دفع!
                 if info['price'] == 0.0:
                     safe_delete_message(chat_id, msg_id)
                     bot.send_message(chat_id, "⏳ جاري تنفيذ طلب التجربة المجاني أوتوماتيكياً...")
@@ -372,7 +379,6 @@ if bot:
                         bot.send_message(chat_id, f"❌ حدث خطأ في اختبار المزود: {api_result.get('error', 'خطأ')}", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
                     return
 
-                # المنتجات المدفوعة: تطلب رقم التحويل كالمعتاد
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup()
                 markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
@@ -493,7 +499,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Instant Free Test Active!", 200
+    return "Pixora Store Idempotency Fixed Active!", 200
 
 def keep_alive():
     while True:
