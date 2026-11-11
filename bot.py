@@ -34,6 +34,25 @@ def is_halal_product(name, description=""):
             return False
     return True
 
+def get_product_brand_priority(name):
+    n = name.lower()
+    if "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
+        return 1
+    elif "capcut" in n or "كاب كات" in n or "كابكات" in n:
+        return 2
+    elif "canva" in n or "كانفا" in n:
+        return 3
+    elif "chatgpt" in n or "openai" in n:
+        return 4
+    elif "claude" in n or "انثروبيك" in n:
+        return 5
+    elif "picsart" in n or "بيكسارت" in n:
+        return 6
+    elif "adobe" in n or "photoshop" in n:
+        return 7
+    else:
+        return 8
+
 def safe_delete_message(chat_id, msg_id):
     try:
         if bot:
@@ -66,7 +85,7 @@ def fetch_supplier_products():
         if response.status_code == 200:
             data = response.json()
             
-            # طباعة الرد الخام بالكامل لنرى المفاتيح الصحيحة
+            # طباعة الرد الخام في الـ Logs لمراجعته بدقة
             print("=== SUPPLIER RAW JSON ===", json.dumps(data, ensure_ascii=False))
             
             products_list = []
@@ -78,6 +97,9 @@ def fetch_supplier_products():
             
             for item in items:
                 p_name = item.get("name", item.get("title", item.get("product_name", "منتج رقمي")))
+                if not p_name:
+                    continue
+                
                 p_desc = item.get("description", item.get("desc", ""))
                 
                 if not is_halal_product(p_name, p_desc):
@@ -87,19 +109,44 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
-                # سحب السعر الخام كما هو من المزود بدون أي تلاعب
-                raw_price = float(item.get("price", item.get("cost", item.get("amount", item.get("rate", 0.0)))))
-                p_price = round(raw_price + 0.50, 2)
+                # سحب التكلفة الأساسية الحقيقية من المزود (البحث في عدة حقول محتملة للتكلفة)
+                raw_cost = 0.0
+                for cost_key in ["cost", "original_price", "base_price", "wholesale_price", "net_price"]:
+                    if cost_key in item and item[cost_key] is not None:
+                        try:
+                            raw_cost = float(item[cost_key])
+                            break
+                        except:
+                            pass
+                
+                # إذا لم نجد حقل تكلفة صريح وكان الموجود هو السعر العام، نتحقق منه
+                if raw_cost == 0.0:
+                    for p_key in ["price", "amount", "rate"]:
+                        if p_key in item and item[p_key] is not None:
+                            try:
+                                val = float(item[p_key])
+                                # لو السعر المبعوث أصلاً صغير جداً (مثل 0.5) فهو غالباً التكلفة الحقيقية
+                                if val < 5.0:
+                                    raw_cost = val
+                                    break
+                            except:
+                                pass
+
+                # إضافة مكسبك الثابت (0.50 دولار) فوق التكلفة الحقيقية للمزود
+                p_price = round(raw_cost + 0.50, 2)
                 
                 # سحب المخزون بدقة
-                p_stock = item.get("stock", item.get("quantity", item.get("qty", item.get("available", item.get("count", 1)))))
-                try:
-                    p_stock = int(p_stock)
-                except:
-                    p_stock = 10
+                p_stock = 0
+                for stock_key in ["stock", "quantity", "qty", "available", "count"]:
+                    if stock_key in item and item[stock_key] is not None:
+                        try:
+                            p_stock = int(item[stock_key])
+                            break
+                        except:
+                            pass
 
-                # جلب رابط الصورة
                 p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", item.get("thumbnail", "")))))
+                priority = get_product_brand_priority(p_name)
                 
                 products_list.append({
                     "id": p_id,
@@ -107,11 +154,12 @@ def fetch_supplier_products():
                     "price": p_price,
                     "stock": p_stock,
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
-                    "image": p_image
+                    "image": p_image,
+                    "priority": priority
                 })
             
-            # ترتيب أبجدي مباشر لجميع المنتجات لتسهيل التصفح
-            products_list.sort(key=lambda x: x['name'])
+            # ترتيب المنتجات أولاً حسب الشركة (Priority)، ثم أبجدياً حسب الاسم
+            products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
             for p in products_list:
@@ -296,7 +344,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
@@ -395,7 +443,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Clean Alphabetical Active!", 200
+    return "Pixora Store Cost Pricing Active!", 200
 
 def keep_alive():
     while True:
@@ -404,7 +452,7 @@ def keep_alive():
             url = os.environ.get("RENDER_EXTERNAL_URL")
             if url:
                 requests.get(url)
-        except Exception:
+        exceptException:
             pass
 
 if __name__ == '__main__':
