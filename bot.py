@@ -4,7 +4,7 @@ import json
 import threading
 import requests
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 from flask import Flask
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -211,6 +211,19 @@ def purchase_order_from_supplier(product_id, reference_id):
 
 WELCOME_TEXT = "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر المنتج المطلوب من القائمة أدناه:"
 
+def get_permanent_reply_keyboard():
+    # لوحة مفاتيح سفليّة مدمجة ومنظمة لعدم أخذ مساحة كبيرة من الشاشة
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add(
+        KeyboardButton("📋 الرئيسية والمنتجات"),
+        KeyboardButton("🔍 بحث عن منتج")
+    )
+    keyboard.add(
+        KeyboardButton("📜 مشترياتي"),
+        KeyboardButton("💳 طرق الدفع")
+    )
+    return keyboard
+
 def get_main_menu_markup(is_admin=False):
     markup = InlineKeyboardMarkup()
     products_info = fetch_supplier_products()
@@ -258,6 +271,8 @@ if bot:
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         is_admin = (chat_id == ADMIN_ID)
         bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
+        # إرسال لوحة المفاتيح السفليّة المدمجة
+        bot.send_message(chat_id, "📌 يمكنك استخدام الأزرار أدناه لتسهيل التصفح:", reply_markup=get_permanent_reply_keyboard())
 
     @bot.message_handler(commands=['search'])
     def cmd_search(message):
@@ -288,6 +303,38 @@ if bot:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+
+    # التعامل مع ضغطات الأزرار السفليّة الثابتة
+    @bot.message_handler(func=lambda message: message.text in ["📋 الرئيسية والمنتجات", "🔍 بحث عن منتج", "📜 مشترياتي", "💳 طرق الدفع"])
+    def handle_reply_keyboard(message):
+        chat_id = message.chat.id
+        text = message.text
+        is_admin = (chat_id == ADMIN_ID)
+        
+        if text == "📋 الرئيسية والمنتجات":
+            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+            bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
+        elif text == "🔍 بحث عن منتج":
+            USER_WAITING_FOR_SEARCH[chat_id] = True
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🏠 إلغاء والعودة للرئيسية", callback_data="main_menu"))
+            bot.send_message(chat_id, "🔍 <b>البحث عن منتج:</b>\n\nأرسل اسم المنتج أو جزءاً منه في رسالة الآن للبحث عنه:", reply_markup=markup, parse_mode="HTML")
+        elif text == "📜 مشترياتي":
+            ords = load_orders().get(str(chat_id), [])
+            if not ords:
+                res_text = "📜 سجل مشترياتي:\n\nلا توجد طلبات سابقة."
+            else:
+                res_text = "📜 سجل مشترياتي السابقة:\n\n"
+                for o in ords:
+                    res_text += f"📦 {o['product']}\n🔑 البيان: <code>{o['item']}</code>\n------------------\n"
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            bot.send_message(chat_id, res_text, reply_markup=markup, parse_mode="HTML")
+        elif text == "💳 طرق الدفع":
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            pay_info = f"💳 <b>طرق الدفع المتاحة في متجر Pixora Store:</b>\n\n- التحويل الفوري عبر عملات USDT الرقمية.\n- Binance ID الخاص بالمزود: <code>{BINANCE_ID}</code>"
+            bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
 
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
@@ -341,7 +388,7 @@ if bot:
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_info = f"💳 <b>طرق الدفع المتاحة في متجر Pixora Store:</b>\n\n- التحويل الفوري عبر عملات USDT الرقمية.\n- Binance ID الخاص بالمزود: <code>{BINANCE_ID}</code>\n\nبعد اختيار المنتج وضغط إتمام الدفع، أرسل رقم العملية أو الإيصال هنا للشات لتتم معالجة طلبك وتسليمه فوراً."
+            pay_info = f"💳 <b>طرق الدفع المتاحة في متجر Pixora Store:</b>\n\n- التحويل الفوري عبر عملات USDT الرقمية.\n- Binance ID الخاص بالمزود: <code>{BINANCE_ID}</code>"
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
 
@@ -351,10 +398,8 @@ if bot:
                 info = products_info[prod_key]
                 bot.answer_callback_query(call.id)
                 
-                # إذا كان المنتج مجانياً (سعر الصفر للتيست)، يتم تنفيذه محلياً فوراً بدون إزعاج المزود ورصيده!
                 if info['price'] == 0.0:
                     safe_delete_message(chat_id, msg_id)
-                    
                     item_details = "TEST_CREDENTIALS_SUCCESS_MOCK_KEY_12345"
                     
                     ords = load_orders()
@@ -371,7 +416,7 @@ if bot:
                         f"🔑 <b>بيانات التجربة الوهمية:</b>\n<code>{item_details}</code>\n\n"
                         f"شكراً لتجربتك لمتجر Pixora Store 💚"
                     )
-                    bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
+                    bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard())
                     return
 
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
@@ -395,7 +440,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
@@ -450,7 +495,7 @@ if bot:
             return
 
         if chat_id not in USER_SELECTED_PRODUCT:
-            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً أو استخدام القائمة الرئيسية من /start")
+            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً أو استخدام الأزرار أدناه", reply_markup=get_permanent_reply_keyboard())
             return
 
         prod_key = USER_SELECTED_PRODUCT.pop(chat_id)
@@ -481,7 +526,7 @@ if bot:
                 f"🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>\n\n"
                 f"شكراً لثقتك بمتجر Pixora Store 💚"
             )
-            bot.send_message(chat_id, success_msg, parse_mode="HTML")
+            bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard())
         else:
             error_reason = api_result.get("error", "خطأ غير معروف")
             bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً: {error_reason}\nتم إشعار الإدارة للمتابعة الفورية.")
@@ -494,7 +539,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Mock Test Active!", 200
+    return "Pixora Store Reply Keyboard Active!", 200
 
 def keep_alive():
     while True:
