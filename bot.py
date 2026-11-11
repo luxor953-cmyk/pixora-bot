@@ -36,7 +36,6 @@ def is_halal_product(name, description=""):
 
 def get_brand_group(name):
     n = name.lower()
-    # جعل منتج التيست يأخذ أعلى رقم مجموعة ليبقى دائماً في النهاية
     if "test" in n or "api test" in n:
         return 99
     elif "chatgpt" in n or "gpt" in n or "openai" in n:
@@ -193,7 +192,6 @@ def purchase_order_from_supplier(product_id, reference_id):
         return {"success": False, "error": "No reseller key"}
     
     headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
-    
     idempotency_val = f"pixora_{int(time.time())}_{product_id}"
     
     payload = {
@@ -353,32 +351,27 @@ if bot:
                 info = products_info[prod_key]
                 bot.answer_callback_query(call.id)
                 
+                # إذا كان المنتج مجانياً (سعر الصفر للتيست)، يتم تنفيذه محلياً فوراً بدون إزعاج المزود ورصيده!
                 if info['price'] == 0.0:
                     safe_delete_message(chat_id, msg_id)
-                    bot.send_message(chat_id, "⏳ جاري تنفيذ طلب التجربة المجاني أوتوماتيكياً...")
                     
-                    api_result = purchase_order_from_supplier(prod_key, "Free_Test_Order")
-                    if api_result["success"]:
-                        res_data = api_result["data"]
-                        item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
-                        
-                        ords = load_orders()
-                        ords.setdefault(str(chat_id), []).append({
-                            "product": info['name'],
-                            "item": item_details,
-                            "time": time.strftime("%Y-%m-%d %H:%M:%S")
-                        })
-                        save_orders(ords)
+                    item_details = "TEST_CREDENTIALS_SUCCESS_MOCK_KEY_12345"
+                    
+                    ords = load_orders()
+                    ords.setdefault(str(chat_id), []).append({
+                        "product": info['name'],
+                        "item": item_details,
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                    save_orders(ords)
 
-                        success_msg = (
-                            f"🎉 <b>تم اختبار الشراء والتسليم بنجاح (منتج تجريبي مجاني)!</b>\n\n"
-                            f"📦 منتجك: <b>{info['name']}</b>\n"
-                            f"🔑 <b>بيانات التجربة:</b>\n<code>{item_details}</code>\n\n"
-                            f"شكراً لتجربتك لمتجر Pixora Store 💚"
-                        )
-                        bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
-                    else:
-                        bot.send_message(chat_id, f"❌ حدث خطأ في اختبار المزود: {api_result.get('error', 'خطأ')}", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
+                    success_msg = (
+                        f"🎉 <b>تم اختبار الشراء والتسليم بنجاح (منتج تجريبي مجاني)!</b>\n\n"
+                        f"📦 منتجك: <b>{info['name']}</b>\n"
+                        f"🔑 <b>بيانات التجربة الوهمية:</b>\n<code>{item_details}</code>\n\n"
+                        f"شكراً لتجربتك لمتجر Pixora Store 💚"
+                    )
+                    bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")))
                     return
 
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
@@ -501,7 +494,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Test Product at Bottom Active!", 200
+    return "Pixora Store Mock Test Active!", 200
 
 def keep_alive():
     while True:
