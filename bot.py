@@ -115,7 +115,13 @@ def fetch_supplier_products():
                     continue
 
                 raw_cost = float(item.get("price_usd", 0.0))
-                p_price = round(raw_cost + 0.50, 2)
+                
+                # جعل منتج الاختبار سعره صفراً تماماً للتجربة المجانية
+                if "test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05:
+                    p_price = 0.0
+                else:
+                    p_price = round(raw_cost + 0.50, 2)
+
                 p_stock = int(item.get("stock", 0))
                 p_image = item.get("image_url", "")
 
@@ -131,7 +137,7 @@ def fetch_supplier_products():
                     "brand_group": brand_group
                 })
             
-            # ترتيب دقيق: أولاً حسب مجموعة البراند، وثانياً ترتيب أبجدي هجائي دقيق حسب الاسم (IgnoreCase)
+            # ترتيب البراندات والأصناف أبجدياً بشكل متصل
             products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
             
             ordered_map = {}
@@ -358,7 +364,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🏠 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
@@ -457,7 +463,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Strictly Alphabetical Active!", 200
+    return "Pixora Store Zero Price Test Active!", 200
 
 def keep_alive():
     while True:
