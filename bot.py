@@ -85,8 +85,6 @@ def fetch_supplier_products():
         if response.status_code == 200:
             data = response.json()
             
-            print("=== SUPPLIER RAW JSON ===", json.dumps(data, ensure_ascii=False))
-            
             products_list = []
             items = []
             if isinstance(data, list):
@@ -95,7 +93,7 @@ def fetch_supplier_products():
                 items = data.get("products", data.get("data", data.get("items", [])))
             
             for item in items:
-                p_name = item.get("name", item.get("title", item.get("product_name", "منتج رقمي")))
+                p_name = item.get("name", item.get("title", "منتج رقمي"))
                 if not p_name:
                     continue
                 
@@ -104,42 +102,22 @@ def fetch_supplier_products():
                 if not is_halal_product(p_name, p_desc):
                     continue
 
-                p_id = str(item.get("id", item.get("code", item.get("product_id", ""))))
+                p_id = str(item.get("id", item.get("code", "")))
                 if not p_id:
                     continue
 
-                raw_cost = 0.0
-                for cost_key in ["cost", "original_price", "base_price", "wholesale_price", "net_price"]:
-                    if cost_key in item and item[cost_key] is not None:
-                        try:
-                            raw_cost = float(item[cost_key])
-                            break
-                        except:
-                            pass
-                
-                if raw_cost == 0.0:
-                    for p_key in ["price", "amount", "rate"]:
-                        if p_key in item and item[p_key] is not None:
-                            try:
-                                val = float(item[p_key])
-                                if val < 5.0:
-                                    raw_cost = val
-                                    break
-                            except:
-                                pass
-
+                # سحب السعر الحقيقي من حقل price_usd وإضافة مكسبك 0.50 دولار
+                raw_cost = float(item.get("price_usd", 0.0))
                 p_price = round(raw_cost + 0.50, 2)
                 
-                p_stock = 0
-                for stock_key in ["stock", "quantity", "qty", "available", "count"]:
-                    if stock_key in item and item[stock_key] is not None:
-                        try:
-                            p_stock = int(item[stock_key])
-                            break
-                        except:
-                            pass
+                # سحب المخزون بدقة من حقل stock
+                p_stock = int(item.get("stock", 0))
 
-                p_image = item.get("image", item.get("img", item.get("picture", item.get("photo", item.get("thumbnail", "")))))
+                # سحب رابط الصورة من حقل image_url
+                p_image = item.get("image_url")
+                if not p_image:
+                    p_image = ""
+
                 priority = get_product_brand_priority(p_name)
                 
                 products_list.append({
@@ -152,6 +130,7 @@ def fetch_supplier_products():
                     "priority": priority
                 })
             
+            # ترتيب المنتجات أولاً حسب الشركة، ثم أبجدياً حسب اسم المنتج
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -206,7 +185,7 @@ def purchase_order_from_supplier(product_id, reference_id):
         return {"success": False, "error": "No reseller key"}
     
     headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
-    payload = {"product_id": product_id, "reference": reference_id}
+    payload = {"product_id": int(product_id) if product_id.isdigit() else product_id, "reference": reference_id}
     try:
         response = requests.post(f"{VENTEBOT_API_URL}/orders", json=payload, headers=headers, timeout=15)
         if response.status_code in [200, 201]:
@@ -436,11 +415,10 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Fixed Active!", 200
+    return "Pixora Store Perfect Pricing Active!", 200
 
 def keep_alive():
-    while True:
-        time.sleep(300)
+    while Time.sleep(300) is None:
         try:
             url = os.environ.get("RENDER_EXTERNAL_URL")
             if url:
