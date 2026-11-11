@@ -85,7 +85,6 @@ def fetch_supplier_products():
         if response.status_code == 200:
             data = response.json()
             
-            # طباعة الرد الخام في الـ Logs لمراجعته بدقة
             print("=== SUPPLIER RAW JSON ===", json.dumps(data, ensure_ascii=False))
             
             products_list = []
@@ -109,7 +108,6 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
-                # سحب التكلفة الأساسية الحقيقية من المزود (البحث في عدة حقول محتملة للتكلفة)
                 raw_cost = 0.0
                 for cost_key in ["cost", "original_price", "base_price", "wholesale_price", "net_price"]:
                     if cost_key in item and item[cost_key] is not None:
@@ -119,23 +117,19 @@ def fetch_supplier_products():
                         except:
                             pass
                 
-                # إذا لم نجد حقل تكلفة صريح وكان الموجود هو السعر العام، نتحقق منه
                 if raw_cost == 0.0:
                     for p_key in ["price", "amount", "rate"]:
                         if p_key in item and item[p_key] is not None:
                             try:
                                 val = float(item[p_key])
-                                # لو السعر المبعوث أصلاً صغير جداً (مثل 0.5) فهو غالباً التكلفة الحقيقية
                                 if val < 5.0:
                                     raw_cost = val
                                     break
                             except:
                                 pass
 
-                # إضافة مكسبك الثابت (0.50 دولار) فوق التكلفة الحقيقية للمزود
                 p_price = round(raw_cost + 0.50, 2)
                 
-                # سحب المخزون بدقة
                 p_stock = 0
                 for stock_key in ["stock", "quantity", "qty", "available", "count"]:
                     if stock_key in item and item[stock_key] is not None:
@@ -158,7 +152,6 @@ def fetch_supplier_products():
                     "priority": priority
                 })
             
-            # ترتيب المنتجات أولاً حسب الشركة (Priority)، ثم أبجدياً حسب الاسم
             products_list.sort(key=lambda x: (x['priority'], x['name']))
             
             ordered_map = {}
@@ -443,7 +436,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Cost Pricing Active!", 200
+    return "Pixora Store Fixed Active!", 200
 
 def keep_alive():
     while True:
@@ -452,7 +445,7 @@ def keep_alive():
             url = os.environ.get("RENDER_EXTERNAL_URL")
             if url:
                 requests.get(url)
-        exceptException:
+        except Exception:
             pass
 
 if __name__ == '__main__':
