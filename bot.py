@@ -19,10 +19,9 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
-USER_LANGUAGES = {} # حفظ لغة المستخدم (ar, en, fr)
+USER_LANGUAGES = {}
 ORDERS_FILE = "orders.json"
 
-# نصوص اللغات المتعددة
 LANG_TEXTS = {
     "ar": {
         "welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر المنتج المطلوب من القائمة أدناه:",
@@ -36,9 +35,7 @@ LANG_TEXTS = {
         "support": "🛠️ الدعم الفني",
         "admin": "🛠️ لوحة تحكم الإدارة",
         "no_products": "⚠️ لا توجد منتجات متاحة حالياً...",
-        "sold_out": "نفد",
-        "select_lang": "🌐 اختر لغتك المفضلة / Choose your language / Choisissez votre langue:",
-        "lang_set": "✅ تم تغيير اللغة إلى العربية بنجاح."
+        "sold_out": "نفد"
     },
     "en": {
         "welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose the desired product from the menu below:",
@@ -52,9 +49,7 @@ LANG_TEXTS = {
         "support": "🛠️ Support",
         "admin": "🛠️ Admin Panel",
         "no_products": "⚠️ No products available right now...",
-        "sold_out": "Sold out",
-        "select_lang": "🌐 Choose your language / اختر لغتك / Choisissez votre langue:",
-        "lang_set": "✅ Language changed to English successfully."
+        "sold_out": "Sold out"
     },
     "fr": {
         "welcome": "🔥 Bienvenue sur Pixora Store Numérique !\n\nChoisissez le produit souhaité dans le menu ci-dessous :",
@@ -68,9 +63,7 @@ LANG_TEXTS = {
         "support": "🛠️ Support",
         "admin": "🛠️ Panneau Admin",
         "no_products": "⚠️ Aucun produit disponible pour le moment...",
-        "sold_out": "Épuisé",
-        "select_lang": "🌐 Choisissez votre langue / اختر لغتك / Choose your language:",
-        "lang_set": "✅ La langue a été changée en Français avec succès."
+        "sold_out": "Épuisé"
     }
 }
 
@@ -268,18 +261,9 @@ def purchase_order_from_supplier(product_id, reference_id):
 def get_permanent_reply_keyboard(lang="ar"):
     t = LANG_TEXTS.get(lang, LANG_TEXTS["ar"])
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add(
-        KeyboardButton(t["products"]),
-        KeyboardButton(t["api"])
-    )
-    keyboard.add(
-        KeyboardButton(t["wallet"]),
-        KeyboardButton(t["deposit"])
-    )
-    keyboard.add(
-        KeyboardButton(t["orders"]),
-        KeyboardButton(t["lang"])
-    )
+    keyboard.add(KeyboardButton(t["products"]), KeyboardButton(t["api"]))
+    keyboard.add(KeyboardButton(t["wallet"]), KeyboardButton(t["deposit"]))
+    keyboard.add(KeyboardButton(t["orders"]), KeyboardButton(t["lang"]))
     return keyboard
 
 def get_main_menu_markup(chat_id, is_admin=False):
@@ -342,14 +326,10 @@ if bot:
         chat_id = message.chat.id
         products_info = fetch_supplier_products()
         markup = InlineKeyboardMarkup()
-        found_api = False
         for k, info in products_info.items():
             if "api" in info['name'].lower():
-                found_api = True
                 if info['stock'] > 0:
                     markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-                else:
-                    markup.add(InlineKeyboardButton(f"❌ {info['name']}", callback_data="sold_out_" + k))
         markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
         bot.send_message(chat_id, "🔑 <b>خدمات API المتاحة:</b>", reply_markup=markup, parse_mode="HTML")
 
@@ -358,16 +338,14 @@ if bot:
         chat_id = message.chat.id
         wallet = api_get_my_wallet()
         text = f"💰 <b>بيانات المحفظة:</b>\n<pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "💰 محفظتك نشطة."
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
     @bot.message_handler(commands=['deposit'])
     def cmd_deposit(message):
         chat_id = message.chat.id
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        pay_info = f"💳 <b>طرق شحن الرصيد والدفع:</b>\n\n- التحويل الفوري عبر USDT.\n- Binance ID: <code>{BINANCE_ID}</code>"
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+        pay_info = f"💳 <b>طرق شحن الرصيد والدفع:</b>\n\n- Binance ID: <code>{BINANCE_ID}</code>"
         bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
 
     @bot.message_handler(commands=['my_orders'])
@@ -380,21 +358,19 @@ if bot:
             text = "📜 سجل مشترياتي السابقة:\n\n"
             for o in ords:
                 text += f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n------------------\n"
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
         bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
     @bot.message_handler(commands=['language'])
     def cmd_language(message):
         chat_id = message.chat.id
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🇸🇦 العربية (Arabic)", callback_data="lang_ar"))
+        markup.add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"))
         markup.add(InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
         markup.add(InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
         markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        bot.send_message(chat_id, "🌐 <b>اختر لغتك المفضلة / Choose your language / Choisissez votre langue:</b>", reply_markup=markup, parse_mode="HTML")
+        bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
 
-    # التعامل مع أزرار القائمة السفلية بجميع اللغات
     @bot.message_handler(func=lambda message: message.text in [
         "🛍️ تصفح المنتجات", "🛍️ Browse Products", "🛍️ Parcourir",
         "🔑 خدمات API", "🔑 API Services", "🔑 Services API",
@@ -423,19 +399,16 @@ if bot:
         elif "محفظتي" in text or "Wallet" in text or "Portefeuille" in text:
             wallet = api_get_my_wallet()
             res_text = f"💰 <b>بيانات المحفظة:</b>\n<pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "💰 محفظتك نشطة."
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             bot.send_message(chat_id, res_text, reply_markup=markup, parse_mode="HTML")
         elif "شحن" in text or "Top up" in text or "Recharger" in text:
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_info = f"💳 <b>طرق الدفع:</b>\n- Binance ID: <code>{BINANCE_ID}</code>"
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            pay_info = f"💳 Binance ID: <code>{BINANCE_ID}</code>"
             bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
         elif "مشترياتي" in text or "Orders" in text or "Commandes" in text:
             ords = load_orders().get(str(chat_id), [])
-            res_text = "📜 سجل مشترياتي:\n\nلا توجد طلبات." if notords else "📜 السجل:\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n" for o in ords])
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            res_text = "📜 لا توجد طلبات." if not ords else "📜 السجل:\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n" for o in ords])
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             bot.send_message(chat_id, res_text, reply_markup=markup, parse_mode="HTML")
         elif "اللغة" in text or "Language" in text or "Langue" in text:
             markup = InlineKeyboardMarkup()
@@ -452,14 +425,13 @@ if bot:
         is_admin = (chat_id == ADMIN_ID)
         products_info = fetch_supplier_products()
 
-        # اختيار اللغة
         if data.startswith("lang_"):
             new_lang = data.replace("lang_", "")
             USER_LANGUAGES[chat_id] = new_lang
             bot.answer_callback_query(call.id, "✅ Done")
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, LANG_TEXTS[new_lang]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
-            bot.send_message(chat_id, "📌 أزرار التحكم السريعة:", reply_markup=get_permanent_reply_keyboard(new_lang))
+            bot.send_message(chat_id, "📌 أزرار التحكم:", reply_markup=get_permanent_reply_keyboard(new_lang))
             return
 
         if data == "admin_panel" and is_admin:
@@ -540,7 +512,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_msg = f"🪙 تحويل (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\nثم أرسل رقم العملية هنا."
+            pay_msg = f"🪙 تحويل (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) هنا للشات ليتم الشراء والتسليم أوتوماتيكياً فوريًا!"
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
             
@@ -597,8 +569,9 @@ if bot:
         
         order_reference = message.text.strip() if message.text else f"Photo_{int(time.time())}"
         
-        bot.send_message(chat_id, "⏳ جاري التحقق وتنفيذ الطلب...")
+        bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وشراء المنتج من المزود أوتوماتيكياً...")
 
+        # تنفيذ الشراء التلقائي من API المزود
         api_result = purchase_order_from_supplier(prod_key, order_reference)
 
         if api_result["success"]:
@@ -614,17 +587,17 @@ if bot:
             save_orders(ords)
             lang = get_user_lang(chat_id)
 
-            success_msg = f"🎉 <b>تم التسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>"
+            success_msg = f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>"
             bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard(lang))
         else:
             error_reason = api_result.get("error", "خطأ")
-            bot.send_message(chat_id, f"❌ خطأ: {error_reason}")
+            bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً لدى المزود:\n<code>{error_reason}</code>\n\nتأكد من توفر رصيد كافٍ في محفظتك لدى المزود.", parse_mode="HTML")
 
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Multi-Language Active!", 200
+    return "Pixora Store Fully Automatic Active!", 200
 
 def keep_alive():
     while True:
