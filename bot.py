@@ -4,7 +4,7 @@ import json
 import threading
 import requests
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from flask import Flask
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -34,24 +34,30 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-def get_product_brand_priority(name):
+def get_product_brand_category(name):
     n = name.lower()
-    if "google" in n or "جوجل" in n or "gemini" in n or "gmail" in n:
-        return 1
-    elif "capcut" in n or "كاب كات" in n or "كابكات" in n:
-        return 2
-    elif "canva" in n or "كانفا" in n:
-        return 3
-    elif "chatgpt" in n or "openai" in n:
-        return 4
-    elif "claude" in n or "انثروبيك" in n:
-        return 5
-    elif "picsart" in n or "بيكسارت" in n:
-        return 6
-    elif "adobe" in n or "photoshop" in n:
-        return 7
+    if "chatgpt" in n or "gpt" in n:
+        return (1, "ChatGPT")
+    elif "claude" in n:
+        return (2, "Claude")
+    elif "gemini" in n or "google" in n or "gmail" in n:
+        return (3, "Google & Gemini")
+    elif "capcut" in n:
+        return (4, "CapCut")
+    elif "zoom" in n:
+        return (5, "Zoom")
+    elif "miro" in n:
+        return (6, "Miro")
+    elif "canva" in n:
+        return (7, "Canva")
+    elif "notion" in n:
+        return (8, "Notion")
+    elif "vpn" in n or "hma" in n or "surfshark" in n or "expressvpn" in n:
+        return (9, "VPN Services")
+    elif "api" in n:
+        return (10, "API Keys")
     else:
-        return 8
+        return (11, "Other Products")
 
 def safe_delete_message(chat_id, msg_id):
     try:
@@ -106,19 +112,12 @@ def fetch_supplier_products():
                 if not p_id:
                     continue
 
-                # سحب السعر الحقيقي من حقل price_usd وإضافة مكسبك 0.50 دولار
                 raw_cost = float(item.get("price_usd", 0.0))
                 p_price = round(raw_cost + 0.50, 2)
-                
-                # سحب المخزون بدقة من حقل stock
                 p_stock = int(item.get("stock", 0))
+                p_image = item.get("image_url", "")
 
-                # سحب رابط الصورة من حقل image_url
-                p_image = item.get("image_url")
-                if not p_image:
-                    p_image = ""
-
-                priority = get_product_brand_priority(p_name)
+                cat_priority, cat_name = get_product_brand_category(p_name)
                 
                 products_list.append({
                     "id": p_id,
@@ -126,12 +125,13 @@ def fetch_supplier_products():
                     "price": p_price,
                     "stock": p_stock,
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
-                    "image": p_image,
-                    "priority": priority
+                    "image": p_image if p_image else "",
+                    "cat_priority": cat_priority,
+                    "cat_name": cat_name
                 })
             
-            # ترتيب المنتجات أولاً حسب الشركة، ثم أبجدياً حسب اسم المنتج
-            products_list.sort(key=lambda x: (x['priority'], x['name']))
+            # ترتيب دقيق: تجميع البراندات متتالية وترتيب الأصناف أبجدياً تحت كل براند في قائمة واحدة متصلة
+            products_list.sort(key=lambda x: (x['cat_priority'], x['name']))
             
             ordered_map = {}
             for p in products_list:
@@ -227,12 +227,53 @@ def get_admin_markup():
     return markup
 
 if bot:
+    try:
+        bot.set_my_commands([
+            BotCommand("start", "تشغيل المتجر والمنتجات 🚀"),
+            BotCommand("menu", "عرض القائمة الرئيسية 📋"),
+            BotCommand("my_orders", "سجل مشترياتي السابقة 📜"),
+            BotCommand("search", "البحث عن منتج 🔍"),
+            BotCommand("payment", "طرق الدفع المتاحة 💳")
+        ])
+    except Exception:
+        pass
+
     @bot.message_handler(commands=['start', 'menu'])
     def send_welcome(message):
         chat_id = message.chat.id
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         is_admin = (chat_id == ADMIN_ID)
         bot.send_message(chat_id, WELCOME_TEXT, reply_markup=get_main_menu_markup(is_admin))
+
+    @bot.message_handler(commands=['search'])
+    def cmd_search(message):
+        chat_id = message.chat.id
+        USER_WAITING_FOR_SEARCH[chat_id] = True
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🏠 إلغاء والعودة للرئيسية", callback_data="main_menu"))
+        bot.send_message(chat_id, "🔍 <b>البحث عن منتج:</b>\n\nأرسل اسم المنتج أو جزءاً منه في رسالة الآن للبحث عنه:", reply_markup=markup, parse_mode="HTML")
+
+    @bot.message_handler(commands=['payment'])
+    def cmd_payment(message):
+        chat_id = message.chat.id
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+        pay_info = f"💳 <b>طرق الدفع المتاحة في متجر Pixora Store:</b>\n\n- التحويل الفوري عبر عملات USDT الرقمية.\n- Binance ID الخاص بالمزود: <code>{BINANCE_ID}</code>\n\nبعد اختيار المنتج وضغط إتمام الدفع، أرسل رقم العملية أو الإيصال هنا للشات لتتم معالجة طلبك وتسليمه فوراً."
+        bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
+
+    @bot.message_handler(commands=['my_orders'])
+    def cmd_my_orders(message):
+        chat_id = message.chat.id
+        ords = load_orders().get(str(chat_id), [])
+        if not ords:
+            text = "📜 سجل مشترياتي:\n\nلا توجد طلبات سابقة."
+        else:
+            text = "📜 سجل مشترياتي السابقة:\n\n"
+            for o in ords:
+                text += f"📦 {o['product']}\n🔑 البيان: <code>{o['item']}</code>\n------------------\n"
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
 
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
@@ -316,7 +357,7 @@ if bot:
             info = products_info.get(prod_key, {"price": 1.0})
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
-            markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
             pay_msg = f"🪙 تحويل مبلغ (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) أو إيصال الدفع هنا للشات ليتم التسليم الفوري أوتوماتيكياً."
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
@@ -415,10 +456,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Perfect Pricing Active!", 200
+    return "Pixora Store Continuous Sorted Active!", 200
 
 def keep_alive():
-    while Time.sleep(300) is None:
+    while True:
+        time.sleep(300)
         try:
             url = os.environ.get("RENDER_EXTERNAL_URL")
             if url:
