@@ -34,30 +34,32 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-def get_product_brand_category(name):
+def get_brand_group(name):
     n = name.lower()
-    if "chatgpt" in n or "gpt" in n:
-        return (1, "ChatGPT")
+    if "chatgpt" in n or "gpt" in n or "openai" in n:
+        return 1
     elif "claude" in n:
-        return (2, "Claude")
+        return 2
     elif "gemini" in n or "google" in n or "gmail" in n:
-        return (3, "Google & Gemini")
+        return 3
     elif "capcut" in n:
-        return (4, "CapCut")
+        return 4
     elif "zoom" in n:
-        return (5, "Zoom")
+        return 5
     elif "miro" in n:
-        return (6, "Miro")
+        return 6
     elif "canva" in n:
-        return (7, "Canva")
+        return 7
     elif "notion" in n:
-        return (8, "Notion")
+        return 8
+    elif "codex" in n:
+        return 9
     elif "vpn" in n or "hma" in n or "surfshark" in n or "expressvpn" in n:
-        return (9, "VPN Services")
+        return 10
     elif "api" in n:
-        return (10, "API Keys")
+        return 11
     else:
-        return (11, "Other Products")
+        return 12
 
 def safe_delete_message(chat_id, msg_id):
     try:
@@ -117,21 +119,20 @@ def fetch_supplier_products():
                 p_stock = int(item.get("stock", 0))
                 p_image = item.get("image_url", "")
 
-                cat_priority, cat_name = get_product_brand_category(p_name)
+                brand_group = get_brand_group(p_name)
                 
                 products_list.append({
                     "id": p_id,
-                    "name": p_name,
+                    "name": p_name.strip(),
                     "price": p_price,
                     "stock": p_stock,
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
                     "image": p_image if p_image else "",
-                    "cat_priority": cat_priority,
-                    "cat_name": cat_name
+                    "brand_group": brand_group
                 })
             
-            # ترتيب دقيق: تجميع البراندات متتالية وترتيب الأصناف أبجدياً تحت كل براند في قائمة واحدة متصلة
-            products_list.sort(key=lambda x: (x['cat_priority'], x['name']))
+            # ترتيب دقيق: أولاً حسب مجموعة البراند، وثانياً ترتيب أبجدي هجائي دقيق حسب الاسم (IgnoreCase)
+            products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
             
             ordered_map = {}
             for p in products_list:
@@ -456,7 +457,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Continuous Sorted Active!", 200
+    return "Pixora Store Strictly Alphabetical Active!", 200
 
 def keep_alive():
     while True:
