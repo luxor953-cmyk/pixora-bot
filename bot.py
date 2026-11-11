@@ -36,7 +36,10 @@ def is_halal_product(name, description=""):
 
 def get_brand_group(name):
     n = name.lower()
-    if "chatgpt" in n or "gpt" in n or "openai" in n:
+    # جعل منتج التيست يأخذ أعلى رقم مجموعة ليبقى دائماً في النهاية
+    if "test" in n or "api test" in n:
+        return 99
+    elif "chatgpt" in n or "gpt" in n or "openai" in n:
         return 1
     elif "claude" in n:
         return 2
@@ -191,7 +194,6 @@ def purchase_order_from_supplier(product_id, reference_id):
     
     headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
     
-    # إضافة idempotency_key المطلوبة من المزود لمنع تكرار الطلبات
     idempotency_val = f"pixora_{int(time.time())}_{product_id}"
     
     payload = {
@@ -499,7 +501,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pixora Store Idempotency Fixed Active!", 200
+    return "Pixora Store Test Product at Bottom Active!", 200
 
 def keep_alive():
     while True:
