@@ -563,11 +563,27 @@ if bot:
             bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً", reply_markup=get_permanent_reply_keyboard(lang))
             return
 
+        # ==============================================================
+        # 👇 فلتر الحماية الجديد لمنع الأرقام الوهمية 👇
+        # ==============================================================
+        order_reference = message.text.strip() if message.text else ""
+        
+        # التأكد أن الرسالة عبارة عن أرقام فقط، وطولها لا يقل عن 8 خانات
+        if not order_reference.isdigit() or len(order_reference) < 8:
+            bot.send_message(
+                chat_id, 
+                "❌ <b>رقم العملية غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح من تطبيق Binance.\n<i>(يجب أن يتكون من أرقام فقط ولا يقل عن 8 خانات).</i>", 
+                parse_mode="HTML"
+            )
+            # نوقف التنفيذ هنا عشان ما يخصمش من رصيدك، ونسيب العميل في نفس صفحة الدفع يكتب الرقم الصح
+            return
+        # ==============================================================
+        # 👆 نهاية الفلتر 👆
+        # ==============================================================
+
         prod_key = USER_SELECTED_PRODUCT.pop(chat_id)
         products_info = fetch_supplier_products()
         info = products_info.get(prod_key, {"name": "منتج رقمي"})
-        
-        order_reference = message.text.strip() if message.text else f"Photo_{int(time.time())}"
         
         bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وشراء المنتج من المزود أوتوماتيكياً...")
 
