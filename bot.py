@@ -3,6 +3,9 @@ import time
 import json
 import threading
 import requests
+import hmac
+import hashlib
+from urllib.parse import urlencode
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 from flask import Flask
@@ -14,6 +17,10 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
 VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
+
+# مفاتيح باينانس الجديدة (يجب إضافتها في Render)
+BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
+BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
@@ -257,6 +264,60 @@ def purchase_order_from_supplier(product_id, reference_id):
             return {"success": False, "error": response.text}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+# ==============================================================
+# 👇 دالة التحقق الحقيقي من باينانس (API) 👇
+# ==============================================================
+def verify_binance_transaction(order_id, expected_amount):
+    if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
+        return {"success": False, "error": "لم يتم إضافة مفاتيح Binance API في إعدادات المنصة (Render)."}
+    
+    try:
+        # نستعلم عن سجل عمليات الدفع الواردة في باينانس
+        base_url = "https://api.binance.com"
+        endpoint = "/sapi/v1/pay/transactions"
+        
+        timestamp = int(time.time() * 1000)
+        params = {
+            "timestamp": timestamp,
+            "limit": 50 # البحث في آخر 50 عملية
+        }
+        
+        query_string = urlencode(params)
+        signature = hmac.new(
+            BINANCE_SECRET_KEY.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        
+        headers = {
+            "X-MBX-APIKEY": BINANCE_API_KEY
+        }
+        
+        url = f"{base_url}{endpoint}?{query_string}&signature={signature}"
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            transactions = data.get("data", [])
+            
+            for tx in transactions:
+                # التأكد من تطابق رقم العملية (Order ID)
+                if str(tx.get("orderId")) == str(order_id) or str(tx.get("transactionId")) == str(order_id):
+                    actual_amount = float(tx.get("amount", 0))
+                    # التأكد أن المبلغ المدفوع يساوي أو أكبر من سعر المنتج
+                    if actual_amount >= float(expected_amount):
+                        return {"success": True}
+                    else:
+                        return {"success": False, "error": f"المبلغ المحول (${actual_amount}) أقل من سعر المنتج (${expected_amount})."}
+            
+            return {"success": False, "error": "رقم العملية غير موجود أو لم يتم تأكيد وصول المبلغ في حسابنا بعد."}
+        else:
+            return {"success": False, "error": f"تعذر الاتصال بباينانس. (الكود: {response.status_code})"}
+            
+    except Exception as e:
+        return {"success": False, "error": f"حدث خطأ أثناء فحص العملية: {str(e)}"}
+# ==============================================================
 
 def get_permanent_reply_keyboard(lang="ar"):
     t = LANG_TEXTS.get(lang, LANG_TEXTS["ar"])
@@ -558,56 +619,69 @@ if bot:
                 bot.send_message(chat_id, f"❌ لم يتم العثور على نتائج لـ: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
             return
 
-        if chat_id not in USER_SELECTED_PRODUCT:
-            lang = get_user_lang(chat_id)
-            bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً", reply_markup=get_permanent_reply_keyboard(lang))
-            return
-
         # ==============================================================
-        # 👇 فلتر الحماية الجديد لمنع الأرقام الوهمية 👇
+        # 👇 معالجة التحقق من الدفع عند إدخال رقم العملية 👇
         # ==============================================================
-        order_reference = message.text.strip() if message.text else ""
-        
-        # التأكد أن الرسالة عبارة عن أرقام فقط، وطولها لا يقل عن 8 خانات
-        if not order_reference.isdigit() or len(order_reference) < 8:
-            bot.send_message(
-                chat_id, 
-                "❌ <b>رقم العملية غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح من تطبيق Binance.\n<i>(يجب أن يتكون من أرقام فقط ولا يقل عن 8 خانات).</i>", 
-                parse_mode="HTML"
-            )
-            # نوقف التنفيذ هنا عشان ما يخصمش من رصيدك، ونسيب العميل في نفس صفحة الدفع يكتب الرقم الصح
-            return
-        # ==============================================================
-        # 👆 نهاية الفلتر 👆
-        # ==============================================================
-
-        prod_key = USER_SELECTED_PRODUCT.pop(chat_id)
-        products_info = fetch_supplier_products()
-        info = products_info.get(prod_key, {"name": "منتج رقمي"})
-        
-        bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وشراء المنتج من المزود أوتوماتيكياً...")
-
-        # تنفيذ الشراء التلقائي من API المزود
-        api_result = purchase_order_from_supplier(prod_key, order_reference)
-
-        if api_result["success"]:
-            res_data = api_result["data"]
-            item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
+        if chat_id in USER_SELECTED_PRODUCT:
+            order_reference = message.text.strip() if message.text else ""
             
-            ords = load_orders()
-            ords.setdefault(str(chat_id), []).append({
-                "product": info['name'],
-                "item": item_details,
-                "time": time.strftime("%Y-%m-%d %H:%M:%S")
-            })
-            save_orders(ords)
-            lang = get_user_lang(chat_id)
+            # 1. التأكد المبدئي إن الرقم لا يقل عن 8 خانات
+            if not order_reference.isdigit() or len(order_reference) < 8:
+                bot.send_message(
+                    chat_id, 
+                    "❌ <b>رقم العملية غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح (أرقام فقط ولا يقل عن 8 خانات).", 
+                    parse_mode="HTML"
+                )
+                return
 
-            success_msg = f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>"
-            bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard(lang))
-        else:
-            error_reason = api_result.get("error", "خطأ")
-            bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً لدى المزود:\n<code>{error_reason}</code>\n\nتأكد من توفر رصيد كافٍ في محفظتك لدى المزود.", parse_mode="HTML")
+            prod_key = USER_SELECTED_PRODUCT.get(chat_id)
+            products_info = fetch_supplier_products()
+            info = products_info.get(prod_key, {"name": "منتج رقمي", "price": 0.0})
+            expected_amount = info.get("price", 0.0)
+            
+            bot.send_message(chat_id, "⏳ جاري فحص حسابنا في باينانس للتأكد من وصول المبلغ...")
+
+            # 2. التحقق الفعلي من API باينانس
+            binance_check = verify_binance_transaction(order_reference, expected_amount)
+            
+            if not binance_check["success"]:
+                bot.send_message(
+                    chat_id, 
+                    f"❌ <b>فشل التحقق من الدفع:</b>\n{binance_check['error']}\n\nيرجى التأكد من التحويل وإرسال رقم العملية الصحيح مجدداً.", 
+                    parse_mode="HTML"
+                )
+                return
+            
+            # إذا نجح التحقق، نزيل المنتج من قائمة الانتظار ونبدأ الشراء
+            USER_SELECTED_PRODUCT.pop(chat_id)
+            bot.send_message(chat_id, "✅ تم تأكيد استلام المبلغ! جاري استخراج المنتج من المزود...")
+
+            # 3. تنفيذ الشراء التلقائي من API المزود
+            api_result = purchase_order_from_supplier(prod_key, order_reference)
+
+            if api_result["success"]:
+                res_data = api_result["data"]
+                item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
+                
+                ords = load_orders()
+                ords.setdefault(str(chat_id), []).append({
+                    "product": info['name'],
+                    "item": item_details,
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                })
+                save_orders(ords)
+                lang = get_user_lang(chat_id)
+
+                success_msg = f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>"
+                bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard(lang))
+            else:
+                error_reason = api_result.get("error", "خطأ")
+                bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً لدى المزود:\n<code>{error_reason}</code>\n\nتأكد من توفر رصيد كافٍ في محفظتك لدى المزود.", parse_mode="HTML")
+            return
+        
+        # رسالة تنبيه إذا أرسل العميل رسالة عادية ولم يكن قد اختار منتجاً
+        lang = get_user_lang(chat_id)
+        bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة", reply_markup=get_permanent_reply_keyboard(lang))
 
 app = Flask(__name__)
 
