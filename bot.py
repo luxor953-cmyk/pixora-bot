@@ -116,11 +116,12 @@ def fetch_ventebot_products():
     except Exception as e:
         print(f"Error fetching products: {e}")
     
+    # منتج تجريبي بسعر منطقي ومضبوط
     return [
         {
             "id": "test_product_id",
             "name": "VenteBot API Test Product",
-            "price": 0.79,
+            "price": 0.50,
             "in_stock": True
         }
     ]
@@ -287,7 +288,7 @@ def callback_handler(call):
             types.InlineKeyboardButton("Français 🇫🇷", callback_data="lang_fr")
         )
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
-        bot.edit_message_text(t["select_lang"], chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.edit_message_text(t["select_lang"], chat_id, call.message.message_id, reply_markup=markup)
 
     elif data == "back_home":
         bot.answer_callback_query(call.id)
@@ -326,7 +327,7 @@ def callback_handler(call):
 
         if not selected_product:
             if product_id == "test_product_id":
-                selected_product = {"id": "test_product_id", "name": "VenteBot API Test Product", "price": 0.79}
+                selected_product = {"id": "test_product_id", "name": "VenteBot API Test Product", "price": 0.50}
             else:
                 bot.answer_callback_query(call.id, "المنتج غير موجود أو نفد!")
                 return
@@ -343,7 +344,7 @@ def callback_handler(call):
         save_json("user_states.json", user_states)
 
         instruction_msg = (
-            f"🛒 <b>المنتج المختصر:</b> {selected_product['name']}\n"
+            f"🛒 <b>المنتج:</b> {selected_product['name']}\n"
             f"💵 <b>السعر الإجمالي:</b> ${final_price:.2f}\n\n"
             f"🌐 يرجى التحويل بقيمة ({final_price:.2f}$) إلى Binance ID:\n"
             f"🆔 <code>957483337</code>\n\n"
