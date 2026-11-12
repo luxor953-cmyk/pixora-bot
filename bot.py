@@ -118,13 +118,6 @@ def get_brand_group(name):
     else:
         return 12
 
-def safe_delete_message(chat_id, msg_id):
-    try:
-        if bot:
-            bot.delete_message(chat_id, msg_id)
-    except Exception:
-        pass
-
 def load_orders():
     if os.path.exists(ORDERS_FILE):
         try:
@@ -172,6 +165,7 @@ def fetch_supplier_products():
                     "brand_group": get_brand_group(p_name)
                 })
             
+            # ترتيب دقيق يجمع العائلات ذات الخطط والإصدارات معاً حسب المجموعات (brand_group) ثم الاسم
             products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
             return {p['id']: p for p in products_list}
     except Exception as e:
@@ -251,8 +245,6 @@ def get_main_menu_markup(chat_id, is_admin=False):
 
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
-    
-    # الزر الجديد لخدمات API والمحفظة تم دمجه هنا لتعويض القائمة السفلية
     markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
     if is_admin: markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
     return markup
@@ -278,7 +270,6 @@ if bot:
         chat_id = message.chat.id
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         
-        # حذف الكيبورد السفلي العالق من الشاشة بصمت
         msg_clear = bot.send_message(chat_id, "🔄", reply_markup=ReplyKeyboardRemove())
         try: bot.delete_message(chat_id, msg_clear.message_id)
         except: pass
@@ -309,14 +300,18 @@ if bot:
         if data.startswith("lang_"):
             USER_LANGUAGES[chat_id] = data.replace("lang_", "")
             bot.answer_callback_query(call.id, "✅ Done")
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+            try:
+                bot.edit_message_text(LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
+            except:
+                bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
 
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"), InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            try:
+                bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup)
+            except:
+                bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
 
         elif data == "show_apis":
             bot.answer_callback_query(call.id)
@@ -325,42 +320,60 @@ if bot:
                 if "api" in info['name'].lower() and info['stock'] > 0:
                     markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
             markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🔑 <b>خدمات API المتاحة:</b>", reply_markup=markup, parse_mode="HTML")
+            try:
+                bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, "🔑 <b>خدمات API المتاحة:</b>", reply_markup=markup, parse_mode="HTML")
 
         elif data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🛠️ <b>لوحة تحكم الإدارة:</b>", reply_markup=get_admin_markup(), parse_mode="HTML")
+            try:
+                bot.edit_message_text("🛠️ <b>لوحة تحكم الإدارة:</b>", chat_id, msg_id, reply_markup=get_admin_markup(), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, "🛠️ <b>لوحة تحكم الإدارة:</b>", reply_markup=get_admin_markup(), parse_mode="HTML")
 
         elif data == "adm_balance" and is_admin:
             bot.answer_callback_query(call.id)
             wallet = api_get_my_wallet()
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"💰 <pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            text = f"💰 <pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "❌"
+            try:
+                bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "adm_deposits" and is_admin:
             bot.answer_callback_query(call.id)
             dep = api_get_deposit_methods()
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"💳 <pre>{json.dumps(dep, indent=2, ensure_ascii=False)}</pre>" if dep else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            text = f"💳 <pre>{json.dumps(dep, indent=2, ensure_ascii=False)}</pre>" if dep else "❌"
+            try:
+                bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "adm_transactions" and is_admin:
             bot.answer_callback_query(call.id)
             txs = api_get_wallet_transactions()
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"📊 <pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            text = f"📊 <pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌"
+            try:
+                bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "search_product":
             bot.answer_callback_query(call.id)
             USER_WAITING_FOR_SEARCH[chat_id] = True
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
+            try:
+                bot.edit_message_text("🔍 أرسل اسم المنتج للبحث:", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
+            except:
+                bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
 
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{BINANCE_ID}</code>", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{BINANCE_ID}</code>"
+            try:
+                bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, pay_info, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
         elif data.startswith("buy_"):
             prod_key = data.replace("buy_", "")
@@ -369,39 +382,52 @@ if bot:
                 bot.answer_callback_query(call.id)
                 
                 if info['price'] == 0.0:
-                    safe_delete_message(chat_id, msg_id)
                     item_details = "TEST_CREDENTIALS_SUCCESS_MOCK_KEY_12345"
                     ords = load_orders()
                     ords.setdefault(str(chat_id), []).append({"product": info['name'], "item": item_details, "time": time.strftime("%Y-%m-%d %H:%M:%S")})
                     save_orders(ords)
-                    bot.send_message(chat_id, f"🎉 <b>تم التسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                    success_txt = f"🎉 <b>تم التسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>"
+                    try:
+                        bot.edit_message_text(success_txt, chat_id, msg_id, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                    except:
+                        bot.send_message(chat_id, success_txt, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
                     return
 
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
                 markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-                safe_delete_message(chat_id, msg_id)
-                bot.send_message(chat_id, f"🏷️ <b>{info['name']}</b>\n💰 ${info['price']}\n📦 {info['stock']}\n\n{info['description']}", reply_markup=markup, parse_mode="HTML")
+                msg_text = f"🏷️ <b>{info['name']}</b>\n💰 ${info['price']}\n📦 {info['stock']}\n\n{info['description']}"
+                try:
+                    bot.edit_message_text(msg_text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+                except:
+                    bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
                 
         elif data.startswith("pay_"):
             info = products_info.get(data.replace("pay_", ""), {"price": 1.0})
             bot.answer_callback_query(call.id)
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{BINANCE_ID}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في الشات للاستلام الفوري!", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            pay_msg = f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{BINANCE_ID}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في الشات للاستلام الفوري!"
+            try:
+                bot.edit_message_text(pay_msg, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             ords = load_orders().get(str(chat_id), [])
             text = "📜 لا توجد طلبات." if not ords else "📜 السجل:\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n" for o in ords])
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            try:
+                bot.edit_message_text(text, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-            safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+            try:
+                bot.edit_message_text(LANG_TEXTS[get_user_lang(chat_id)]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
+            except:
+                bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
 
     @bot.message_handler(content_types=['text', 'photo'])
     def handle_incoming(message):
