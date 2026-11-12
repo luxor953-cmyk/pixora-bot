@@ -30,7 +30,7 @@ ORDERS_FILE = "orders.json"
 
 LANG_TEXTS = {
     "ar": {
-        "welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر المنتج المطلوب من القائمة أدناه:",
+        "welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر القسم أو المنتج المطلوب من القائمة أدناه:",
         "products": "🛍️ تصفح المنتجات",
         "api": "🔑 خدمات API",
         "wallet": "💰 محفظتي",
@@ -44,7 +44,7 @@ LANG_TEXTS = {
         "sold_out": "نفد"
     },
     "en": {
-        "welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose the desired product from the menu below:",
+        "welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose the desired category or product below:",
         "products": "🛍️ Browse Products",
         "api": "🔑 API Services",
         "wallet": "💰 My Wallet",
@@ -58,7 +58,7 @@ LANG_TEXTS = {
         "sold_out": "Sold out"
     },
     "fr": {
-        "welcome": "🔥 Bienvenue sur Pixora Store Numérique !\n\nChoisissez le produit souhaité dans le menu ci-dessous :",
+        "welcome": "🔥 Bienvenue sur Pixora Store Numérique !\n\nChoisissez la catégorie ou le produit ci-dessous :",
         "products": "🛍️ Parcourir",
         "api": "🔑 Services API",
         "wallet": "💰 Mon Portefeuille",
@@ -89,34 +89,25 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-def get_brand_group(name):
+# تحديد عائلات المنتجات التي تحتوي على خطط أو إصدارات متعددة
+def get_product_family(name):
     n = name.lower()
     if "test" in n or "api test" in n:
-        return 99
+        return "tests"
     elif "chatgpt" in n or "gpt" in n or "openai" in n:
-        return 1
+        return "chatgpt"
     elif "claude" in n:
-        return 2
-    elif "gemini" in n or "google" in n or "gmail" in n:
-        return 3
+        return "claude"
+    elif "gemini" in n or "google" in n:
+        return "gemini"
     elif "capcut" in n:
-        return 4
-    elif "zoom" in n:
-        return 5
-    elif "miro" in n:
-        return 6
+        return "capcut"
     elif "canva" in n:
-        return 7
-    elif "notion" in n:
-        return 8
-    elif "codex" in n:
-        return 9
+        return "canva"
     elif "vpn" in n or "hma" in n or "surfshark" in n or "expressvpn" in n:
-        return 10
-    elif "api" in n:
-        return 11
+        return "vpn"
     else:
-        return 12
+        return None  # منتج فردي يقعد بره في القائمة الرئيسية مباشرة
 
 def load_orders():
     if os.path.exists(ORDERS_FILE):
@@ -155,6 +146,7 @@ def fetch_supplier_products():
                 raw_cost = float(item.get("price_usd", 0.0))
                 p_price = 0.0 if ("test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05) else round(raw_cost + 0.50, 2)
                 
+                family = get_product_family(p_name)
                 products_list.append({
                     "id": p_id,
                     "name": p_name.strip(),
@@ -162,11 +154,10 @@ def fetch_supplier_products():
                     "stock": int(item.get("stock", 0)),
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
                     "image": item.get("image_url", ""),
-                    "brand_group": get_brand_group(p_name)
+                    "family": family
                 })
             
-            # ترتيب دقيق يجمع العائلات ذات الخطط والإصدارات معاً حسب المجموعات (brand_group) ثم الاسم
-            products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
+            products_list.sort(key=lambda x: x['name'].lower())
             return {p['id']: p for p in products_list}
     except Exception as e:
         print("Error fetching supplier products:", e)
@@ -239,9 +230,31 @@ def get_main_menu_markup(chat_id, is_admin=False):
         markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
         return markup
 
+    added_families = set()
+
     for k, info in products_info.items():
-        if info['stock'] > 0: markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-        else: markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
+        fam = info['family']
+        if fam:
+            # إذا كان المنتج ينتمي لعائلة ولن يتم إضافته بعد، نصنع له "مجلد" أو زر رئيسي للعائلة
+            if fam not in added_families:
+                added_families.add(fam)
+                fam_names = {
+                    "chatgpt": "🤖 عائلة اشتراكات ChatGPT",
+                    "claude": "🧠 عائلة اشتراكات Claude AI",
+                    "gemini": "✨ عائلة Google & Gemini",
+                    "capcut": "🎬 عائلة أدوات CapCut",
+                    "canva": "🎨 عائلة تصاميم Canva",
+                    "vpn": "🔒 خدمات وشبكات VPN",
+                    "tests": "🧪 منتجات التجربة والـ API"
+                }
+                display_name = fam_names.get(fam, f"📁 قسم {fam.upper()}")
+                markup.add(InlineKeyboardButton(display_name, callback_data="fam_" + fam))
+        else:
+            # المنتج الفردي يظهر مباشرة في القائمة الرئيسية بره
+            if info['stock'] > 0:
+                markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+            else:
+                markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
 
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
@@ -304,6 +317,22 @@ if bot:
                 bot.edit_message_text(LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
             except:
                 bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+
+        elif data.startswith("fam_"):
+            fam_key = data.replace("fam_", "")
+            bot.answer_callback_query(call.id)
+            markup = InlineKeyboardMarkup()
+            for k, info in products_info.items():
+                if info['family'] == fam_key:
+                    if info['stock'] > 0:
+                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+                    else:
+                        markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
+            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+            try:
+                bot.edit_message_text(f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+            except:
+                bot.send_message(chat_id, f"📁 <b>خيارات وخطط القسم:</b>", reply_markup=markup, parse_mode="HTML")
 
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
