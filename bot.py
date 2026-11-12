@@ -47,8 +47,8 @@ def save_orders(data):
 TRANSLATIONS = {
     "ar": {
         "welcome": "أهلاً بك في متجر <b>Pixora Store</b> 🛒\nمن فضلك اختر ما يناسبك من الخدمات الرقمية والاشتراكات:",
-        "browse": "🛍️ تصفف المنتجات",
-        "balance": "💰 شحن الرصيد / الدفع",
+        "browse": "🛍️ المنتجات",
+        "balance": "💰 الدفع وشحن الرصيد",
         "my_orders": "📦 مشترياتي",
         "support": "🛠️ الدعم الفني",
         "api_services": "🔑 خدمات API",
@@ -61,7 +61,7 @@ TRANSLATIONS = {
     },
     "en": {
         "welcome": "Welcome to <b>Pixora Store</b> 🛒\nPlease select your preferred digital products and subscriptions:",
-        "browse": "🛍️ Browse Products",
+        "browse": "🛍️ Products",
         "balance": "💰 Top-up / Payment",
         "my_orders": "📦 My Orders",
         "support": "🛠️ Support",
@@ -75,7 +75,7 @@ TRANSLATIONS = {
     },
     "fr": {
         "welcome": "Bienvenue sur <b>Pixora Store</b> 🛒\nVeuillez choisir vos abonnements et produits numériques:",
-        "browse": "🛍️ Parcourir",
+        "browse": "🛍️ Produits",
         "balance": "💰 Recharger / Paiement",
         "my_orders": "📦 Mes Commandes",
         "support": "🛠️ Support",
@@ -83,22 +83,21 @@ TRANSLATIONS = {
         "lang_switch": "🌐 Language / Langue",
         "select_lang": "Choisissez votre langue préférée:",
         "lang_changed": "Langue modifiée avec succès ✅",
-        "no_orders": "Vous n'aucune commande enregistrée pour le moment.",
+        "no_orders": "Vous n'avez aucune commande enregistrée pour le moment.",
         "support_text": "Pour contacter le support:\n@Support_Pixora",
         "price_markup": 0.50
     }
 }
 
-# دالة الأزرار المدمجة (الشكل القديم البسيط)
 def get_main_menu_keyboard(lang="ar"):
     markup = types.InlineKeyboardMarkup(row_width=2)
     t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
     markup.add(
         types.InlineKeyboardButton(t["browse"], callback_data="menu_browse"),
-        types.InlineKeyboardButton(t["api_services"], callback_data="menu_api"),
         types.InlineKeyboardButton(t["balance"], callback_data="menu_balance"),
         types.InlineKeyboardButton(t["my_orders"], callback_data="menu_orders"),
         types.InlineKeyboardButton(t["support"], callback_data="menu_support"),
+        types.InlineKeyboardButton(t["api_services"], callback_data="menu_api"),
         types.InlineKeyboardButton(t["lang_switch"], callback_data="menu_lang")
     )
     return markup
@@ -212,7 +211,7 @@ def handle_incoming(message):
             err_msg = api_result.get("error", "حدث خطأ أثناء التحقق من الدفع.")
             bot.send_message(chat_id, f"❌ <b>فشل تنفيذ الطلب:</b>\n{err_msg}", parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
     else:
-        bot.send_message(chat_id, "يرجى استخدام الأزرار التفاعلية في القائمة أعلاه ⬇️", reply_markup=get_main_menu_keyboard(lang))
+        bot.send_message(chat_id, "يرجى استخدام الأزرار في القائمة الرئيسية أعلاه ⬇️", reply_markup=get_main_menu_keyboard(lang))
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -225,7 +224,7 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         products = fetch_ventebot_products()
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة / Refresh", callback_data="refresh_products"))
+        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة", callback_data="refresh_products"))
 
         for p in products:
             p_name = p.get("name", "Product")
@@ -243,7 +242,7 @@ def callback_handler(call):
     elif data == "menu_balance":
         bot.answer_callback_query(call.id)
         pay_text = (
-            "💰 <b>شحـن الرصيد والدفع عبر Binance Pay:</b>\n\n"
+            "💰 <b>الدفع وشحن الرصيد عبر Binance Pay:</b>\n\n"
             "لشراء أي منتج، قم بالتحويل إلى Binance ID الخاص بنا:\n"
             "🆔 <code>957483337</code>\n\n"
             "بعد التحويل، اختر المنتج من قائمة المنتجات وأرسل رقم العملية (Order ID) هنا."
@@ -288,7 +287,7 @@ def callback_handler(call):
             types.InlineKeyboardButton("Français 🇫🇷", callback_data="lang_fr")
         )
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
-        bot.edit_message_text(t["select_lang"], chat_id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text(t["select_lang"], chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
 
     elif data == "back_home":
         bot.answer_callback_query(call.id)
@@ -305,7 +304,7 @@ def callback_handler(call):
         bot.answer_callback_query(call.id, "تم تحديث القائمة ✅")
         products = fetch_ventebot_products()
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة / Refresh", callback_data="refresh_products"))
+        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة", callback_data="refresh_products"))
 
         for p in products:
             p_name = p.get("name", "Product")
