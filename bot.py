@@ -178,7 +178,6 @@ def fetch_supplier_products():
                     "family": family
                 })
             
-            products_list.sort(key=lambda x: x['name'].lower())
             return {p['id']: p for p in products_list}
     except Exception as e:
         print("Error fetching supplier products:", e)
@@ -251,40 +250,50 @@ def get_main_menu_markup(chat_id, is_admin=False):
         markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
         return markup
 
-    added_families = set()
+    fam_names = {
+        "chatgpt": "🤖 عائلة اشتراكات ChatGPT",
+        "claude": "🧠 عائلة اشتراكات Claude AI",
+        "google": "✨ عائلة Google & Gmail",
+        "capcut": "🎬 عائلة أدوات CapCut",
+        "canva": "🎨 عائلة تصاميم Canva",
+        "zoom": "📹 عائلة اشتراكات Zoom",
+        "elevenlabs": "🎙️ عائلة أدوات ElevenLabs",
+        "gamma": "📊 عائلة عروض Gamma AI",
+        "lovable": "💻 عائلة منصة Lovable",
+        "microsoft": "🪟 عائلة منتجات Microsoft",
+        "miro": "📌 عائلة لوحات Miro",
+        "notion": "📝 عائلة أدوات Notion",
+        "quizlet": "📚 عائلة تعليم Quizlet",
+        "railway": "⚙️ عائلة استضافة Railway",
+        "wordwall": "🎮 عائلة أنشطة Wordwall",
+        "api_services": "🔑 خدمات وباقات API",
+        "vpn": "🔒 خدمات وشبكات VPN",
+        "tests": "🧪 منتجات التجربة"
+    }
+
+    found_families = set()
+    single_products = []
 
     for k, info in products_info.items():
         fam = info['family']
         if fam:
-            if fam not in added_families:
-                added_families.add(fam)
-                fam_names = {
-                    "chatgpt": "🤖 عائلة اشتراكات ChatGPT",
-                    "claude": "🧠 عائلة اشتراكات Claude AI",
-                    "google": "✨ عائلة Google & Gmail",
-                    "capcut": "🎬 عائلة أدوات CapCut",
-                    "canva": "🎨 عائلة تصاميم Canva",
-                    "zoom": "📹 عائلة اشتراكات Zoom",
-                    "elevenlabs": "🎙️ عائلة أدوات ElevenLabs",
-                    "gamma": "📊 عائلة عروض Gamma AI",
-                    "lovable": "💻 عائلة منصة Lovable",
-                    "microsoft": "🪟 عائلة منتجات Microsoft",
-                    "miro": "📌 عائلة لوحات Miro",
-                    "notion": "📝 عائلة أدوات Notion",
-                    "quizlet": "📚 عائلة تعليم Quizlet",
-                    "railway": "⚙️ عائلة استضافة Railway",
-                    "wordwall": "🎮 عائلة أنشطة Wordwall",
-                    "api_services": "🔑 خدمات وباقات API",
-                    "vpn": "🔒 خدمات وشبكات VPN",
-                    "tests": "🧪 منتجات التجربة"
-                }
-                display_name = fam_names.get(fam, f"📁 قسم {fam.upper()}")
-                markup.add(InlineKeyboardButton(display_name, callback_data="fam_" + fam))
+            found_families.add(fam)
         else:
-            if info['stock'] > 0:
-                markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-            else:
-                markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
+            single_products.append((k, info))
+
+    # 1. ترتيب العائلات أبجدياً حسب اسمها المعروض وضعها في الأعلى
+    sorted_families = sorted(found_families, key=lambda f: fam_names.get(f, f))
+    for fam in sorted_families:
+        display_name = fam_names.get(fam, f"📁 قسم {fam.upper()}")
+        markup.add(InlineKeyboardButton(display_name, callback_data="fam_" + fam))
+
+    # 2. ترتيب المنتجات الفردية أبجدياً وضعها تحت العائلات
+    single_products.sort(key=lambda x: x[1]['name'].lower())
+    for k, info in single_products:
+        if info['stock'] > 0:
+            markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+        else:
+            markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
 
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
@@ -352,12 +361,19 @@ if bot:
             fam_key = data.replace("fam_", "")
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
+            family_products = []
             for k, info in products_info.items():
                 if info['family'] == fam_key:
-                    if info['stock'] > 0:
-                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-                    else:
-                        markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
+                    family_products.append((k, info))
+            
+            # ترتيب منتجات العائلة أبجدياً أيضاً داخل المجلد
+            family_products.sort(key=lambda x: x[1]['name'].lower())
+            for k, info in family_products:
+                if info['stock'] > 0:
+                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+                else:
+                    markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
+            
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             try:
                 bot.edit_message_text(f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
@@ -516,7 +532,7 @@ if bot:
             prod_key = USER_SELECTED_PRODUCT.get(chat_id)
             info = fetch_supplier_products().get(prod_key, {"name": "منتج", "price": 0.0})
             
-            bot.send_message(chat_id, "⏳ جاري فحص حساب باينانس للتأكد من استلاستلام الدفع...")
+            bot.send_message(chat_id, "⏳ جاري فحص حساب باينانس للتأكد من استلام الدفع...")
             binance_check = verify_binance_transaction(order_reference, info.get("price", 0.0))
             
             if not binance_check["success"]:
