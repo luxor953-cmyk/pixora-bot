@@ -89,7 +89,6 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-# تصنيف المنتجات والعائلات بدقة بناءً على طلبك الأخير
 def get_product_family(name):
     n = name.lower()
     if "test" in n or "api test" in n:
@@ -129,7 +128,7 @@ def get_product_family(name):
     elif "vpn" in n or "hma" in n or "surfshark" in n or "expressvpn" in n:
         return "vpn"
     else:
-        return None  # منتج فردي يظل بارزاً في القائمة الرئيسية
+        return None
 
 def load_orders():
     if os.path.exists(ORDERS_FILE):
@@ -345,9 +344,9 @@ if bot:
             USER_LANGUAGES[chat_id] = data.replace("lang_", "")
             bot.answer_callback_query(call.id, "✅ Done")
             try:
-                bot.edit_message_text(LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
+                bot.edit_message_text(LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
             except:
-                bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+                bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
 
         elif data.startswith("fam_"):
             fam_key = data.replace("fam_", "")
@@ -369,9 +368,9 @@ if bot:
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"), InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             try:
-                bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup)
+                bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
             except:
-                bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
+                bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup, parse_mode="HTML")
 
         elif data == "show_apis":
             bot.answer_callback_query(call.id)
@@ -423,9 +422,9 @@ if bot:
             bot.answer_callback_query(call.id)
             USER_WAITING_FOR_SEARCH[chat_id] = True
             try:
-                bot.edit_message_text("🔍 أرسل اسم المنتج للبحث:", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
+                bot.edit_message_text("🔍 أرسل اسم المنتج للبحث:", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")), parse_mode="HTML")
             except:
-                bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
+                bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")), parse_mode="HTML")
 
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
@@ -485,9 +484,9 @@ if bot:
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
             try:
-                bot.edit_message_text(LANG_TEXTS[get_user_lang(chat_id)]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
+                bot.edit_message_text(LANG_TEXTS[get_user_lang(chat_id)]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
             except:
-                bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+                bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
 
     @bot.message_handler(content_types=['text', 'photo'])
     def handle_incoming(message):
@@ -517,7 +516,7 @@ if bot:
             prod_key = USER_SELECTED_PRODUCT.get(chat_id)
             info = fetch_supplier_products().get(prod_key, {"name": "منتج", "price": 0.0})
             
-            bot.send_message(chat_id, "⏳ جاري فحص حساب باينانس للتأكد من استلام الدفع...")
+            bot.send_message(chat_id, "⏳ جاري فحص حساب باينانس للتأكد من استلاستلام الدفع...")
             binance_check = verify_binance_transaction(order_reference, info.get("price", 0.0))
             
             if not binance_check["success"]:
