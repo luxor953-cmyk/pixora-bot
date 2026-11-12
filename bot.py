@@ -97,27 +97,41 @@ def get_main_menu_keyboard(lang="ar"):
     )
     return markup
 
-def fetch_products():
-    # محاولة الجلب من الـ API إن وجد، وإلا عرض منتج الاختبار بالسعر الأساسي 0.00 ليضاف عليه ربحك 0.50 فقط
-    if RESELLER_KEY:
-        try:
-            url = "https://ventebot.app/api/reseller/products"
-            headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
-            resp = requests.get(url, headers=headers, timeout=8)
-            if resp.status_code == 200:
-                res = resp.json()
-                if isinstance(res, list) and len(res) > 0:
-                    return res
-                elif isinstance(res, dict) and res.get("products"):
-                    return res["products"]
-        except Exception as e:
-            print(f"API Fetch Notice: {e}")
+# قائمة الروابط المحتملة للمزود لتجربتها تلقائياً
+API_ENDPOINTS = [
+    "https://api.storebot.app/v1/products",
+    "https://storebot.app/api/reseller/products",
+    "https://ventebot.app/api/reseller/products"
+]
 
+def fetch_products():
+    if RESELLER_KEY:
+        headers = {
+            "Authorization": f"Bearer {RESELLER_KEY}",
+            "X-API-Key": RESELLER_KEY,
+            "api-key": RESELLER_KEY
+        }
+        for url in API_ENDPOINTS:
+            try:
+                resp = requests.get(url, headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    res = resp.json()
+                    if isinstance(res, list) and len(res) > 0:
+                        return res
+                    elif isinstance(res, dict):
+                        items = res.get("products") or res.get("data") or res.get("items")
+                        if items and isinstance(items, list):
+                            return items
+            except Exception:
+                continue
+
+    # منتج التيست مجاني تماماً (0.00$)
     return [
         {
             "id": "test_product_id",
-            "name": "Test Product (منتج تجريبي)",
+            "name": "Test Product (مجاني للتجربة)",
             "price": 0.00,
+            "is_free_test": True,
             "in_stock": True
         }
     ]
@@ -128,14 +142,12 @@ def send_welcome(message):
     lang = get_user_lang(chat_id)
     t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
     
-    # مسح الأزرار السفلية الكبيرة العالقة في تيليجرام نهائياً
     msg_clear = bot.send_message(chat_id, "🔄", reply_markup=types.ReplyKeyboardRemove())
     try:
         bot.delete_message(chat_id, msg_clear.message_id)
     except:
         pass
 
-    # إرسال القائمة الشفافة المدمجة الأصلية
     bot.send_message(chat_id, t["welcome"], parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
 
 @bot.message_handler(func=lambda msg: True)
@@ -148,40 +160,39 @@ def handle_incoming(message):
     pending_product = user_states.get(str(chat_id))
     
     if pending_product:
-        # حماية ضد الأرقام الوهمية والقصيرة (أقل من 8 خانات أو ليست أرقاماً)
         if len(text) < 8 or not text.isdigit():
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🔙 إلغاء والعودة للقائمة", callback_data="back_home"))
             bot.send_message(
                 chat_id,
-                "❌ <b>رقم العملية (Order ID) غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح من تطبيق Binance (يتكون من أرقام فقط، لا يقل عن 8 خانات).",
+                "❌ <b>رقم العملية (Order ID) غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح من تطبيق Binance (أرقام فقط، لا يقل عن 8 خانات).",
                 parse_mode="HTML",
                 reply_markup=markup
             )
             return
 
-        # إزالة حالة الانتظار بعد إدخال رقم مقبول الطول
         del user_states[str(chat_id)]
         save_json(STATES_FILE, user_states)
 
-        msg_wait = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وتنفيذ الطلب...")
+        msg_wait = bot.send_message(chat_id, "⏳ جاري التحقق وتنفيذ الطلب...")
 
-        api_result = {"success": False, "error": "لم يتم التأكد من الدفع تلقائياً بعد."}
+        api_result = {"success": False, "error": "تعذر الاتصال بمزود الخدمة حالياً."}
         if pending_product["id"] == "test_product_id":
             api_result = {
                 "success": True,
-                "data": {"item": f"TEST-ORDER-VERIFIED-{text}"}
+                "data": {"item": f"FREE-TEST-SUCCESS-{text}"}
             }
         else:
-            try:
-                buy_url = "https://ventebot.app/api/reseller/buy"
-                headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
-                payload = {"product_id": pending_product["id"], "payment_ref": text}
-                resp = requests.post(buy_url, json=payload, headers=headers, timeout=12)
-                if resp.status_code == 200:
-                    api_result = resp.json()
-            except Exception as e:
-                api_result = {"success": False, "error": str(e)}
+            for base_url in ["https://storebot.app/api/reseller/buy", "https://ventebot.app/api/reseller/buy"]:
+                try:
+                    headers = {"Authorization": f"Bearer {RESELLER_KEY}", "X-API-Key": RESELLER_KEY}
+                    payload = {"product_id": pending_product["id"], "payment_ref": text}
+                    resp = requests.post(base_url, json=payload, headers=headers, timeout=10)
+                    if resp.status_code == 200:
+                        api_result = resp.json()
+                        break
+                except Exception as e:
+                    api_result = {"success": False, "error": str(e)}
 
         try:
             bot.delete_message(chat_id, msg_wait.message_id)
@@ -201,10 +212,10 @@ def handle_incoming(message):
             save_json(ORDERS_FILE, ords)
 
             success_msg = (
-                f"🎉 <b>تم استلام الطلب بنجاح!</b>\n\n"
+                f"🎉 <b>تم تنفيذ طلبك بنجاح!</b>\n\n"
                 f"📦 <b>المنتج:</b> {pending_product['name']}\n"
-                f"🧾 <b>رقم العملية:</b> <code>{text}</code>\n\n"
-                f"🔑 <b>بيانات التسليم:</b>\n<code>{item_details}</code>"
+                f"🧾 <b>رقم المرجع:</b> <code>{text}</code>\n\n"
+                f"🔑 <b>الكود / الحساب:</b>\n<code>{item_details}</code>"
             )
             bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
         else:
@@ -230,10 +241,17 @@ def callback_handler(call):
             p_name = p.get("name", "Product")
             p_id = p.get("id", "0")
             raw_cost = float(p.get("price", 0.0))
-            final_price = raw_cost + t["price_markup"]
-            stock_status = "✅" if p.get("in_stock", True) else "❌ (نفد)"
+            
+            # إذا كان منتج التيست أو سعره 0 يكون مجانياً بدون إضافة 0.50$
+            if p.get("is_free_test") or p_id == "test_product_id" or raw_cost == 0.0:
+                final_price = 0.00
+                price_label = "مجاني ($0.00)"
+            else:
+                final_price = raw_cost + t["price_markup"]
+                price_label = f"${final_price:.2f}"
 
-            btn_text = f"{stock_status} {p_name} · ${final_price:.2f}"
+            stock_status = "✅" if p.get("in_stock", True) else "❌ (نفد)"
+            btn_text = f"{stock_status} {p_name} · {price_label}"
             markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"buy_{p_id}"))
         
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
@@ -274,9 +292,16 @@ def callback_handler(call):
 
     elif data == "menu_api":
         bot.answer_callback_query(call.id)
+        key_status = "✅ موجود في Render" if RESELLER_KEY else "❌ غير موجود في Render"
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
-        bot.edit_message_text("🔑 <b>خدمات API:</b>\nنظام المتجر متصل وجاهز لتنفيذ الطلبات.", chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.edit_message_text(
+            f"🔑 <b>حالة ربط API:</b>\nالمفتاح (RESELLER_KEY): {key_status}",
+            chat_id,
+            call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=markup
+        )
 
     elif data == "menu_lang":
         bot.answer_callback_query(call.id)
@@ -314,6 +339,31 @@ def callback_handler(call):
             return
 
         raw_cost = float(selected_product.get("price", 0.0))
+        
+        # إذا كان منتج التيست المجاني، يتم تسليمه فوراً بدون طلب تحويل باينانس
+        if selected_product.get("is_free_test") or product_id == "test_product_id" or raw_cost == 0.0:
+            bot.answer_callback_query(call.id, "✅ جاري تسليم المنتج التجريبي مجاناً...")
+            item_details = f"FREE-TEST-KEY-{int(time.time())}"
+            
+            ords = load_json(ORDERS_FILE)
+            ords.setdefault(str(chat_id), []).append({
+                "product": selected_product["name"],
+                "item": item_details,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            save_json(ORDERS_FILE, ords)
+
+            free_msg = (
+                f"🎉 <b>تم تسليم المنتج التجريبي المجاني بنجاح!</b>\n\n"
+                f"📦 <b>المنتج:</b> {selected_product['name']}\n"
+                f"💵 <b>السعر:</b> $0.00 (مجاني)\n\n"
+                f"🔑 <b>بيانات التجربة:</b>\n<code>{item_details}</code>"
+            )
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
+            bot.edit_message_text(free_msg, chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+            return
+
         final_price = raw_cost + t["price_markup"]
 
         user_states = load_json(STATES_FILE)
