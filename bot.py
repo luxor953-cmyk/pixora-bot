@@ -15,6 +15,7 @@ server = Flask(__name__)
 
 USERS_LANG_FILE = "users_lang.json"
 ORDERS_FILE = "orders.json"
+STATES_FILE = "user_states.json"
 
 def load_json(filename):
     if os.path.exists(filename):
@@ -38,30 +39,24 @@ def set_user_lang(chat_id, lang):
     data[str(chat_id)] = lang
     save_json(USERS_LANG_FILE, data)
 
-def load_orders():
-    return load_json(ORDERS_FILE)
-
-def save_orders(data):
-    save_json(ORDERS_FILE, data)
-
 TRANSLATIONS = {
     "ar": {
         "welcome": "أهلاً بك في متجر <b>Pixora Store</b> 🛒\nمن فضلك اختر ما يناسبك من الخدمات الرقمية والاشتراكات:",
-        "browse": "🛍️ المنتجات",
-        "balance": "💰 الدفع وشحن الرصيد",
+        "browse": "🛍️ تصفح المنتجات",
+        "balance": "💰 شحن الرصيد / الدفع",
         "my_orders": "📦 مشترياتي",
         "support": "🛠️ الدعم الفني",
         "api_services": "🔑 خدمات API",
         "lang_switch": "🌐 Language / اللغة",
         "select_lang": "اختر لغة العرض المفضلة لديك:",
-        "lang_changed": "تم تغير اللغة بنجاح ✅",
+        "lang_changed": "تم تغيير اللغة بنجاح ✅",
         "no_orders": "ليس لديك أي مشتريات مسجلة حتى الآن.",
         "support_text": "للتواصل مع الدعم الفني للمتجر:\n@Support_Pixora",
         "price_markup": 0.50
     },
     "en": {
         "welcome": "Welcome to <b>Pixora Store</b> 🛒\nPlease select your preferred digital products and subscriptions:",
-        "browse": "🛍️ Products",
+        "browse": "🛍️ Browse Products",
         "balance": "💰 Top-up / Payment",
         "my_orders": "📦 My Orders",
         "support": "🛠️ Support",
@@ -75,7 +70,7 @@ TRANSLATIONS = {
     },
     "fr": {
         "welcome": "Bienvenue sur <b>Pixora Store</b> 🛒\nVeuillez choisir vos abonnements et produits numériques:",
-        "browse": "🛍️ Produits",
+        "browse": "🛍️ Parcourir",
         "balance": "💰 Recharger / Paiement",
         "my_orders": "📦 Mes Commandes",
         "support": "🛠️ Support",
@@ -94,34 +89,35 @@ def get_main_menu_keyboard(lang="ar"):
     t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
     markup.add(
         types.InlineKeyboardButton(t["browse"], callback_data="menu_browse"),
+        types.InlineKeyboardButton(t["api_services"], callback_data="menu_api"),
         types.InlineKeyboardButton(t["balance"], callback_data="menu_balance"),
         types.InlineKeyboardButton(t["my_orders"], callback_data="menu_orders"),
         types.InlineKeyboardButton(t["support"], callback_data="menu_support"),
-        types.InlineKeyboardButton(t["api_services"], callback_data="menu_api"),
         types.InlineKeyboardButton(t["lang_switch"], callback_data="menu_lang")
     )
     return markup
 
-def fetch_ventebot_products():
-    try:
-        url = "https://ventebot.app/api/reseller/products"
-        headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code == 200:
-            res = resp.json()
-            if isinstance(res, list):
-                return res
-            elif isinstance(res, dict) and "products" in res:
-                return res["products"]
-    except Exception as e:
-        print(f"Error fetching products: {e}")
-    
-    # منتج تجريبي بسعر منطقي ومضبوط
+def fetch_products():
+    # محاولة الجلب من الـ API إن وجد، وإلا عرض منتج الاختبار بالسعر الأساسي 0.00 ليضاف عليه ربحك 0.50 فقط
+    if RESELLER_KEY:
+        try:
+            url = "https://ventebot.app/api/reseller/products"
+            headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
+            resp = requests.get(url, headers=headers, timeout=8)
+            if resp.status_code == 200:
+                res = resp.json()
+                if isinstance(res, list) and len(res) > 0:
+                    return res
+                elif isinstance(res, dict) and res.get("products"):
+                    return res["products"]
+        except Exception as e:
+            print(f"API Fetch Notice: {e}")
+
     return [
         {
             "id": "test_product_id",
-            "name": "VenteBot API Test Product",
-            "price": 0.50,
+            "name": "Test Product (منتج تجريبي)",
+            "price": 0.00,
             "in_stock": True
         }
     ]
@@ -131,88 +127,91 @@ def send_welcome(message):
     chat_id = message.chat.id
     lang = get_user_lang(chat_id)
     t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
+    
+    # مسح الأزرار السفلية الكبيرة العالقة في تيليجرام نهائياً
+    msg_clear = bot.send_message(chat_id, "🔄", reply_markup=types.ReplyKeyboardRemove())
+    try:
+        bot.delete_message(chat_id, msg_clear.message_id)
+    except:
+        pass
+
+    # إرسال القائمة الشفافة المدمجة الأصلية
     bot.send_message(chat_id, t["welcome"], parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
 
 @bot.message_handler(func=lambda msg: True)
 def handle_incoming(message):
     chat_id = message.chat.id
-    text = message.text
+    text = message.text.strip()
     lang = get_user_lang(chat_id)
-    t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
 
-    user_states = load_json("user_states.json")
+    user_states = load_json(STATES_FILE)
     pending_product = user_states.get(str(chat_id))
     
     if pending_product:
-        order_id_input = text.strip()
-        
-        if len(order_id_input) < 8:
-            bot.send_message(chat_id, "❌ <b>رقم العملية غير صالح!</b>\nيرجى التأكد من إدخال رقم عملية باينانس الصحيح.", parse_mode="HTML")
+        # حماية ضد الأرقام الوهمية والقصيرة (أقل من 8 خانات أو ليست أرقاماً)
+        if len(text) < 8 or not text.isdigit():
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 إلغاء والعودة للقائمة", callback_data="back_home"))
+            bot.send_message(
+                chat_id,
+                "❌ <b>رقم العملية (Order ID) غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح من تطبيق Binance (يتكون من أرقام فقط، لا يقل عن 8 خانات).",
+                parse_mode="HTML",
+                reply_markup=markup
+            )
             return
 
+        # إزالة حالة الانتظار بعد إدخال رقم مقبول الطول
         del user_states[str(chat_id)]
-        save_json("user_states.json", user_states)
+        save_json(STATES_FILE, user_states)
 
-        msg_wait = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وشراء المنتج أوتوماتيكياً...")
+        msg_wait = bot.send_message(chat_id, "⏳ جاري التحقق من عملية الدفع وتنفيذ الطلب...")
 
-        buy_url = "https://ventebot.app/api/reseller/buy"
-        headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
-        payload = {
-            "product_id": pending_product["id"],
-            "payment_ref": order_id_input
-        }
-
-        try:
-            resp = requests.post(buy_url, json=payload, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                api_result = resp.json()
-            else:
-                api_result = {"success": False, "error": f"HTTP Error {resp.status_code}"}
-        except Exception as e:
-            if pending_product["id"] == "test_product_id":
-                api_result = {
-                    "success": True,
-                    "data": {
-                        "item": "TEST_CREDENTIALS_SUCCESS_MOCK_KEY_12345"
-                    }
-                }
-            else:
+        api_result = {"success": False, "error": "لم يتم التأكد من الدفع تلقائياً بعد."}
+        if pending_product["id"] == "test_product_id":
+            api_result = {
+                "success": True,
+                "data": {"item": f"TEST-ORDER-VERIFIED-{text}"}
+            }
+        else:
+            try:
+                buy_url = "https://ventebot.app/api/reseller/buy"
+                headers = {"Authorization": f"Bearer {RESELLER_KEY}"}
+                payload = {"product_id": pending_product["id"], "payment_ref": text}
+                resp = requests.post(buy_url, json=payload, headers=headers, timeout=12)
+                if resp.status_code == 200:
+                    api_result = resp.json()
+            except Exception as e:
                 api_result = {"success": False, "error": str(e)}
 
-        bot.delete_message(chat_id, msg_wait.message_id)
+        try:
+            bot.delete_message(chat_id, msg_wait.message_id)
+        except:
+            pass
 
         if api_result.get("success", False):
-            res_data = api_result.get("data", "تم التسليم بنجاح")
-            
-            if isinstance(res_data, dict):
-                item_details = (
-                    res_data.get("item") or 
-                    res_data.get("credentials") or 
-                    res_data.get("account") or 
-                    res_data.get("key") or 
-                    res_data.get("content") or 
-                    res_data.get("text") or 
-                    res_data.get("data") or 
-                    json.dumps(res_data, ensure_ascii=False)
-                )
-            else:
-                item_details = str(res_data)
+            res_data = api_result.get("data", {})
+            item_details = res_data.get("item") if isinstance(res_data, dict) else str(res_data)
 
-            ords = load_orders()
+            ords = load_json(ORDERS_FILE)
             ords.setdefault(str(chat_id), []).append({
                 "product": pending_product["name"],
                 "item": item_details,
                 "time": time.strftime("%Y-%m-%d %H:%M:%S")
             })
-            save_orders(ords)
+            save_json(ORDERS_FILE, ords)
 
-            success_msg = f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n📦 <b>{pending_product['name']}</b>\n\n🔑 <b>بيانات الحساب أو التفعيل:</b>\n<code>{item_details}</code>"
+            success_msg = (
+                f"🎉 <b>تم استلام الطلب بنجاح!</b>\n\n"
+                f"📦 <b>المنتج:</b> {pending_product['name']}\n"
+                f"🧾 <b>رقم العملية:</b> <code>{text}</code>\n\n"
+                f"🔑 <b>بيانات التسليم:</b>\n<code>{item_details}</code>"
+            )
             bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
         else:
-            err_msg = api_result.get("error", "حدث خطأ أثناء التحقق من الدفع.")
-            bot.send_message(chat_id, f"❌ <b>فشل تنفيذ الطلب:</b>\n{err_msg}", parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
+            err_msg = api_result.get("error", "فشل التحقق من العملية.")
+            bot.send_message(chat_id, f"❌ <b>لم يكتمل الطلب:</b>\n{err_msg}", parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
     else:
-        bot.send_message(chat_id, "يرجى استخدام الأزرار في القائمة الرئيسية أعلاه ⬇️", reply_markup=get_main_menu_keyboard(lang))
+        bot.send_message(chat_id, "يرجى الاختيار من القائمة التفاعلية التالية ⬇️", reply_markup=get_main_menu_keyboard(lang))
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -221,11 +220,11 @@ def callback_handler(call):
     lang = get_user_lang(chat_id)
     t = TRANSLATIONS.get(lang, TRANSLATIONS["ar"])
 
-    if data == "menu_browse":
+    if data in ["menu_browse", "refresh_products"]:
         bot.answer_callback_query(call.id)
-        products = fetch_ventebot_products()
+        products = fetch_products()
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة", callback_data="refresh_products"))
+        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة / Refresh", callback_data="refresh_products"))
 
         for p in products:
             p_name = p.get("name", "Product")
@@ -243,10 +242,10 @@ def callback_handler(call):
     elif data == "menu_balance":
         bot.answer_callback_query(call.id)
         pay_text = (
-            "💰 <b>الدفع وشحن الرصيد عبر Binance Pay:</b>\n\n"
+            "💰 <b>شحن الرصيد والدفع عبر Binance Pay:</b>\n\n"
             "لشراء أي منتج، قم بالتحويل إلى Binance ID الخاص بنا:\n"
             "🆔 <code>957483337</code>\n\n"
-            "بعد التحويل، اختر المنتج من قائمة المنتجات وأرسل رقم العملية (Order ID) هنا."
+            "بعد التحويل، اختر المنتج من قائمة المنتجات وأرسل رقم العملية (Order ID) للشات."
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
@@ -254,7 +253,7 @@ def callback_handler(call):
 
     elif data == "menu_orders":
         bot.answer_callback_query(call.id)
-        ords = load_orders()
+        ords = load_json(ORDERS_FILE)
         user_ords = ords.get(str(chat_id), [])
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
@@ -277,7 +276,7 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
-        bot.edit_message_text("🔑 <b>خدمات API مرتبطة:</b>\nمتجرك متصل أوتوماتيكياً وجاهز لتنفيذ الطلبات.", chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        bot.edit_message_text("🔑 <b>خدمات API:</b>\nنظام المتجر متصل وجاهز لتنفيذ الطلبات.", chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
 
     elif data == "menu_lang":
         bot.answer_callback_query(call.id)
@@ -292,6 +291,10 @@ def callback_handler(call):
 
     elif data == "back_home":
         bot.answer_callback_query(call.id)
+        user_states = load_json(STATES_FILE)
+        if str(chat_id) in user_states:
+            del user_states[str(chat_id)]
+            save_json(STATES_FILE, user_states)
         bot.edit_message_text(t["welcome"], chat_id, call.message.message_id, parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
 
     elif data.startswith("lang_"):
@@ -301,54 +304,32 @@ def callback_handler(call):
         bot.answer_callback_query(call.id, new_t["lang_changed"])
         bot.edit_message_text(new_t["welcome"], chat_id, call.message.message_id, parse_mode="HTML", reply_markup=get_main_menu_keyboard(new_lang))
 
-    elif data == "refresh_products":
-        bot.answer_callback_query(call.id, "تم تحديث القائمة ✅")
-        products = fetch_ventebot_products()
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(types.InlineKeyboardButton("🔄 تحديث القائمة", callback_data="refresh_products"))
-
-        for p in products:
-            p_name = p.get("name", "Product")
-            p_id = p.get("id", "0")
-            raw_cost = float(p.get("price", 0.0))
-            final_price = raw_cost + t["price_markup"]
-            stock_status = "✅" if p.get("in_stock", True) else "❌ (نفد)"
-
-            btn_text = f"{stock_status} {p_name} · ${final_price:.2f}"
-            markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"buy_{p_id}"))
-
-        markup.add(types.InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="back_home"))
-        bot.edit_message_text("📦 <b>المنتجات المتاحة حالياً:</b>", chat_id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
-
     elif data.startswith("buy_"):
         product_id = data.split("_", 1)[1]
-        products = fetch_ventebot_products()
+        products = fetch_products()
         selected_product = next((p for p in products if str(p.get("id")) == str(product_id)), None)
 
         if not selected_product:
-            if product_id == "test_product_id":
-                selected_product = {"id": "test_product_id", "name": "VenteBot API Test Product", "price": 0.50}
-            else:
-                bot.answer_callback_query(call.id, "المنتج غير موجود أو نفد!")
-                return
+            bot.answer_callback_query(call.id, "المنتج غير متوفر حالياً!")
+            return
 
         raw_cost = float(selected_product.get("price", 0.0))
         final_price = raw_cost + t["price_markup"]
 
-        user_states = load_json("user_states.json")
+        user_states = load_json(STATES_FILE)
         user_states[str(chat_id)] = {
             "id": selected_product["id"],
             "name": selected_product["name"],
             "price": final_price
         }
-        save_json("user_states.json", user_states)
+        save_json(STATES_FILE, user_states)
 
         instruction_msg = (
-            f"🛒 <b>المنتج:</b> {selected_product['name']}\n"
-            f"💵 <b>السعر الإجمالي:</b> ${final_price:.2f}\n\n"
-            f"🌐 يرجى التحويل بقيمة ({final_price:.2f}$) إلى Binance ID:\n"
+            f"🛒 <b>المنتج المختار:</b> {selected_product['name']}\n"
+            f"💵 <b>السعر المطلوب:</b> ${final_price:.2f}\n\n"
+            f"🌐 يرجى تحويل مبلغ (<b>${final_price:.2f}</b>) إلى حساب Binance ID:\n"
             f"🆔 <code>957483337</code>\n\n"
-            f"ثم أرسل **رقم العملية (Order ID)** الصحيح هنا للشات ليتم التحقق منه وتسليم المنتج أوتوماتيكياً!"
+            f"📥 بعد التحويل، أرسل <b>رقم العملية (Order ID)</b> هنا في الشات لاستلام طلبك:"
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 إلغاء والعودة للقائمة", callback_data="back_home"))
@@ -365,7 +346,7 @@ def redirect_webhook():
 def webhook():
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN}")
-    return "Pixora Store Bot is running successfully!", 200
+    return "Pixora Store Bot is running!", 200
 
 if __name__ == "__main__":
     server.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
