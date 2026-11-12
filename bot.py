@@ -89,7 +89,7 @@ def is_halal_product(name, description=""):
             return False
     return True
 
-# تحديد عائلات المنتجات التي تحتوي على خطط أو إصدارات متعددة
+# تصنيف المنتجات والعائلات بدقة بناءً على طلبك الأخير
 def get_product_family(name):
     n = name.lower()
     if "test" in n or "api test" in n:
@@ -98,16 +98,38 @@ def get_product_family(name):
         return "chatgpt"
     elif "claude" in n:
         return "claude"
-    elif "gemini" in n or "google" in n:
-        return "gemini"
+    elif "gemini" in n or "google" in n or "gmail" in n:
+        return "google"
     elif "capcut" in n:
         return "capcut"
     elif "canva" in n:
         return "canva"
+    elif "zoom" in n:
+        return "zoom"
+    elif "elevenlabs" in n:
+        return "elevenlabs"
+    elif "gamma" in n:
+        return "gamma"
+    elif "lovable" in n:
+        return "lovable"
+    elif "microsoft" in n:
+        return "microsoft"
+    elif "miro" in n:
+        return "miro"
+    elif "notion" in n:
+        return "notion"
+    elif "quizlet" in n:
+        return "quizlet"
+    elif "railway" in n:
+        return "railway"
+    elif "wordwall" in n:
+        return "wordwall"
+    elif "api" in n:
+        return "api_services"
     elif "vpn" in n or "hma" in n or "surfshark" in n or "expressvpn" in n:
         return "vpn"
     else:
-        return None  # منتج فردي يقعد بره في القائمة الرئيسية مباشرة
+        return None  # منتج فردي يظل بارزاً في القائمة الرئيسية
 
 def load_orders():
     if os.path.exists(ORDERS_FILE):
@@ -235,22 +257,31 @@ def get_main_menu_markup(chat_id, is_admin=False):
     for k, info in products_info.items():
         fam = info['family']
         if fam:
-            # إذا كان المنتج ينتمي لعائلة ولن يتم إضافته بعد، نصنع له "مجلد" أو زر رئيسي للعائلة
             if fam not in added_families:
                 added_families.add(fam)
                 fam_names = {
                     "chatgpt": "🤖 عائلة اشتراكات ChatGPT",
                     "claude": "🧠 عائلة اشتراكات Claude AI",
-                    "gemini": "✨ عائلة Google & Gemini",
+                    "google": "✨ عائلة Google & Gmail",
                     "capcut": "🎬 عائلة أدوات CapCut",
                     "canva": "🎨 عائلة تصاميم Canva",
+                    "zoom": "📹 عائلة اشتراكات Zoom",
+                    "elevenlabs": "🎙️ عائلة أدوات ElevenLabs",
+                    "gamma": "📊 عائلة عروض Gamma AI",
+                    "lovable": "💻 عائلة منصة Lovable",
+                    "microsoft": "🪟 عائلة منتجات Microsoft",
+                    "miro": "📌 عائلة لوحات Miro",
+                    "notion": "📝 عائلة أدوات Notion",
+                    "quizlet": "📚 عائلة تعليم Quizlet",
+                    "railway": "⚙️ عائلة استضافة Railway",
+                    "wordwall": "🎮 عائلة أنشطة Wordwall",
+                    "api_services": "🔑 خدمات وباقات API",
                     "vpn": "🔒 خدمات وشبكات VPN",
-                    "tests": "🧪 منتجات التجربة والـ API"
+                    "tests": "🧪 منتجات التجربة"
                 }
                 display_name = fam_names.get(fam, f"📁 قسم {fam.upper()}")
                 markup.add(InlineKeyboardButton(display_name, callback_data="fam_" + fam))
         else:
-            # المنتج الفردي يظهر مباشرة في القائمة الرئيسية بره
             if info['stock'] > 0:
                 markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
             else:
@@ -332,7 +363,7 @@ if bot:
             try:
                 bot.edit_message_text(f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
             except:
-                bot.send_message(chat_id, f"📁 <b>خيارات وخطط القسم:</b>", reply_markup=markup, parse_mode="HTML")
+                bot.send_message(chat_id, f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
 
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
