@@ -151,7 +151,7 @@ def fetch_supplier_products():
         return {}
     headers = {"X-Reseller-Key": RESELLER_KEY}
     try:
-        response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
+        response = requests.get(fVENTEBOT_API_URL+"/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
             products_list = []
@@ -168,12 +168,15 @@ def fetch_supplier_products():
                 p_price = 0.0 if ("test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05) else round(raw_cost + 0.50, 2)
                 
                 family = get_product_family(p_name)
+                # الاحتفاظ بالوصف كاملاً ودون أي اختصار نهائياً
+                full_desc = p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل ومتابعة فورية."
+                
                 products_list.append({
                     "id": p_id,
                     "name": p_name.strip(),
                     "price": p_price,
                     "stock": int(item.get("stock", 0)),
-                    "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
+                    "description": full_desc,
                     "image": item.get("image_url", ""),
                     "family": family
                 })
@@ -281,13 +284,13 @@ def get_main_menu_markup(chat_id, is_admin=False):
         else:
             single_products.append((k, info))
 
-    # 1. ترتيب العائلات أبجدياً حسب اسمها المعروض وضعها في الأعلى
+    # 1. العائلات في الأعلى وترتيبها أبجدياً
     sorted_families = sorted(found_families, key=lambda f: fam_names.get(f, f))
     for fam in sorted_families:
         display_name = fam_names.get(fam, f"📁 قسم {fam.upper()}")
         markup.add(InlineKeyboardButton(display_name, callback_data="fam_" + fam))
 
-    # 2. ترتيب المنتجات الفردية أبجدياً وضعها تحت العائلات
+    # 2. المنتجات الفردية تحتها مباشرة وترتيبها أبجدياً
     single_products.sort(key=lambda x: x[1]['name'].lower())
     for k, info in single_products:
         if info['stock'] > 0:
@@ -366,7 +369,6 @@ if bot:
                 if info['family'] == fam_key:
                     family_products.append((k, info))
             
-            # ترتيب منتجات العائلة أبجدياً أيضاً داخل المجلد
             family_products.sort(key=lambda x: x[1]['name'].lower())
             for k, info in family_products:
                 if info['stock'] > 0:
@@ -375,10 +377,13 @@ if bot:
                     markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + k))
             
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+            
+            # إرسال القسم في رسالة جديدة لتظهر مباشرة في أسفل الشاشة أمام عين المستخدم
             try:
-                bot.edit_message_text(f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+                bot.delete_message(chat_id, msg_id)
             except:
-                bot.send_message(chat_id, f"📁 <b>خيارات وخطط القسم:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+                pass
+            bot.send_message(chat_id, f"📁 <b>خيارات القسم:</b>", reply_markup=markup, parse_mode="HTML")
 
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
@@ -463,19 +468,25 @@ if bot:
                     save_orders(ords)
                     success_txt = f"🎉 <b>تم التسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>"
                     try:
-                        bot.edit_message_text(success_txt, chat_id, msg_id, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                        bot.delete_message(chat_id, msg_id)
                     except:
-                        bot.send_message(chat_id, success_txt, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                        pass
+                    bot.send_message(chat_id, success_txt, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
                     return
 
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
                 markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
                 markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-                msg_text = f"🏷️ <b>{info['name']}</b>\n💰 ${info['price']}\n📦 {info['stock']}\n\n{info['description']}"
+                
+                # الوصف كامل وواضح ومفصل تماماً لضمان حقوقك وحقوق المشتري
+                msg_text = f"🏷️ <b>{info['name']}</b>\n💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n📝 <b>تفاصيل المنتج:</b>\n{info['description']}"
+                
+                # إرسال تفاصيل المنتج في رسالة جديدة لضمان ظهورها مباشرة في وش المشتري والأدمن
                 try:
-                    bot.edit_message_text(msg_text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+                    bot.delete_message(chat_id, msg_id)
                 except:
-                    bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
+                    pass
+                bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
                 
         elif data.startswith("pay_"):
             info = products_info.get(data.replace("pay_", ""), {"price": 1.0})
@@ -500,9 +511,10 @@ if bot:
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
             try:
-                bot.edit_message_text(LANG_TEXTS[get_user_lang(chat_id)]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
+                bot.delete_message(chat_id, msg_id)
             except:
-                bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
+                pass
+            bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin), parse_mode="HTML")
 
     @bot.message_handler(content_types=['text', 'photo'])
     def handle_incoming(message):
