@@ -7,7 +7,7 @@ import hmac
 import hashlib
 from urllib.parse import urlencode
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, BotCommand
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, BotCommand
 from flask import Flask
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
@@ -18,7 +18,6 @@ SUPPORT_WHATSAPP = "https://wa.me/213555668244"
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
 VENTEBOT_API_URL = "https://web-production-1c7b1.up.railway.app/api/reseller"
 
-# مفاتيح باينانس الجديدة (يجب إضافتها في Render)
 BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
 BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 
@@ -150,186 +149,95 @@ def fetch_supplier_products():
         response = requests.get(f"{VENTEBOT_API_URL}/products", headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            
             products_list = []
-            items = []
-            if isinstance(data, list):
-                items = data
-            elif isinstance(data, dict):
-                items = data.get("products", data.get("data", data.get("items", [])))
+            items = data if isinstance(data, list) else data.get("products", data.get("data", data.get("items", [])))
             
             for item in items:
                 p_name = item.get("name", item.get("title", "منتج رقمي"))
-                if not p_name:
-                    continue
-                
+                if not p_name: continue
                 p_desc = item.get("description", item.get("desc", ""))
-                
-                if not is_halal_product(p_name, p_desc):
-                    continue
-
+                if not is_halal_product(p_name, p_desc): continue
                 p_id = str(item.get("id", item.get("code", "")))
-                if not p_id:
-                    continue
-
+                if not p_id: continue
                 raw_cost = float(item.get("price_usd", 0.0))
-                
-                if "test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05:
-                    p_price = 0.0
-                else:
-                    p_price = round(raw_cost + 0.50, 2)
-
-                p_stock = int(item.get("stock", 0))
-                p_image = item.get("image_url", "")
-
-                brand_group = get_brand_group(p_name)
+                p_price = 0.0 if ("test" in p_name.lower() or item.get("api_test") is True or raw_cost < 0.05) else round(raw_cost + 0.50, 2)
                 
                 products_list.append({
                     "id": p_id,
                     "name": p_name.strip(),
                     "price": p_price,
-                    "stock": p_stock,
+                    "stock": int(item.get("stock", 0)),
                     "description": p_desc if p_desc else "اشتراك رقمي رسمي مع ضمان كامل.",
-                    "image": p_image if p_image else "",
-                    "brand_group": brand_group
+                    "image": item.get("image_url", ""),
+                    "brand_group": get_brand_group(p_name)
                 })
             
             products_list.sort(key=lambda x: (x['brand_group'], x['name'].lower()))
-            
-            ordered_map = {}
-            for p in products_list:
-                ordered_map[p['id']] = {
-                    "name": p['name'],
-                    "price": p['price'],
-                    "stock": p['stock'],
-                    "description": p['description'],
-                    "image": p['image']
-                }
-            return ordered_map
+            return {p['id']: p for p in products_list}
     except Exception as e:
         print("Error fetching supplier products:", e)
     return {}
 
 def api_get_my_wallet():
-    if not RESELLER_KEY:
-        return None
+    if not RESELLER_KEY: return None
     try:
         res = requests.get(f"{VENTEBOT_API_URL}/me", headers={"X-Reseller-Key": RESELLER_KEY}, timeout=10)
-        if res.status_code == 200:
-            return res.json()
-    except Exception:
-        pass
+        if res.status_code == 200: return res.json()
+    except Exception: pass
     return None
 
 def api_get_wallet_transactions():
-    if not RESELLER_KEY:
-        return None
+    if not RESELLER_KEY: return None
     try:
         res = requests.get(f"{VENTEBOT_API_URL}/wallet/transactions", headers={"X-Reseller-Key": RESELLER_KEY}, timeout=10)
-        if res.status_code == 200:
-            return res.json()
-    except Exception:
-        pass
+        if res.status_code == 200: return res.json()
+    except Exception: pass
     return None
 
 def api_get_deposit_methods():
-    if not RESELLER_KEY:
-        return None
+    if not RESELLER_KEY: return None
     try:
         res = requests.get(f"{VENTEBOT_API_URL}/wallet/deposit-methods", headers={"X-Reseller-Key": RESELLER_KEY}, timeout=10)
-        if res.status_code == 200:
-            return res.json()
-    except Exception:
-        pass
+        if res.status_code == 200: return res.json()
+    except Exception: pass
     return None
 
 def purchase_order_from_supplier(product_id, reference_id):
-    if not RESELLER_KEY:
-        return {"success": False, "error": "No reseller key"}
-    
+    if not RESELLER_KEY: return {"success": False, "error": "No reseller key"}
     headers = {"X-Reseller-Key": RESELLER_KEY, "Content-Type": "application/json"}
-    idempotency_val = f"pixora_{int(time.time())}_{product_id}"
-    
-    payload = {
-        "product_id": int(product_id) if product_id.isdigit() else product_id,
-        "reference": reference_id,
-        "idempotency_key": idempotency_val
-    }
-    
+    payload = {"product_id": int(product_id) if product_id.isdigit() else product_id, "reference": reference_id, "idempotency_key": f"pixora_{int(time.time())}_{product_id}"}
     try:
         response = requests.post(f"{VENTEBOT_API_URL}/orders", json=payload, headers=headers, timeout=15)
-        if response.status_code in [200, 201]:
-            return {"success": True, "data": response.json()}
-        else:
-            return {"success": False, "error": response.text}
+        if response.status_code in [200, 201]: return {"success": True, "data": response.json()}
+        else: return {"success": False, "error": response.text}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-# ==============================================================
-# 👇 دالة التحقق الحقيقي من باينانس (API) 👇
-# ==============================================================
 def verify_binance_transaction(order_id, expected_amount):
     if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
-        return {"success": False, "error": "لم يتم إضافة مفاتيح Binance API في إعدادات المنصة (Render)."}
-    
+        return {"success": False, "error": "لم يتم إضافة مفاتيح Binance API."}
     try:
-        # نستعلم عن سجل عمليات الدفع الواردة في باينانس
-        base_url = "https://api.binance.com"
-        endpoint = "/sapi/v1/pay/transactions"
-        
         timestamp = int(time.time() * 1000)
-        params = {
-            "timestamp": timestamp,
-            "limit": 50 # البحث في آخر 50 عملية
-        }
-        
-        query_string = urlencode(params)
-        signature = hmac.new(
-            BINANCE_SECRET_KEY.encode("utf-8"),
-            query_string.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()
-        
-        headers = {
-            "X-MBX-APIKEY": BINANCE_API_KEY
-        }
-        
-        url = f"{base_url}{endpoint}?{query_string}&signature={signature}"
-        response = requests.get(url, headers=headers, timeout=10)
+        query_string = urlencode({"timestamp": timestamp, "limit": 50})
+        signature = hmac.new(BINANCE_SECRET_KEY.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        url = f"https://api.binance.com/sapi/v1/pay/transactions?{query_string}&signature={signature}"
+        response = requests.get(url, headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=10)
         
         if response.status_code == 200:
-            data = response.json()
-            transactions = data.get("data", [])
-            
+            transactions = response.json().get("data", [])
             for tx in transactions:
-                # التأكد من تطابق رقم العملية (Order ID)
                 if str(tx.get("orderId")) == str(order_id) or str(tx.get("transactionId")) == str(order_id):
                     actual_amount = float(tx.get("amount", 0))
-                    # التأكد أن المبلغ المدفوع يساوي أو أكبر من سعر المنتج
-                    if actual_amount >= float(expected_amount):
-                        return {"success": True}
-                    else:
-                        return {"success": False, "error": f"المبلغ المحول (${actual_amount}) أقل من سعر المنتج (${expected_amount})."}
-            
-            return {"success": False, "error": "رقم العملية غير موجود أو لم يتم تأكيد وصول المبلغ في حسابنا بعد."}
+                    if actual_amount >= float(expected_amount): return {"success": True}
+                    else: return {"success": False, "error": f"المبلغ المحول (${actual_amount}) أقل من سعر المنتج (${expected_amount})."}
+            return {"success": False, "error": "رقم العملية غير موجود أو لم يصل المبلغ بعد."}
         else:
-            return {"success": False, "error": f"تعذر الاتصال بباينانس. (الكود: {response.status_code})"}
-            
+            return {"success": False, "error": f"تعذر الاتصال بباينانس (الكود {response.status_code})."}
     except Exception as e:
-        return {"success": False, "error": f"حدث خطأ أثناء فحص العملية: {str(e)}"}
-# ==============================================================
-
-def get_permanent_reply_keyboard(lang="ar"):
-    t = LANG_TEXTS.get(lang, LANG_TEXTS["ar"])
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    keyboard.add(KeyboardButton(t["products"]), KeyboardButton(t["api"]))
-    keyboard.add(KeyboardButton(t["wallet"]), KeyboardButton(t["deposit"]))
-    keyboard.add(KeyboardButton(t["orders"]), KeyboardButton(t["lang"]))
-    return keyboard
+        return {"success": False, "error": str(e)}
 
 def get_main_menu_markup(chat_id, is_admin=False):
-    lang = get_user_lang(chat_id)
-    t = LANG_TEXTS.get(lang, LANG_TEXTS["ar"])
+    t = LANG_TEXTS.get(get_user_lang(chat_id), LANG_TEXTS["ar"])
     markup = InlineKeyboardMarkup()
     products_info = fetch_supplier_products()
     
@@ -338,24 +246,21 @@ def get_main_menu_markup(chat_id, is_admin=False):
         return markup
 
     for k, info in products_info.items():
-        if info['stock'] > 0:
-            markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-        else:
-            markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
+        if info['stock'] > 0: markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+        else: markup.add(InlineKeyboardButton(f"❌ {info['name']} ({t['sold_out']})", callback_data="sold_out_" + k))
 
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
     
-    if is_admin:
-        markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
-        
+    # الزر الجديد لخدمات API والمحفظة تم دمجه هنا لتعويض القائمة السفلية
+    markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
+    if is_admin: markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
     return markup
 
 def get_admin_markup():
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("💰 فحص الرصيد", callback_data="adm_balance"), InlineKeyboardButton("💳 طرق الإيداع", callback_data="adm_deposits"))
-    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"))
-    markup.row(InlineKeyboardButton("🔙 عودة للرئيسية", callback_data="main_menu"))
+    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
     return markup
 
 if bot:
@@ -363,120 +268,35 @@ if bot:
         bot.set_my_commands([
             BotCommand("start", "تشغيل المتجر 🚀"),
             BotCommand("products", "تصفح المنتجات 🛍️"),
-            BotCommand("api", "خدمات API 🔑"),
-            BotCommand("wallet", "المحفظة 💰"),
-            BotCommand("deposit", "شحن الرصيد 💳"),
             BotCommand("my_orders", "مشترياتي 📜"),
             BotCommand("language", "اللغة / Language 🌐")
         ])
-    except Exception:
-        pass
+    except Exception: pass
 
     @bot.message_handler(commands=['start', 'products'])
     def send_welcome(message):
         chat_id = message.chat.id
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-        lang = get_user_lang(chat_id)
-        t = LANG_TEXTS.get(lang, LANG_TEXTS["ar"])
-        is_admin = (chat_id == ADMIN_ID)
-        bot.send_message(chat_id, t["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
-        bot.send_message(chat_id, "📌 أزرار التحكم السريعة:", reply_markup=get_permanent_reply_keyboard(lang))
+        
+        # حذف الكيبورد السفلي العالق من الشاشة بصمت
+        msg_clear = bot.send_message(chat_id, "🔄", reply_markup=ReplyKeyboardRemove())
+        try: bot.delete_message(chat_id, msg_clear.message_id)
+        except: pass
 
-    @bot.message_handler(commands=['api'])
-    def cmd_api(message):
-        chat_id = message.chat.id
-        products_info = fetch_supplier_products()
-        markup = InlineKeyboardMarkup()
-        for k, info in products_info.items():
-            if "api" in info['name'].lower():
-                if info['stock'] > 0:
-                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        bot.send_message(chat_id, "🔑 <b>خدمات API المتاحة:</b>", reply_markup=markup, parse_mode="HTML")
-
-    @bot.message_handler(commands=['wallet'])
-    def cmd_wallet(message):
-        chat_id = message.chat.id
-        wallet = api_get_my_wallet()
-        text = f"💰 <b>بيانات المحفظة:</b>\n<pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "💰 محفظتك نشطة."
-        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
-
-    @bot.message_handler(commands=['deposit'])
-    def cmd_deposit(message):
-        chat_id = message.chat.id
-        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        pay_info = f"💳 <b>طرق شحن الرصيد والدفع:</b>\n\n- Binance ID: <code>{BINANCE_ID}</code>"
-        bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
+        t = LANG_TEXTS.get(get_user_lang(chat_id), LANG_TEXTS["ar"])
+        bot.send_message(chat_id, t["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
     @bot.message_handler(commands=['my_orders'])
     def cmd_my_orders(message):
         chat_id = message.chat.id
         ords = load_orders().get(str(chat_id), [])
-        if not ords:
-            text = "📜 سجل مشترياتي:\n\nلا توجد طلبات سابقة."
-        else:
-            text = "📜 سجل مشترياتي السابقة:\n\n"
-            for o in ords:
-                text += f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n------------------\n"
-        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+        text = "📜 لا توجد طلبات سابقة." if not ords else "📜 سجل مشترياتي السابقة:\n\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n------------------\n" for o in ords])
+        bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
     @bot.message_handler(commands=['language'])
     def cmd_language(message):
-        chat_id = message.chat.id
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"))
-        markup.add(InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
-        markup.add(InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
-        markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-        bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
-
-    @bot.message_handler(func=lambda message: message.text in [
-        "🛍️ تصفح المنتجات", "🛍️ Browse Products", "🛍️ Parcourir",
-        "🔑 خدمات API", "🔑 API Services", "🔑 Services API",
-        "💰 محفظتي", "💰 My Wallet", "💰 Mon Portefeuille",
-        "💳 شحن الرصيد / الدفع", "💳 Top up / Payment", "💳 Recharger / Paiement",
-        "📜 مشترياتي", "📜 My Orders", "📜 Mes Commandes",
-        "🌐 اللغة / Language", "🌐 Language", "🌐 Langue"
-    ])
-    def handle_reply_keyboard(message):
-        chat_id = message.chat.id
-        text = message.text
-        is_admin = (chat_id == ADMIN_ID)
-        lang = get_user_lang(chat_id)
-        
-        if "تصفح" in text or "Browse" in text or "Parcourir" in text:
-            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-            bot.send_message(chat_id, LANG_TEXTS[lang]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
-        elif "API" in text:
-            products_info = fetch_supplier_products()
-            markup = InlineKeyboardMarkup()
-            for k, info in products_info.items():
-                if "api" in info['name'].lower():
-                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            bot.send_message(chat_id, "🔑 <b>خدمات API:</b>", reply_markup=markup, parse_mode="HTML")
-        elif "محفظتي" in text or "Wallet" in text or "Portefeuille" in text:
-            wallet = api_get_my_wallet()
-            res_text = f"💰 <b>بيانات المحفظة:</b>\n<pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "💰 محفظتك نشطة."
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            bot.send_message(chat_id, res_text, reply_markup=markup, parse_mode="HTML")
-        elif "شحن" in text or "Top up" in text or "Recharger" in text:
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_info = f"💳 Binance ID: <code>{BINANCE_ID}</code>"
-            bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
-        elif "مشترياتي" in text or "Orders" in text or "Commandes" in text:
-            ords = load_orders().get(str(chat_id), [])
-            res_text = "📜 لا توجد طلبات." if not ords else "📜 السجل:\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n" for o in ords])
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            bot.send_message(chat_id, res_text, reply_markup=markup, parse_mode="HTML")
-        elif "اللغة" in text or "Language" in text or "Langue" in text:
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"))
-            markup.add(InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"))
-            markup.add(InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
-            bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
+        bot.send_message(message.chat.id, "🌐 اختر اللغة:", reply_markup=markup)
 
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
@@ -487,15 +307,28 @@ if bot:
         products_info = fetch_supplier_products()
 
         if data.startswith("lang_"):
-            new_lang = data.replace("lang_", "")
-            USER_LANGUAGES[chat_id] = new_lang
+            USER_LANGUAGES[chat_id] = data.replace("lang_", "")
             bot.answer_callback_query(call.id, "✅ Done")
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, LANG_TEXTS[new_lang]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
-            bot.send_message(chat_id, "📌 أزرار التحكم:", reply_markup=get_permanent_reply_keyboard(new_lang))
-            return
+            bot.send_message(chat_id, LANG_TEXTS[USER_LANGUAGES[chat_id]]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
 
-        if data == "admin_panel" and is_admin:
+        elif data == "menu_lang":
+            bot.answer_callback_query(call.id)
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"), InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"), InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"))
+            safe_delete_message(chat_id, msg_id)
+            bot.send_message(chat_id, "🌐 اختر اللغة:", reply_markup=markup)
+
+        elif data == "show_apis":
+            bot.answer_callback_query(call.id)
+            markup = InlineKeyboardMarkup()
+            for k, info in products_info.items():
+                if "api" in info['name'].lower() and info['stock'] > 0:
+                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            safe_delete_message(chat_id, msg_id)
+            bot.send_message(chat_id, "🔑 <b>خدمات API المتاحة:</b>", reply_markup=markup, parse_mode="HTML")
+
+        elif data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
             safe_delete_message(chat_id, msg_id)
             bot.send_message(chat_id, "🛠️ <b>لوحة تحكم الإدارة:</b>", reply_markup=get_admin_markup(), parse_mode="HTML")
@@ -503,40 +336,31 @@ if bot:
         elif data == "adm_balance" and is_admin:
             bot.answer_callback_query(call.id)
             wallet = api_get_my_wallet()
-            text = f"💰 <pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "❌"
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"💰 <pre>{json.dumps(wallet, indent=2, ensure_ascii=False)}</pre>" if wallet else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "adm_deposits" and is_admin:
             bot.answer_callback_query(call.id)
             dep = api_get_deposit_methods()
-            text = f"💳 <pre>{json.dumps(dep, indent=2, ensure_ascii=False)}</pre>" if dep else "❌"
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"💳 <pre>{json.dumps(dep, indent=2, ensure_ascii=False)}</pre>" if dep else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "adm_transactions" and is_admin:
             bot.answer_callback_query(call.id)
             txs = api_get_wallet_transactions()
-            text = f"📊 <pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌"
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"📊 <pre>{json.dumps(txs, indent=2, ensure_ascii=False)[:3500]}</pre>" if txs else "❌", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
 
         elif data == "search_product":
             bot.answer_callback_query(call.id)
             USER_WAITING_FOR_SEARCH[chat_id] = True
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=markup)
+            bot.send_message(chat_id, "🔍 أرسل اسم المنتج للبحث:", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
 
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_info = f"💳 Binance ID: <code>{BINANCE_ID}</code>"
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, pay_info, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{BINANCE_ID}</code>", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
         elif data.startswith("buy_"):
             prod_key = data.replace("buy_", "")
@@ -548,170 +372,107 @@ if bot:
                     safe_delete_message(chat_id, msg_id)
                     item_details = "TEST_CREDENTIALS_SUCCESS_MOCK_KEY_12345"
                     ords = load_orders()
-                    ords.setdefault(str(chat_id), []).append({
-                        "product": info['name'],
-                        "item": item_details,
-                        "time": time.strftime("%Y-%m-%d %H:%M:%S")
-                    })
+                    ords.setdefault(str(chat_id), []).append({"product": info['name'], "item": item_details, "time": time.strftime("%Y-%m-%d %H:%M:%S")})
                     save_orders(ords)
-                    lang = get_user_lang(chat_id)
-                    success_msg = f"🎉 <b>تم التسجيل والتجربة بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>"
-                    bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard(lang))
+                    bot.send_message(chat_id, f"🎉 <b>تم التسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <code>{item_details}</code>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
                     return
 
                 USER_SELECTED_PRODUCT[chat_id] = prod_key
-                markup = InlineKeyboardMarkup()
-                markup.add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + prod_key))
                 markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-                
-                msg_text = f"🏷️ <b>{info['name']}</b>\n💰 ${info['price']}\n📦 {info['stock']}\n\n{info['description']}"
                 safe_delete_message(chat_id, msg_id)
-                bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
+                bot.send_message(chat_id, f"🏷️ <b>{info['name']}</b>\n💰 ${info['price']}\n📦 {info['stock']}\n\n{info['description']}", reply_markup=markup, parse_mode="HTML")
                 
         elif data.startswith("pay_"):
-            prod_key = data.replace("pay_", "")
-            info = products_info.get(prod_key, {"price": 1.0})
+            info = products_info.get(data.replace("pay_", ""), {"price": 1.0})
             bot.answer_callback_query(call.id)
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            pay_msg = f"🪙 تحويل (${info['price']} USDT) إلى Binance ID: {BINANCE_ID}\n\nثم أرسل رقم العملية (Order ID) هنا للشات ليتم الشراء والتسليم أوتوماتيكياً فوريًا!"
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, pay_msg, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{BINANCE_ID}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في الشات للاستلام الفوري!", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             ords = load_orders().get(str(chat_id), [])
             text = "📜 لا توجد طلبات." if not ords else "📜 السجل:\n" + "".join([f"📦 {o['product']}\n🔑 <code>{o['item']}</code>\n" for o in ords])
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-            lang = get_user_lang(chat_id)
             safe_delete_message(chat_id, msg_id)
-            bot.send_message(chat_id, LANG_TEXTS[lang]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
+            bot.send_message(chat_id, LANG_TEXTS[get_user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, is_admin))
 
     @bot.message_handler(content_types=['text', 'photo'])
     def handle_incoming(message):
         chat_id = message.chat.id
-        if message.text and message.text.startswith('/'):
-            return
+        if message.text and message.text.startswith('/'): return
 
         if USER_WAITING_FOR_SEARCH.get(chat_id):
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
             query = message.text.strip().lower()
             products_info = fetch_supplier_products()
-            
             markup = InlineKeyboardMarkup()
             found_count = 0
             for k, info in products_info.items():
                 if query in info['name'].lower() or query in info['description'].lower():
                     found_count += 1
-                    if info['stock'] > 0:
-                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
-            
+                    if info['stock'] > 0: markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + k))
             markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            if found_count > 0:
-                bot.send_message(chat_id, f"🔍 نتائج البحث عن: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
-            else:
-                bot.send_message(chat_id, f"❌ لم يتم العثور على نتائج لـ: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
+            bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{message.text}</b>" if found_count > 0 else f"❌ لا يوجد نتائج لـ: <b>{message.text}</b>", reply_markup=markup, parse_mode="HTML")
             return
 
-        # ==============================================================
-        # 👇 معالجة التحقق من الدفع عند إدخال رقم العملية 👇
-        # ==============================================================
         if chat_id in USER_SELECTED_PRODUCT:
             order_reference = message.text.strip() if message.text else ""
-            
-            # 1. التأكد المبدئي إن الرقم لا يقل عن 8 خانات
             if not order_reference.isdigit() or len(order_reference) < 8:
-                bot.send_message(
-                    chat_id, 
-                    "❌ <b>رقم العملية غير صالح!</b>\nيرجى إدخال رقم عملية الدفع الصحيح (أرقام فقط ولا يقل عن 8 خانات).", 
-                    parse_mode="HTML"
-                )
+                bot.send_message(chat_id, "❌ <b>رقم العملية غير صالح!</b>\nيجب أن يكون أرقام فقط ولا يقل عن 8 خانات.", parse_mode="HTML")
                 return
 
             prod_key = USER_SELECTED_PRODUCT.get(chat_id)
-            products_info = fetch_supplier_products()
-            info = products_info.get(prod_key, {"name": "منتج رقمي", "price": 0.0})
-            expected_amount = info.get("price", 0.0)
+            info = fetch_supplier_products().get(prod_key, {"name": "منتج", "price": 0.0})
             
-            bot.send_message(chat_id, "⏳ جاري فحص حسابنا في باينانس للتأكد من وصول المبلغ...")
-
-            # 2. التحقق الفعلي من API باينانس
-            binance_check = verify_binance_transaction(order_reference, expected_amount)
+            bot.send_message(chat_id, "⏳ جاري فحص حساب باينانس للتأكد من استلام الدفع...")
+            binance_check = verify_binance_transaction(order_reference, info.get("price", 0.0))
             
             if not binance_check["success"]:
-                bot.send_message(
-                    chat_id, 
-                    f"❌ <b>فشل التحقق من الدفع:</b>\n{binance_check['error']}\n\nيرجى التأكد من التحويل وإرسال رقم العملية الصحيح مجدداً.", 
-                    parse_mode="HTML"
-                )
+                bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{binance_check['error']}", parse_mode="HTML")
                 return
             
-            # إذا نجح التحقق، نزيل المنتج من قائمة الانتظار ونبدأ الشراء
             USER_SELECTED_PRODUCT.pop(chat_id)
-            bot.send_message(chat_id, "✅ تم تأكيد استلام المبلغ! جاري استخراج المنتج من المزود...")
+            bot.send_message(chat_id, "✅ تم تأكيد استلام المبلغ! جاري استخراج المنتج...")
 
-            # 3. تنفيذ الشراء التلقائي من API المزود
             api_result = purchase_order_from_supplier(prod_key, order_reference)
-
             if api_result["success"]:
-                res_data = api_result["data"]
-                item_details = res_data.get("item", res_data.get("credentials", res_data.get("data", "تم التسليم بنجاح")))
-                
+                item_details = api_result["data"].get("item", api_result["data"].get("credentials", api_result["data"].get("data", "تم التسليم")))
                 ords = load_orders()
-                ords.setdefault(str(chat_id), []).append({
-                    "product": info['name'],
-                    "item": item_details,
-                    "time": time.strftime("%Y-%m-%d %H:%M:%S")
-                })
+                ords.setdefault(str(chat_id), []).append({"product": info['name'], "item": item_details, "time": time.strftime("%Y-%m-%d %H:%M:%S")})
                 save_orders(ords)
-                lang = get_user_lang(chat_id)
-
-                success_msg = f"🎉 <b>تم تأكيد الدفع وتسليم طلبك بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <b>بيانات الحساب:</b>\n<code>{item_details}</code>"
-                bot.send_message(chat_id, success_msg, parse_mode="HTML", reply_markup=get_permanent_reply_keyboard(lang))
+                bot.send_message(chat_id, f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 <b>{info['name']}</b>\n🔑 <b>البيانات:</b>\n<code>{item_details}</code>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
             else:
-                error_reason = api_result.get("error", "خطأ")
-                bot.send_message(chat_id, f"❌ حدث خطأ أثناء تنفيذ الطلب تلقائياً لدى المزود:\n<code>{error_reason}</code>\n\nتأكد من توفر رصيد كافٍ في محفظتك لدى المزود.", parse_mode="HTML")
+                bot.send_message(chat_id, f"❌ حدث خطأ من المزود:\n<code>{api_result.get('error', 'خطأ')}</code>", parse_mode="HTML")
             return
         
-        # رسالة تنبيه إذا أرسل العميل رسالة عادية ولم يكن قد اختار منتجاً
-        lang = get_user_lang(chat_id)
-        bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة", reply_markup=get_permanent_reply_keyboard(lang))
+        bot.send_message(chat_id, "⚠️ يرجى اختيار المنتج أولاً من القائمة", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
 app = Flask(__name__)
-
 @app.route('/')
-def health_check():
-    return "Pixora Store Fully Automatic Active!", 200
+def health_check(): return "Pixora Store Active!", 200
 
 def keep_alive():
     while True:
         time.sleep(300)
         try:
             url = os.environ.get("RENDER_EXTERNAL_URL")
-            if url:
-                requests.get(url)
-        except Exception:
-            pass
+            if url: requests.get(url)
+        except: pass
 
 if __name__ == '__main__':
     if bot:
-        try:
-            bot.remove_webhook()
-        except Exception:
-            pass
+        try: bot.remove_webhook()
+        except: pass
     threading.Thread(target=keep_alive, daemon=True).start()
-    port = int(os.environ.get("PORT", 10000))
-    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port, use_reloader=False), daemon=True).start()
-    
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)), use_reloader=False), daemon=True).start()
     if bot:
         while True:
-            try:
-                bot.infinity_polling(skip_pending=True, timeout=60)
-            except Exception as e:
-                time.sleep(5)
+            try: bot.infinity_polling(skip_pending=True, timeout=60)
+            except: time.sleep(5)
