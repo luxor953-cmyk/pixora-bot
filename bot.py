@@ -235,125 +235,185 @@ def log_response_structure(value, depth=0):
     return type(value).__name__
 
 def extract_delivery_data(response_data):
-    """
-    يحاول استخراج بيانات التسليم من أشكال JSON الشائعة.
-    لا يعتبر رسالة عامة مثل 'تم التسليم' بيانات اعتماد صالحة.
-    """
-    preferred = {
-        "credentials", "credential", "item", "items", "delivery",
-        "delivered", "account", "account_data", "login", "license",
-        "license_key", "activation", "activation_code", "serial",
-        "serial_key", "key", "secret", "email", "username",
-        "password", "content", "details", "result", "data", "response"
-    }
-    ignored = {
-        "id", "order_id", "product_id", "status", "success", "message",
-        "reference", "created_at", "updated_at", "price", "amount",
-        "currency", "stock", "quantity"
-    }
-    generic_values = {
-        "تم التسليم", "success", "successful", "ok", "done",
-        "delivered", "تم بنجاح", "order completed"
-    }
-
-    def render_value(value):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            value = value.strip()
-            if not value or value.lower() in generic_values:
-                return None
-            return value
-        if isinstance(value, (int, float)):
-            return str(value)
-        if isinstance(value, (dict, list)):
-            # نحول كائن بيانات الاعتماد إلى نص واضح قابل للإرسال
-            cleaned = clean_object(value)
-            if cleaned:
-                return json.dumps(cleaned, ensure_ascii=False, indent=2)
+    """Extract VenteBot credentials from order.items[].account_data."""
+    if not isinstance(response_data, dict):
         return None
-
-    def clean_object(obj):
-        if isinstance(obj, dict):
-            out = {}
-            for k, v in obj.items():
-                key = str(k).lower()
-                if key in ignored:
-                    continue
-                if isinstance(v, (dict, list)):
-                    child = clean_object(v)
-                    if child:
-                        out[k] = child
-                elif v is not None and str(v).strip():
-                    if str(v).strip().lower() not in generic_values:
-                        out[k] = v
-            return out
-        if isinstance(obj, list):
-            return [clean_object(x) if isinstance(x, (dict, list)) else x for x in obj]
-        return obj
-
-    def search(obj):
-        if isinstance(obj, dict):
-            # أولوية الحقول المعروفة الخاصة بالتسليم
-            for key, value in obj.items():
-                if str(key).lower() in preferred:
-                    found = render_value(value)
-                    if found:
-                        return found
-            # ثم البحث المتداخل
-            for key, value in obj.items():
-                if str(key).lower() not in ignored:
-                    found = search(value)
-                    if found:
-                        return found
-        elif isinstance(obj, list):
-            for value in obj:
-                found = search(value)
-                if found:
-                    return found
-        elif isinstance(obj, str):
-            return render_value(obj)
+    order = response_data.get("order")
+    if not isinstance(order, dict) and "items" in response_data:
+        order = response_data
+    if not isinstance(order, dict):
         return None
+    if str(order.get("status", "")).upper() != "COMPLETED":
+        return None
+    items = order.get("items")
+    if not isinstance(items, list):
+        return None
+    credentials = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        account_data = item.get("account_data")
+        if account_data is None:
+            continue
+        value = account_data.strip() if isinstance(account_data, str) else json.dumps(account_data, ensure_ascii=False, indent=2)
+        if value:
+            credentials.append(value)
+    if not credentials:
+        return None
+    if len(credentials) == 1:
+        return credentials[0]
+    return "\n\n".join(
+        f"بيانات المنتج {i}:\n{value}"
+        for i, value in enumerate(credentials, start=1)
+    )
 
-    return search(response_data)
 
-def purchase_order_from_supplier(product_id, reference_id):
+def supplier_order_status(order_id):
+    """Read an existing order; this endpoint does not create or charge a new order."""
+    response = requests.get(
+        f"{VENTEBOT_API_URL}/orders/{order_id}",
+        headers=supplier_headers(),
+        timeout=20
+    )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    return response.status_code, data
+
+
+def lookup_supplier_order(idempotency_key):
+    """Recover the existing request using its exact idempotency key."""
+    response = requests.get(
+        f"{VENTEBOT_API_URL}/orders/lookup",
+        headers=supplier_headers(),
+        params={"idempotency_key": idempotency_key, "limit": 20, "offset": 0},
+        timeout=20
+    )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    return response.status_code, data
+
+
+def purchase_order_from_supplier(product_id, payment_reference):
+    """
+    VenteBot documented create payload: product_id, quantity, idempotency_key.
+    If the response is lost/uncertain, lookup the same key. Never POST twice.
+    Only order.status == COMPLETED is treated as delivery-ready.
+    """
     if not RESELLER_KEY:
         return {"success": False, "error": "RESELLER_KEY غير مضبوط."}
+
+    product_value = int(product_id) if str(product_id).isdigit() else product_id
+    idempotency_key = f"pixora_{payment_reference}_{product_id}"[:120]
     headers = {
         "X-Reseller-Key": RESELLER_KEY,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
-    # مفتاح ثابت لهذه العملية حتى لا يتغير عند إعادة محاولة نفس العملية
     payload = {
-        "product_id": int(product_id) if str(product_id).isdigit() else product_id,
-        "reference": str(reference_id),
-        "idempotency_key": f"pixora_{reference_id}_{product_id}"
+        "product_id": product_value,
+        "quantity": 1,
+        "idempotency_key": idempotency_key
     }
+
+    data = {}
+    order = None
+    order_id = None
     try:
         response = requests.post(
             f"{VENTEBOT_API_URL}/orders",
-            json=payload, headers=headers, timeout=30
+            json=payload,
+            headers=headers,
+            timeout=30
         )
-        print("SUPPLIER STATUS:", response.status_code)
+        print("SUPPLIER CREATE STATUS:", response.status_code)
         try:
             data = response.json()
-            print("SUPPLIER DATA STRUCTURE:",
-                  json.dumps(log_response_structure(data), ensure_ascii=False))
         except Exception:
-            data = None
-            print("SUPPLIER RESPONSE IS NOT JSON")
-        if response.status_code not in (200, 201):
-            return {
-                "success": False,
-                "error": f"HTTP {response.status_code}: {response.text[:1200]}"
-            }
-        if data is None:
-            return {"success": False, "error": "المورد أعاد استجابة ليست JSON."}
-        return {"success": True, "data": data}
-    except Exception as exc:
-        print("SUPPLIER ORDER EXCEPTION:", repr(exc))
-        return {"success": False, "error": str(exc)}
+            data = {}
+        print(
+            "SUPPLIER CREATE STRUCTURE:",
+            json.dumps(log_response_structure(data), ensure_ascii=False)
+        )
+        if isinstance(data, dict):
+            order = data.get("order")
+            if isinstance(order, dict):
+                order_id = order.get("id")
+    except requests.RequestException as exc:
+        # The supplier may have accepted the request before a timeout.
+        # Do not repeat POST; recover the same idempotency key below.
+        print("SUPPLIER CREATE REQUEST EXCEPTION:", repr(exc))
+
+    # If create response is absent/incomplete, recover by idempotency key.
+    if not isinstance(order, dict) or not order_id:
+        try:
+            lookup_status, lookup_data = lookup_supplier_order(idempotency_key)
+            print("SUPPLIER LOOKUP STATUS:", lookup_status)
+            print(
+                "SUPPLIER LOOKUP STRUCTURE:",
+                json.dumps(log_response_structure(lookup_data), ensure_ascii=False)
+            )
+            results = lookup_data.get("results", []) if isinstance(lookup_data, dict) else []
+            for result in results if isinstance(results, list) else []:
+                if not isinstance(result, dict):
+                    continue
+                if result.get("idempotency_key") != idempotency_key:
+                    continue
+                request_status = str(result.get("request_status", "")).lower()
+                candidate = result.get("order")
+                if isinstance(candidate, dict):
+                    order = candidate
+                    order_id = candidate.get("id")
+                if request_status == "failed_no_charge":
+                    return {
+                        "success": False,
+                        "error": "المورد أكد أن الطلب فشل دون خصم رصيد (failed_no_charge).",
+                        "idempotency_key": idempotency_key
+                    }
+                break
+        except requests.RequestException as exc:
+            print("SUPPLIER LOOKUP EXCEPTION:", repr(exc))
+
+    status = str(order.get("status", "")).upper() if isinstance(order, dict) else ""
+
+    # Poll only the read endpoint while the order is pending.
+    if status != "COMPLETED" and order_id:
+        for attempt in range(8):
+            time.sleep(7)
+            try:
+                poll_http_status, poll_data = supplier_order_status(order_id)
+                print("SUPPLIER ORDER POLL HTTP:", poll_http_status)
+                candidate = poll_data.get("order") if isinstance(poll_data, dict) else None
+                if isinstance(candidate, dict):
+                    order = candidate
+                    status = str(order.get("status", "")).upper()
+                print("SUPPLIER ORDER STATE:", status or "UNKNOWN")
+                if status == "COMPLETED":
+                    break
+            except requests.RequestException as exc:
+                print("SUPPLIER ORDER POLL EXCEPTION:", repr(exc))
+
+    if status == "COMPLETED" and isinstance(order, dict):
+        return {
+            "success": True,
+            "data": {"success": True, "order": order},
+            "idempotency_key": idempotency_key,
+            "order_id": order.get("id")
+        }
+
+    return {
+        "success": False,
+        "error": (
+            "المورد لم يؤكد حالة COMPLETED. لم تتم إعادة الشراء لتجنب الخصم المكرر. "
+            f"الحالة الحالية: {status or 'غير معروفة'}."
+        ),
+        "idempotency_key": idempotency_key,
+        "order_id": order_id
+    }
+
 
 def verify_binance_transaction(order_id, expected_amount):
     if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
