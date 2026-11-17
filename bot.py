@@ -35,6 +35,10 @@ VENTEBOT_API_URL = os.environ.get(
 BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
 BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 
+# Supabase: server-side secret key only; never expose it to Telegram clients or GitHub.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+
 ORDERS_FILE = os.environ.get("ORDERS_FILE", "orders.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
@@ -42,6 +46,7 @@ USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
 USER_LANGUAGES = {}
 USER_PROCESSING = set()
+PAYMENT_REGISTRY_LOCK = threading.Lock()
 
 LANG_TEXTS = {
     "ar": {
@@ -607,16 +612,184 @@ def verify_binance_transaction(transaction_id, expected_amount):
 
 
 def payment_reference_already_used(reference):
-    """Prevent a Binance transaction ID from paying for more than one order."""
+    """Return True if this Binance transaction ID was ever reserved or used."""
     reference = str(reference).strip()
+    if not reference:
+        return True
     orders = load_orders()
-    for user_orders in orders.values():
-        if not isinstance(user_orders, list):
+    registry = orders.get("__payment_registry__", {})
+    if isinstance(registry, dict) and reference in registry:
+        return True
+    # Backward compatibility: also inspect historical order records.
+    for user_id, user_orders in orders.items():
+        if user_id == "__payment_registry__" or not isinstance(user_orders, list):
             continue
         for order in user_orders:
             if isinstance(order, dict) and str(order.get("reference", "")).strip() == reference:
                 return True
     return False
+
+
+def supabase_is_configured():
+    return bool(SUPABASE_URL and SUPABASE_SECRET_KEY)
+
+
+def supabase_headers(prefer=None):
+    # Supabase's new sb_secret_* keys are opaque API keys, not JWTs.
+    # Send them in apikey only (not Authorization: Bearer).
+    headers = {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+
+def supabase_transaction_exists(reference):
+    """Check Supabase for an already-used Binance transaction ID.
+
+    On connection/configuration errors, fail closed: never approve a payment
+    when the permanent duplicate-check store cannot be reached.
+    """
+    if not supabase_is_configured():
+        print("SUPABASE CONFIG ERROR: SUPABASE_URL / SUPABASE_SECRET_KEY missing")
+        return True
+    try:
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/payment_transactions",
+            headers=supabase_headers(),
+            params={"select": "transaction_id", "transaction_id": f"eq.{reference}", "limit": "1"},
+            timeout=15
+        )
+        if response.status_code != 200:
+            print("SUPABASE CHECK ERROR:", response.status_code, response.text[:300])
+            return True
+        rows = response.json()
+        return isinstance(rows, list) and len(rows) > 0
+    except Exception as exc:
+        print("SUPABASE CHECK EXCEPTION:", repr(exc))
+        return True
+
+
+def supabase_reserve_transaction(reference, chat_id, product_name, amount, currency="USDT"):
+    """Atomically reserve transaction_id using the database UNIQUE constraint."""
+    if not supabase_is_configured():
+        print("SUPABASE CONFIG ERROR: cannot reserve transaction without Supabase")
+        return False
+    payload = {
+        "transaction_id": str(reference),
+        "telegram_user_id": int(chat_id),
+        "product_name": str(product_name),
+        "amount": str(amount),
+        "currency": str(currency),
+        "status": "PENDING"
+    }
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/payment_transactions",
+            headers=supabase_headers("return=representation"),
+            json=payload,
+            timeout=15
+        )
+        if response.status_code in (200, 201):
+            return True
+        if response.status_code == 409:
+            print("SUPABASE DUPLICATE TRANSACTION:", reference)
+            return False
+        # PostgREST can report unique violations with a 4xx response.
+        try:
+            error_data = response.json()
+        except Exception:
+            error_data = {}
+        error_text = str(error_data).lower()
+        if "duplicate key" in error_text or "unique" in error_text or "23505" in error_text:
+            return False
+        print("SUPABASE RESERVE ERROR:", response.status_code, response.text[:500])
+        return False
+    except Exception as exc:
+        print("SUPABASE RESERVE EXCEPTION:", repr(exc))
+        return False
+
+
+def supabase_update_transaction_status(reference, status):
+    """Update transaction lifecycle without ever deleting or releasing its ID."""
+    if not supabase_is_configured():
+        return False
+    try:
+        response = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/payment_transactions",
+            headers=supabase_headers("return=minimal"),
+            params={"transaction_id": f"eq.{reference}"},
+            json={"status": str(status), "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            timeout=15
+        )
+        if response.status_code not in (200, 204):
+            print("SUPABASE STATUS UPDATE ERROR:", response.status_code, response.text[:300])
+            return False
+        return True
+    except Exception as exc:
+        print("SUPABASE STATUS UPDATE EXCEPTION:", repr(exc))
+        return False
+
+
+def payment_reference_already_used(reference):
+    """Return True if the transaction exists in permanent or legacy local history."""
+    reference = str(reference).strip()
+    if not reference:
+        return True
+    orders = load_orders()
+    registry = orders.get("__payment_registry__", {})
+    if isinstance(registry, dict) and reference in registry:
+        return True
+    for user_id, user_orders in orders.items():
+        if user_id == "__payment_registry__" or not isinstance(user_orders, list):
+            continue
+        for order in user_orders:
+            if isinstance(order, dict) and str(order.get("reference", "")).strip() == reference:
+                return True
+    return supabase_transaction_exists(reference)
+
+
+def reserve_payment_reference(reference, chat_id, product_name, amount, currency="USDT"):
+    """Permanently reserve a verified payment in Supabase before supplier purchase.
+
+    Supabase's UNIQUE(transaction_id) constraint is the authoritative atomic lock.
+    The ID is never released, even if supplier purchase or delivery later fails.
+    """
+    reference = str(reference).strip()
+    if not reference:
+        return False
+    with PAYMENT_REGISTRY_LOCK:
+        orders = load_orders()
+        registry = orders.setdefault("__payment_registry__", {})
+        if not isinstance(registry, dict):
+            registry = {}
+            orders["__payment_registry__"] = registry
+        if reference in registry:
+            return False
+        for user_id, user_orders in orders.items():
+            if user_id == "__payment_registry__" or not isinstance(user_orders, list):
+                continue
+            for old_order in user_orders:
+                if isinstance(old_order, dict) and str(old_order.get("reference", "")).strip() == reference:
+                    return False
+
+        # Insert first: the database UNIQUE constraint prevents races across bot restarts/instances.
+        if not supabase_reserve_transaction(reference, chat_id, product_name, amount, currency):
+            return False
+
+        registry[reference] = {
+            "chat_id": str(chat_id),
+            "product": str(product_name),
+            "amount": str(amount),
+            "currency": str(currency),
+            "status": "PENDING",
+            "reserved_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        save_orders(orders)
+        return True
 
 
 def notify_admin(text):
@@ -1011,9 +1184,23 @@ if bot:
                 )
                 return
 
-            bot.send_message(chat_id, "✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورد...")
+            # Reserve the transaction immediately after successful Binance verification
+            # and BEFORE contacting the supplier. A transaction can pay only once.
+            if not reserve_payment_reference(
+                reference, chat_id, info["name"],
+                payment.get("amount", info["price"]),
+                payment.get("currency", "USDT")
+            ):
+                bot.send_message(
+                    chat_id,
+                    "❌ رقم هذه المعاملة محجوز أو استُخدم بالفعل، ولا يمكن استخدامه مرة أخرى."
+                )
+                return
+
+            bot.send_message(chat_id, "✅ تم تأكيد الدفع وحجز رقم المعاملة. جارٍ إرسال الطلب إلى المورد...")
             result = purchase_order_from_supplier(product_key, reference)
             if not result["success"]:
+                supabase_update_transaction_status(reference, "SUPPLIER_REVIEW")
                 notify_admin(
                     "🚨 <b>دفع مؤكد لكن طلب المورد فشل</b>\n"
                     f"الزبون: <code>{chat_id}</code>\n"
@@ -1031,6 +1218,7 @@ if bot:
 
             delivery = extract_delivery_data(result["data"])
             if not delivery:
+                supabase_update_transaction_status(reference, "PENDING_DELIVERY")
                 # لا ندعي نجاح التسليم إذا لم تظهر بيانات الاعتماد في الرد.
                 notify_admin(
                     "⚠️ <b>الدفع وطلب المورد تم قبولهما، لكن لم أستطع استخراج بيانات التسليم.</b>\n"
@@ -1060,6 +1248,7 @@ if bot:
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
 
+            supabase_update_transaction_status(reference, "DELIVERED")
             orders = load_orders()
             orders.setdefault(str(chat_id), []).append({
                 "product": info["name"],
