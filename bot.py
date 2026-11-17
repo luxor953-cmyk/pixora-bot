@@ -234,38 +234,85 @@ def log_response_structure(value, depth=0):
         return [log_response_structure(value[0], depth + 1)] if value else []
     return type(value).__name__
 
+def _delivery_value_to_text(value):
+    """Convert supplier delivery payload to readable text without losing URLs."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return str(value).strip()
+
+
 def extract_delivery_data(response_data):
-    """Extract VenteBot credentials from order.items[].account_data."""
+    """Extract delivery credentials from a completed VenteBot order.
+
+    Supports the documented items[].account_data shape and common alternate
+    delivery field names. Does not treat arbitrary order metadata as credentials.
+    """
     if not isinstance(response_data, dict):
         return None
-    order = response_data.get("order")
-    if not isinstance(order, dict) and "items" in response_data:
-        order = response_data
-    if not isinstance(order, dict):
-        return None
-    if str(order.get("status", "")).upper() != "COMPLETED":
-        return None
-    items = order.get("items")
-    if not isinstance(items, list):
-        return None
-    credentials = []
-    for item in items:
-        if not isinstance(item, dict):
+
+    candidates = []
+    root_order = response_data.get("order")
+    if isinstance(root_order, dict):
+        candidates.append(root_order)
+    if "items" in response_data or "status" in response_data:
+        candidates.append(response_data)
+
+    # Some API responses wrap the order in data/result.
+    for wrapper_key in ("data", "result", "response"):
+        wrapped = response_data.get(wrapper_key)
+        if isinstance(wrapped, dict):
+            nested = wrapped.get("order")
+            if isinstance(nested, dict):
+                candidates.append(nested)
+            if "items" in wrapped or "status" in wrapped:
+                candidates.append(wrapped)
+
+    seen = set()
+    for order in candidates:
+        marker = id(order)
+        if marker in seen:
             continue
-        account_data = item.get("account_data")
-        if account_data is None:
+        seen.add(marker)
+        if str(order.get("status", "")).upper() not in ("COMPLETED", "COMPLETE", "SUCCESS", "DELIVERED"):
             continue
-        value = account_data.strip() if isinstance(account_data, str) else json.dumps(account_data, ensure_ascii=False, indent=2)
-        if value:
-            credentials.append(value)
-    if not credentials:
-        return None
-    if len(credentials) == 1:
-        return credentials[0]
-    return "\n\n".join(
-        f"بيانات المنتج {i}:\n{value}"
-        for i, value in enumerate(credentials, start=1)
-    )
+
+        items = order.get("items")
+        if not isinstance(items, list):
+            # A few supplier responses return delivery data directly on order.
+            items = [order]
+
+        credentials = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            value = None
+            for field in (
+                "account_data", "delivery_data", "delivery", "credentials",
+                "activation_data", "activation_link", "account", "serial",
+                "license_key", "code"
+            ):
+                candidate = item.get(field)
+                if candidate not in (None, "", [], {}):
+                    value = candidate
+                    break
+            text_value = _delivery_value_to_text(value)
+            if text_value and text_value not in credentials:
+                credentials.append(text_value)
+
+        if credentials:
+            if len(credentials) == 1:
+                return credentials[0]
+            return "\n\n".join(
+                f"بيانات المنتج {i}:\n{value}"
+                for i, value in enumerate(credentials, start=1)
+            )
+    return None
 
 
 def supplier_order_status(order_id):
@@ -397,11 +444,42 @@ def purchase_order_from_supplier(product_id, payment_reference):
                 print("SUPPLIER ORDER POLL EXCEPTION:", repr(exc))
 
     if status == "COMPLETED" and isinstance(order, dict):
+        # IMPORTANT: POST /orders may return only a summary. Always read the
+        # completed order once more to retrieve its actual delivery payload.
+        # This is GET-only: it cannot create another purchase or charge wallet.
+        final_order_data = {"success": True, "order": order}
+        resolved_order_id = order_id or order.get("id")
+        if resolved_order_id:
+            try:
+                detail_http, detail_data = supplier_order_status(resolved_order_id)
+                print("SUPPLIER ORDER DETAILS HTTP:", detail_http)
+                print(
+                    "SUPPLIER ORDER DETAILS STRUCTURE:",
+                    json.dumps(log_response_structure(detail_data), ensure_ascii=False)
+                )
+                if detail_http == 200 and isinstance(detail_data, dict):
+                    detail_order = detail_data.get("order")
+                    if isinstance(detail_order, dict):
+                        final_order_data = {"success": True, "order": detail_order}
+                    elif isinstance(detail_data.get("data"), dict):
+                        nested = detail_data["data"]
+                        nested_order = nested.get("order") if isinstance(nested, dict) else None
+                        final_order_data = {"success": True, "order": nested_order} if isinstance(nested_order, dict) else detail_data
+                    elif isinstance(detail_data, dict):
+                        final_order_data = detail_data
+            except requests.RequestException as exc:
+                print("SUPPLIER ORDER DETAILS EXCEPTION:", repr(exc))
+
+        # Report only shape/field types; never print account_data or activation URLs.
+        print(
+            "SUPPLIER DELIVERY STRUCTURE:",
+            json.dumps(log_response_structure(final_order_data), ensure_ascii=False)
+        )
         return {
             "success": True,
-            "data": {"success": True, "order": order},
+            "data": final_order_data,
             "idempotency_key": idempotency_key,
-            "order_id": order.get("id")
+            "order_id": resolved_order_id
         }
 
     return {
@@ -415,40 +493,131 @@ def purchase_order_from_supplier(product_id, payment_reference):
     }
 
 
-def verify_binance_transaction(order_id, expected_amount):
+def verify_binance_transaction(transaction_id, expected_amount):
+    """
+    Verify an incoming Binance Pay transaction.
+    Requires exact transactionId, positive amount, USDT, and receiver Binance ID.
+    Binance Pay history supports a maximum 90-day interval and limit 100.
+    """
     if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
         return {"success": False, "error": "مفاتيح Binance API غير مضبوطة على Render."}
+    if not BINANCE_ID:
+        return {"success": False, "error": "BINANCE_ID غير مضبوط."}
+
     try:
-        timestamp = int(time.time() * 1000)
-        query_string = urlencode({"timestamp": timestamp, "limit": 50})
+        from decimal import Decimal, InvalidOperation
+
+        now_ms = int(time.time() * 1000)
+        params = {
+            "startTime": now_ms - (90 * 24 * 60 * 60 * 1000),
+            "endTime": now_ms,
+            "limit": 100,
+            "recvWindow": 5000,
+            "timestamp": now_ms,
+        }
+        query_string = urlencode(params)
         signature = hmac.new(
-            BINANCE_SECRET_KEY.encode(),
-            query_string.encode(),
+            BINANCE_SECRET_KEY.encode("utf-8"),
+            query_string.encode("utf-8"),
             hashlib.sha256
         ).hexdigest()
-        url = (
-            "https://api.binance.com/sapi/v1/pay/transactions?"
-            f"{query_string}&signature={signature}"
-        )
+
         response = requests.get(
-            url, headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=15
+            "https://api.binance.com/sapi/v1/pay/transactions",
+            params=f"{query_string}&signature={signature}",
+            headers={"X-MBX-APIKEY": BINANCE_API_KEY},
+            timeout=20
         )
+
         if response.status_code != 200:
-            return {"success": False, "error": f"Binance HTTP {response.status_code}: {response.text[:500]}"}
-        transactions = response.json().get("data", [])
-        for tx in transactions:
-            if (str(tx.get("orderId")) == str(order_id)
-                    or str(tx.get("transactionId")) == str(order_id)):
-                actual = float(tx.get("amount", 0))
-                if actual >= float(expected_amount):
-                    return {"success": True}
+            detail = response.text[:400]
+            if response.status_code == 451:
                 return {
                     "success": False,
-                    "error": f"المبلغ المستلم ${actual} أقل من السعر ${expected_amount}."
+                    "error": "Binance HTTP 451: الوصول محجوب من Binance لهذا الخادم/الحساب. لا يمكن تجاوز ذلك بتعديل الكود."
                 }
-        return {"success": False, "error": "رقم العملية غير موجود ضمن آخر المعاملات."}
+            return {
+                "success": False,
+                "error": f"Binance HTTP {response.status_code}: {detail}"
+            }
+
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("success") is False:
+            return {
+                "success": False,
+                "error": f"رد Binance غير ناجح أو غير متوقع: {str(payload)[:300]}"
+            }
+
+        transactions = payload.get("data", [])
+        if not isinstance(transactions, list):
+            return {"success": False, "error": "صيغة سجل معاملات Binance غير متوقعة."}
+
+        expected_id = str(transaction_id).strip()
+        for tx in transactions:
+            if not isinstance(tx, dict):
+                continue
+            if str(tx.get("transactionId", "")).strip() != expected_id:
+                continue
+
+            try:
+                actual = Decimal(str(tx.get("amount", "0")))
+                expected = Decimal(str(expected_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                return {"success": False, "error": "تعذر قراءة مبلغ المعاملة أو مبلغ الطلب."}
+
+            currency = str(tx.get("currency", "")).upper()
+            receiver = tx.get("receiverInfo") or {}
+            receiver_id = str(receiver.get("binanceId", "")).strip()
+
+            if actual <= 0:
+                return {"success": False, "error": "المعاملة ليست مبلغاً وارداً موجباً."}
+            if currency != "USDT":
+                return {
+                    "success": False,
+                    "error": f"عملة المعاملة هي {currency or 'غير معروفة'} وليست USDT."
+                }
+            if receiver_id != str(BINANCE_ID).strip():
+                return {
+                    "success": False,
+                    "error": "المعاملة موجودة، لكن Binance ID المستلم لا يطابق حساب المتجر."
+                }
+            if actual < expected:
+                return {
+                    "success": False,
+                    "error": f"المبلغ المستلم {actual} USDT أقل من السعر المطلوب {expected} USDT."
+                }
+
+            return {
+                "success": True,
+                "transaction_id": expected_id,
+                "amount": str(actual),
+                "currency": currency,
+                "receiver_binance_id": receiver_id
+            }
+
+        return {
+            "success": False,
+            "error": "رقم المعاملة غير موجود ضمن سجل Binance Pay المتاح (آخر 90 يوماً)."
+        }
+
+    except requests.RequestException as exc:
+        return {"success": False, "error": f"تعذر الاتصال بـ Binance: {str(exc)[:300]}"}
     except Exception as exc:
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": f"خطأ أثناء التحقق: {str(exc)[:300]}"}
+
+
+def payment_reference_already_used(reference):
+    """Prevent a Binance transaction ID from paying for more than one order."""
+    reference = str(reference).strip()
+    orders = load_orders()
+    for user_orders in orders.values():
+        if not isinstance(user_orders, list):
+            continue
+        for order in user_orders:
+            if isinstance(order, dict) and str(order.get("reference", "")).strip() == reference:
+                return True
+    return False
+
 
 def notify_admin(text):
     if not bot:
@@ -730,7 +899,7 @@ if bot:
             pay_msg = (
                 f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: "
                 f"<code>{safe_html(BINANCE_ID)}</code>\n\n"
-                "ثم أرسل رقم العملية (Order ID) هنا في المحادثة."
+                "ثم أرسل رقم المعاملة (Transaction ID) كما يظهر في سجل Binance Pay هنا في المحادثة."
             )
             bot.edit_message_text(
                 pay_msg, chat_id, msg_id,
@@ -811,11 +980,16 @@ if bot:
             return
 
         reference = (message.text or "").strip()
-        if not reference.isdigit() or len(reference) < 8:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", reference):
             bot.send_message(
                 chat_id,
-                "❌ رقم العملية غير صالح. يجب أن يكون أرقاماً ولا يقل عن 8 خانات."
+                "❌ رقم العملية غير صالح. أرسل Transaction ID كما يظهر في Binance (من 8 إلى 128 حرفاً/رقماً)."
             )
+            return
+
+        # رقم الاختبار المقترح لا يطابق معاملة حقيقية، لكنه يمر عبر مسار الفحص.
+        if payment_reference_already_used(reference):
+            bot.send_message(chat_id, "❌ رقم هذه المعاملة استُخدم سابقاً ولا يمكن استخدامه مرة أخرى.")
             return
 
         USER_PROCESSING.add(chat_id)
@@ -863,7 +1037,8 @@ if bot:
                     f"الزبون: <code>{chat_id}</code>\n"
                     f"المنتج: {safe_html(info['name'])}\n"
                     f"مرجع الدفع: <code>{safe_html(reference)}</code>\n"
-                    "راجع سجل Render وابحث عن SUPPLIER DATA STRUCTURE."
+                    "راجع Render Logs وابحث عن SUPPLIER ORDER DETAILS STRUCTURE و SUPPLIER DELIVERY STRUCTURE. "
+                "تم تسجيل أسماء الحقول وأنواعها فقط دون تسجيل بيانات التفعيل السرية."
                 )
                 bot.send_message(
                     chat_id,
@@ -876,6 +1051,8 @@ if bot:
                     "product": info["name"],
                     "item": "قيد المتابعة مع المورد - لم تصل بيانات التسليم بعد",
                     "reference": reference,
+                    "payment_amount": payment.get("amount"),
+                    "payment_currency": payment.get("currency"),
                     "status": "pending_delivery",
                     "time": time.strftime("%Y-%m-%d %H:%M:%S")
                 })
@@ -888,6 +1065,8 @@ if bot:
                 "product": info["name"],
                 "item": delivery,
                 "reference": reference,
+                "payment_amount": payment.get("amount"),
+                "payment_currency": payment.get("currency"),
                 "status": "delivered",
                 "time": time.strftime("%Y-%m-%d %H:%M:%S")
             })
