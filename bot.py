@@ -642,34 +642,24 @@ def get_main_menu_markup(chat_id, is_admin=False):
         else:
             singles.append((key, info))
 
-    # ===== 1. العائلات: ترتيب أبجدي حسب الاسم الكامل، 3 في كل صف =====
-    # نرتب بالاسم اللي بيظهر للمستخدم مش بالـ key
+    # ===== 1. العائلات: كل عائلة في سطر لوحده تحت التانية - عشان الاسم يبان كامل =====
     # Test دايماً آخر صنف تحت
     families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
-    for i in range(0, len(families_sorted), 3):
-        chunk = families_sorted[i:i+3]
-        buttons = []
-        for fam in chunk:
-            full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
-            buttons.append(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
-        # row بتاخد لحد 3 أزرار
-        markup.row(*buttons)
+    for fam in families_sorted:
+        full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
+        # كل عائلة في سطر لوحده - مش 3 جنب بعض
+        markup.add(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
 
-    # ===== 2. المنتجات بدون عائلة: ترتيب أبجدي، 2 في كل صف =====
+    # ===== 2. المنتجات بدون عائلة: كل منتج في سطر لوحده =====
     singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
-    for i in range(0, len(singles_sorted), 2):
-        chunk = singles_sorted[i:i+2]
-        buttons = []
-        for key, info in chunk:
-            # 🟢 متوفر / 🔴 خلصان
-            if info["stock"] > 0:
-                label = f"🟢 {info['name']} · ${info['price']}"
-                cb = "buy_" + key
-            else:
-                label = f"🔴 {info['name']} ({t['sold_out']})"
-                cb = "sold_out_" + key
-            buttons.append(InlineKeyboardButton(label, callback_data=cb))
-        markup.row(*buttons)
+    for key, info in singles_sorted:
+        if info["stock"] > 0:
+            label = f"🟢 {info['name']} · ${info['price']}"
+            cb = "buy_" + key
+        else:
+            label = f"🔴 {info['name']} ({t['sold_out']})"
+            cb = "sold_out_" + key
+        markup.add(InlineKeyboardButton(label, callback_data=cb))
 
     # ===== أزرار الخدمات زي ما هي =====
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
@@ -777,12 +767,8 @@ def send_family_products_with_images(chat_id, fam, products):
     bot.send_message(chat_id, "—", reply_markup=markup)
 
 def send_home(chat_id):
-    # القايمة الجديدة بالصور - كل عائلة بصورتها
-    try:
-        send_main_menu_with_images(chat_id, chat_id == ADMIN_ID)
-    except Exception as e:
-        print("MAIN MENU IMAGES ERROR", repr(e))
-        bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+    # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
+    bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
 
 def send_family_header(chat_id, fam, markup):
@@ -919,17 +905,23 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # كل منتج بصورته - مش قايمة نصية
+            # رسالة واحدة بس: صورة القسم فوق + كل منتجاتها تحت بعض في نفس الرسالة
+            markup = InlineKeyboardMarkup()
+            found = [(k, v) for k, v in products.items() if v["family"] == fam]
+            found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
+            for key, info in found_sorted:
+                # كل منتج في سطر لوحده - اسمه كامل
+                if info["stock"] > 0:
+                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + key))
+                else:
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} (نفد)", callback_data="sold_out_" + key))
+            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+            # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
             try:
-                send_family_products_with_images(chat_id, fam, products)
+                send_family_header(chat_id, fam, markup)
             except Exception as e:
-                print("FAMILY IMAGES ERROR", repr(e))
-                markup = InlineKeyboardMarkup()
-                found = [(k, v) for k, v in products.items() if v["family"] == fam]
-                for key, info in sorted(found, key=lambda x: x[1]["name"].lower()):
-                    markup.add(InlineKeyboardButton(f"{info['name']} · ${info['price']}", callback_data="buy_" + key))
-                markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
-                bot.send_message(chat_id, "📁 خيارات القسم:", reply_markup=markup)
+                print("FAMILY HEADER ERROR", repr(e))
+                bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(
