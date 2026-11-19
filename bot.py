@@ -642,24 +642,34 @@ def get_main_menu_markup(chat_id, is_admin=False):
         else:
             singles.append((key, info))
 
-    # ===== 1. العائلات: كل عائلة في سطر لوحده تحت التانية - عشان الاسم يبان كامل =====
-    # Test دايماً آخر صنف تحت
-    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
-    for fam in families_sorted:
-        full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
-        # كل عائلة في سطر لوحده - مش 3 جنب بعض
-        markup.add(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
+    # ===== 1. العائلات: كل صف فيه 3 عائلات - زي ما كان =====
+    # Test دايماً آخر صنف تحت لوحده
+    others = sorted([x for x in families_set if x != "tests"], key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    for i in range(0, len(others), 3):
+        chunk = others[i:i+3]
+        buttons = []
+        for fam in chunk:
+            full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
+            buttons.append(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
+        markup.row(*buttons)
+    # Test في صف لوحده في الآخر
+    if "tests" in families_set:
+        markup.row(InlineKeyboardButton(FAMILY_NAMES.get("tests", "🧪 Test"), callback_data="fam_tests"))
 
-    # ===== 2. المنتجات بدون عائلة: كل منتج في سطر لوحده =====
+    # ===== 2. المنتجات اللي من غير عائلة: كل صف فيه منتجين =====
     singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
-    for key, info in singles_sorted:
-        if info["stock"] > 0:
-            label = f"🟢 {info['name']} · ${info['price']}"
-            cb = "buy_" + key
-        else:
-            label = f"🔴 {info['name']} ({t['sold_out']})"
-            cb = "sold_out_" + key
-        markup.add(InlineKeyboardButton(label, callback_data=cb))
+    for i in range(0, len(singles_sorted), 2):
+        chunk = singles_sorted[i:i+2]
+        buttons = []
+        for key, info in chunk:
+            if info["stock"] > 0:
+                label = f"🟢 {info['name']} · ${info['price']}"
+                cb = "buy_" + key
+            else:
+                label = f"🔴 {info['name']} ({t['sold_out']})"
+                cb = "sold_out_" + key
+            buttons.append(InlineKeyboardButton(label, callback_data=cb))
+        markup.row(*buttons)
 
     # ===== أزرار الخدمات زي ما هي =====
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
