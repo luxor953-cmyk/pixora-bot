@@ -685,8 +685,104 @@ def get_admin_markup():
     markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
     return markup
 
+
+def send_photo_with_button(chat_id, fam_or_info, caption, button_text, callback_data, is_family=False):
+    """كل منتج / عائلة = رسالة بصورة + زرار - ده شكل البوتات الشيك"""
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data=callback_data))
+    # جرب الصورة المدمجة الأول
+    img_bytes = None
+    url = None
+    if is_family:
+        img_bytes = get_family_image_bytes(fam_or_info)
+        url = FAMILY_IMAGES.get(fam_or_info)
+    else:
+        # منتج: شوف عائلته
+        fam = fam_or_info.get("family") if isinstance(fam_or_info, dict) else None
+        if fam:
+            img_bytes = get_family_image_bytes(fam)
+            url = FAMILY_IMAGES.get(fam)
+        # لو المنتج ليه صورة من المورد
+        if fam_or_info.get("image") and str(fam_or_info.get("image")).startswith("http"):
+            url = fam_or_info["image"]
+            img_bytes = None
+    if img_bytes:
+        try:
+            img_bytes.name = "product.jpg"
+            bot.send_photo(chat_id, img_bytes, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("PHOTO+BTN B64 ERROR", repr(e))
+    if url:
+        try:
+            bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("PHOTO+BTN URL ERROR", repr(e))
+    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+    return False
+
+def send_main_menu_with_images(chat_id, is_admin=False):
+    """القايمة الرئيسية الجديدة: كل عائلة بصورتها"""
+    products = fetch_supplier_products()
+    if not products:
+        bot.send_message(chat_id, "لا توجد منتجات حالياً")
+        return
+    families_set = set()
+    singles = []
+    for key, info in products.items():
+        if info["family"]:
+            families_set.add(info["family"])
+        else:
+            singles.append((key, info))
+    # Test آخر واحد
+    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
+    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - دوس عليه عشان تشوف منتجاته", parse_mode="HTML")
+    for fam in families_sorted:
+        name = FAMILY_NAMES.get(fam, fam)
+        count = sum(1 for _, v in products.items() if v["family"] == fam)
+        caption = f"{name}\n📦 {count} منتج - دوس عشان تشوفهم 👇"
+        send_photo_with_button(chat_id, fam, caption, f"📂 افتح {name}", "fam_" + fam, is_family=True)
+    # المنتجات اللي من غير عائلة
+    singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
+    for key, info in singles_sorted:
+        if info["stock"] > 0:
+            caption = f"🏷 <b>{safe_html(info['name'])}</b>\n💰 <b>${info['price']}</b> | 🟢 متوفر"
+            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري - ${info['price']}", "buy_" + key, is_family=False)
+    # أزرار الخدمات في الآخر
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
+    markup.row(InlineKeyboardButton("💰 شحن", callback_data="payment_methods"), InlineKeyboardButton("💬 دعم", url=SUPPORT_WHATSAPP))
+    if is_admin:
+        markup.row(InlineKeyboardButton("🛠 لوحة الأدمن", callback_data="admin_panel"))
+    bot.send_message(chat_id, "⚙️ <b>خدمات:</b>", reply_markup=markup, parse_mode="HTML")
+
+def send_family_products_with_images(chat_id, fam, products):
+    """جوه العائلة: المنتجات تحت بعض - كل منتج رسالة لوحده باسمه الكامل"""
+    found = [(k, v) for k, v in products.items() if v["family"] == fam]
+    # ترتيب أبجدي، وكل منتج تحت اللي قبله - مفيش اتنين جنب بعض
+    found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
+    fname = FAMILY_NAMES.get(fam, fam)
+    bot.send_message(chat_id, f"📁 <b>{safe_html(fname)}</b>\n👇 منتجات القسم - كل منتج تحت التاني:", parse_mode="HTML")
+    for key, info in found_sorted:
+        # الاسم كامل من غير تقطيع
+        full_name = info['name']
+        if info["stock"] > 0:
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>\n\n📝 {safe_html(info['description'])}"
+            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري {full_name} - ${info['price']}", "buy_" + key, is_family=False)
+        else:
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفد"
+            # حتى اللي خلصان يتبعت لوحده تحت اللي قبله عشان يبان كامل
+            bot.send_message(chat_id, caption, parse_mode="HTML")
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+    bot.send_message(chat_id, "—", reply_markup=markup)
+
 def send_home(chat_id):
-    bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+    # القايمة الجديدة بالصور - كل عائلة بصورتها
+    try:
+        send_main_menu_with_images(chat_id, chat_id == ADMIN_ID)
+    except Exception as e:
+        print("MAIN MENU IMAGES ERROR", repr(e))
+        bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
 
 def send_family_header(chat_id, fam, markup):
@@ -819,25 +915,21 @@ if bot:
         elif data.startswith("fam_"):
             fam = data[4:]
             bot.answer_callback_query(call.id)
-            markup = InlineKeyboardMarkup()
-            found = [(k, v) for k, v in products.items() if v["family"] == fam]
-            found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
-            for i in range(0, len(found_sorted), 2):
-                chunk = found_sorted[i:i+2]
-                btns = []
-                for key, info in chunk:
-                    if info["stock"] > 0:
-                        btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + key))
-                    else:
-                        btns.append(InlineKeyboardButton(f"🔴 {info['name']} (نفد)", callback_data="sold_out_" + key))
-                markup.row(*btns)
-            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             try:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # ابعت صورة القسم فوق المنتجات
-            send_family_header(chat_id, fam, markup)
+            # كل منتج بصورته - مش قايمة نصية
+            try:
+                send_family_products_with_images(chat_id, fam, products)
+            except Exception as e:
+                print("FAMILY IMAGES ERROR", repr(e))
+                markup = InlineKeyboardMarkup()
+                found = [(k, v) for k, v in products.items() if v["family"] == fam]
+                for key, info in sorted(found, key=lambda x: x[1]["name"].lower()):
+                    markup.add(InlineKeyboardButton(f"{info['name']} · ${info['price']}", callback_data="buy_" + key))
+                markup.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+                bot.send_message(chat_id, "📁 خيارات القسم:", reply_markup=markup)
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(
