@@ -38,10 +38,12 @@ BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 ORDERS_FILE = os.environ.get("ORDERS_FILE", "orders.json")
 SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
 SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
+IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
+ADMIN_WAITING_IMAGE = {}  # chat_id -> fam اللي مستني صورته
 USER_LANGUAGES = {}
 USER_PROCESSING = set()
 
@@ -316,6 +318,56 @@ def start_notify_watcher():
     import threading as _th
     t = _th.Thread(target=loop, daemon=True)
     t.start()
+
+# ========== حل الصور النهائي: file_id ==========
+def load_image_ids():
+    if not os.path.exists(IMAGE_IDS_FILE):
+        return {}
+    try:
+        with open(IMAGE_IDS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+def save_image_ids(d):
+    try:
+        with open(IMAGE_IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("IMAGE IDS SAVE ERROR", repr(e))
+def get_stored_image_id(fam=None, product_key=None):
+    d = load_image_ids()
+    if product_key and f"product:{product_key}" in d:
+        return d[f"product:{product_key}"]
+    if fam and f"family:{fam}" in d:
+        return d[f"family:{fam}"]
+    return None
+def send_photo_smart(chat_id, fam, info, caption, markup):
+    fid = get_stored_image_id(fam=fam, product_key=str(info.get("id", "")) if info else None)
+    if fid:
+        try:
+            bot.send_photo(chat_id, fid, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FILE_ID SEND ERROR", repr(e))
+    if fam and fam in FAMILY_IMAGES_B64:
+        try:
+            b = get_family_image_bytes(fam)
+            if b:
+                b.name = f"{fam}.jpg"
+                bot.send_photo(chat_id, b, caption=caption, reply_markup=markup, parse_mode="HTML")
+                return True
+        except Exception as e:
+            print("B64 SEND ERROR", repr(e))
+    url = FAMILY_IMAGES.get(fam) if fam else None
+    if url:
+        try:
+            bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("URL SEND ERROR", repr(e))
+    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+    return False
 
 def supplier_headers():
     return {"X-Reseller-Key": RESELLER_KEY}
@@ -882,8 +934,13 @@ def send_home(chat_id):
 
 
 def send_family_header(chat_id, fam, markup):
-    """يبعت صورة القسم فوق أزرار المنتجات - ده اللي كان ناقص"""
-    # 1. الصورة المصممة الجاهزة
+    fid = get_stored_image_id(fam=fam)
+    if fid:
+        try:
+            bot.send_photo(chat_id, fid, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY FILE_ID ERROR", repr(e))
     img_bytes = get_family_image_bytes(fam)
     if img_bytes:
         try:
@@ -909,26 +966,10 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
            f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
            f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
+    if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
+        return True
     image = get_product_image(info)
     print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
-    if image and image.startswith("B64:"):
-        fam = image.split(":",1)[1]
-        img_bytes = get_family_image_bytes(fam)
-        if img_bytes:
-            try:
-                img_bytes.name = f"{fam}.jpg"
-                bot.send_photo(chat_id, img_bytes, caption=msg, reply_markup=markup, parse_mode="HTML")
-                return True
-            except Exception as exc:
-                print("B64 IMAGE SEND ERROR:", repr(exc))
-                # fallback: جرب صورة العائلة من النت
-                fallback = FAMILY_IMAGES.get(fam)
-                if fallback:
-                    try:
-                        bot.send_photo(chat_id, fallback, caption=msg, reply_markup=markup, parse_mode="HTML")
-                        return True
-                    except Exception as e2:
-                        print("FALLBACK IMAGE ERROR:", repr(e2))
     if image and image.startswith("http"):
         try:
             bot.send_photo(chat_id, image, caption=msg, reply_markup=markup, parse_mode="HTML")
@@ -992,6 +1033,31 @@ if bot:
         )
         bot.send_message(message.chat.id, "🌐 اختر اللغة:", reply_markup=markup)
 
+    @bot.message_handler(commands=["setimage"])
+    def cmd_setimage(message):
+        if message.chat.id != ADMIN_ID:
+            return
+        markup = InlineKeyboardMarkup()
+        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: (1 if x[0]=="tests" else 0, x[1].lower())):
+            markup.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
+        bot.send_message(message.chat.id, "🖼 <b>اختر العائلة اللي عايز تغير صورتها، وبعدين ابعت الصورة:</b>", reply_markup=markup, parse_mode="HTML")
+
+    @bot.message_handler(content_types=["photo"])
+    def handle_admin_photo(message):
+        chat_id = message.chat.id
+        # لو مش أدمن ومش مستني صورة، تجاهل
+        if chat_id != ADMIN_ID or chat_id not in ADMIN_WAITING_IMAGE:
+            return
+        fam = ADMIN_WAITING_IMAGE.pop(chat_id)
+        try:
+            fid = message.photo[-1].file_id  # أكبر جودة
+            d = load_image_ids()
+            d[f"family:{fam}"] = fid
+            save_image_ids(d)
+            bot.send_message(chat_id, f"✅ تم حفظ صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> بنجاح!\nدلوقتي أي منتج في العائلة دي هيظهر بالصورة دي.", parse_mode="HTML")
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ خطأ: {e}")
+
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
         chat_id = call.message.chat.id
@@ -1013,6 +1079,14 @@ if bot:
                 bot.edit_message_text(LANG_TEXTS[lang]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
             except Exception:
                 send_home(chat_id)
+        elif data.startswith("setimg_"):
+            if not is_admin:
+                return
+            fam = data[7:]
+            ADMIN_WAITING_IMAGE[chat_id] = fam
+            bot.answer_callback_query(call.id)
+            bot.send_message(chat_id, f"📸 ابعت دلوقتي صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> (ابعتها كصورة مش كملف):", parse_mode="HTML")
+            return
         elif data.startswith("fam_"):
             fam = data[4:]
             bot.answer_callback_query(call.id)
