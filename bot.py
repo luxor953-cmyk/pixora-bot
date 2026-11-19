@@ -36,6 +36,8 @@ BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
 BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
 
 ORDERS_FILE = os.environ.get("ORDERS_FILE", "orders.json")
+SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
+SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -216,6 +218,104 @@ def save_orders(data):
         os.replace(temp, ORDERS_FILE)
     except Exception as exc:
         print("ORDERS FILE SAVE ERROR:", str(exc))
+
+def load_subscribers():
+    if not os.path.exists(SUBSCRIBERS_FILE):
+        return []
+    try:
+        with open(SUBSCRIBERS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, list) else []
+    except Exception:
+        return []
+
+def save_subscribers(subs):
+    try:
+        with open(SUBSCRIBERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(set(subs)), f, ensure_ascii=False)
+    except Exception as e:
+        print("SUBSCRIBERS SAVE ERROR", repr(e))
+
+def add_subscriber(chat_id):
+    subs = load_subscribers()
+    if chat_id not in subs:
+        subs.append(chat_id)
+        save_subscribers(subs)
+
+def load_snapshot():
+    if not os.path.exists(SNAPSHOT_FILE):
+        return {}
+    try:
+        with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def save_snapshot(snap):
+    try:
+        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("SNAPSHOT SAVE ERROR", repr(e))
+
+def check_and_notify_changes():
+    try:
+        products = fetch_supplier_products(force_refresh=True)
+    except Exception as e:
+        print("NOTIFY CHECK FETCH ERROR", repr(e))
+        return
+    if not products:
+        return
+    old = load_snapshot()
+    if not old:
+        snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+        save_snapshot(snap)
+        return
+    changes = []
+    for key, info in products.items():
+        prev = old.get(key)
+        if not prev:
+            changes.append(f"🆕 <b>منتج جديد وصل!</b>\n🏷 {safe_html(info['name'])}\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>")
+        else:
+            if float(prev.get("price", 0)) != float(info["price"]):
+                arrow = "📉 نزل" if float(info["price"]) < float(prev.get("price", 0)) else "📈 زاد"
+                changes.append(f"💲 <b>سعر اتعدل!</b> {arrow}\n🏷 {safe_html(info['name'])}\nمن <b>${prev.get('price')}</b> لـ <b>${info['price']}</b>")
+            if int(info["stock"]) > int(prev.get("stock", 0)) and int(prev.get("stock", 0)) == 0:
+                changes.append(f"✅ <b>رجع متوفر تاني!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>")
+            elif int(info["stock"]) > int(prev.get("stock", 0)):
+                changes.append(f"📦 <b>كمية جديدة اتضافت!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية بقت: <b>{info['stock']}</b> (كانت {prev.get('stock')})")
+            if int(info["stock"]) == 0 and int(prev.get("stock", 0)) > 0:
+                changes.append(f"🔴 <b>صنف خلص!</b>\n🏷 {safe_html(info['name'])}\nالحق اللي فاضل قبل ما يخلص في باقي الأصناف 🏃")
+    snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+    save_snapshot(snap)
+    if not changes:
+        return
+    subs = load_subscribers()
+    print(f"NOTIFY: {len(changes)} changes to {len(subs)} subscribers")
+    for msg in changes:
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🛍 افتح المتجر", callback_data="main_menu"))
+        for chat_id in list(subs):
+            try:
+                bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
+            except Exception as e:
+                print(f"NOTIFY SEND ERROR to {chat_id}:", repr(e))
+                if "blocked" in str(e).lower() or "chat not found" in str(e).lower():
+                    subs = [s for s in subs if s != chat_id]
+        save_subscribers(subs)
+
+def start_notify_watcher():
+    def loop():
+        time.sleep(30)
+        while True:
+            try:
+                check_and_notify_changes()
+            except Exception as e:
+                print("WATCHER ERROR", repr(e))
+            time.sleep(600)
+    import threading as _th
+    t = _th.Thread(target=loop, daemon=True)
+    t.start()
 
 def supplier_headers():
     return {"X-Reseller-Key": RESELLER_KEY}
@@ -860,6 +960,7 @@ if bot:
     @bot.message_handler(commands=["start", "products"])
     def send_welcome(message):
         chat_id = message.chat.id
+        add_subscriber(chat_id)
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
         try:
@@ -894,6 +995,10 @@ if bot:
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
         chat_id = call.message.chat.id
+        try:
+            add_subscriber(chat_id)
+        except Exception:
+            pass
         msg_id = call.message.message_id
         data = call.data or ""
         is_admin = chat_id == ADMIN_ID
@@ -1157,6 +1262,10 @@ if __name__ == "__main__":
         except Exception as exc:
             print("REMOVE WEBHOOK ERROR:", repr(exc))
     threading.Thread(target=keep_alive, daemon=True).start()
+    try:
+        start_notify_watcher()
+    except Exception as e:
+        print("WATCHER START ERROR", repr(e))
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")), use_reloader=False), daemon=True).start()
     while True:
         try:
