@@ -556,17 +556,44 @@ def get_main_menu_markup(chat_id, is_admin=False):
     if not products:
         markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
         return markup
-    families, singles = set(), []
+
+    families_set = set()
+    singles = []
     for key, info in products.items():
         if info["family"]:
-            families.add(info["family"])
+            families_set.add(info["family"])
         else:
             singles.append((key, info))
-    for fam in sorted(families, key=lambda x: FAMILY_NAMES.get(x, x)):
-        markup.add(InlineKeyboardButton(FAMILY_NAMES.get(fam, f"📁 قسم {fam.upper()}"), callback_data="fam_" + fam))
-    for key, info in sorted(singles, key=lambda x: x[1]["name"].lower()):
-        label = (f"✅ {info['name']} · ${info['price']}" if info["stock"] > 0 else f"❌ {info['name']} ({t['sold_out']})")
-        markup.add(InlineKeyboardButton(label, callback_data=("buy_" if info["stock"] > 0 else "sold_out_") + key))
+
+    # ===== 1. العائلات: ترتيب أبجدي حسب الاسم الكامل، 3 في كل صف =====
+    # نرتب بالاسم اللي بيظهر للمستخدم مش بالـ key
+    families_sorted = sorted(families_set, key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    for i in range(0, len(families_sorted), 3):
+        chunk = families_sorted[i:i+3]
+        buttons = []
+        for fam in chunk:
+            full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
+            buttons.append(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
+        # row بتاخد لحد 3 أزرار
+        markup.row(*buttons)
+
+    # ===== 2. المنتجات بدون عائلة: ترتيب أبجدي، 2 في كل صف =====
+    singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
+    for i in range(0, len(singles_sorted), 2):
+        chunk = singles_sorted[i:i+2]
+        buttons = []
+        for key, info in chunk:
+            # 🟢 متوفر / 🔴 خلصان
+            if info["stock"] > 0:
+                label = f"🟢 {info['name']} · ${info['price']}"
+                cb = "buy_" + key
+            else:
+                label = f"🔴 {info['name']} ({t['sold_out']})"
+                cb = "sold_out_" + key
+            buttons.append(InlineKeyboardButton(label, callback_data=cb))
+        markup.row(*buttons)
+
+    # ===== أزرار الخدمات زي ما هي =====
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
     markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
@@ -665,11 +692,16 @@ if bot:
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
-            for key, info in sorted(found, key=lambda x: x[1]["name"].lower()):
-                if info["stock"] > 0:
-                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
-                else:
-                    markup.add(InlineKeyboardButton(f"❌ {info['name']} (نفد)", callback_data="sold_out_" + key))
+            found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
+            for i in range(0, len(found_sorted), 2):
+                chunk = found_sorted[i:i+2]
+                btns = []
+                for key, info in chunk:
+                    if info["stock"] > 0:
+                        btns.append(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + key))
+                    else:
+                        btns.append(InlineKeyboardButton(f"🔴 {info['name']} (نفد)", callback_data="sold_out_" + key))
+                markup.row(*btns)
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             try:
                 bot.delete_message(chat_id, msg_id)
