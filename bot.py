@@ -644,7 +644,8 @@ def get_main_menu_markup(chat_id, is_admin=False):
 
     # ===== 1. العائلات: ترتيب أبجدي حسب الاسم الكامل، 3 في كل صف =====
     # نرتب بالاسم اللي بيظهر للمستخدم مش بالـ key
-    families_sorted = sorted(families_set, key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    # Test دايماً آخر صنف تحت
+    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
     for i in range(0, len(families_sorted), 3):
         chunk = families_sorted[i:i+3]
         buttons = []
@@ -687,6 +688,30 @@ def get_admin_markup():
 def send_home(chat_id):
     bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
+
+def send_family_header(chat_id, fam, markup):
+    """يبعت صورة القسم فوق أزرار المنتجات - ده اللي كان ناقص"""
+    # 1. الصورة المصممة الجاهزة
+    img_bytes = get_family_image_bytes(fam)
+    if img_bytes:
+        try:
+            img_bytes.name = f"{fam}.jpg"
+            bot.send_photo(chat_id, img_bytes, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY B64 SEND ERROR", fam, repr(e))
+    # 2. صورة العائلة من النت
+    url = FAMILY_IMAGES.get(fam)
+    if url:
+        try:
+            bot.send_photo(chat_id, url, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY URL SEND ERROR", fam, repr(e))
+    # 3. لو فشلت الصورة، ابعت نص
+    bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+    return False
+
 def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     """FIX 1: ابعت صورة المنتج لو موجودة، ولو فشلت ابعت نص"""
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
@@ -699,10 +724,19 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
         img_bytes = get_family_image_bytes(fam)
         if img_bytes:
             try:
+                img_bytes.name = f"{fam}.jpg"
                 bot.send_photo(chat_id, img_bytes, caption=msg, reply_markup=markup, parse_mode="HTML")
                 return True
             except Exception as exc:
                 print("B64 IMAGE SEND ERROR:", repr(exc))
+                # fallback: جرب صورة العائلة من النت
+                fallback = FAMILY_IMAGES.get(fam)
+                if fallback:
+                    try:
+                        bot.send_photo(chat_id, fallback, caption=msg, reply_markup=markup, parse_mode="HTML")
+                        return True
+                    except Exception as e2:
+                        print("FALLBACK IMAGE ERROR:", repr(e2))
     if image and image.startswith("http"):
         try:
             bot.send_photo(chat_id, image, caption=msg, reply_markup=markup, parse_mode="HTML")
@@ -802,7 +836,8 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            bot.send_message(chat_id, "📁 <b>خيارات القسم:</b>", reply_markup=markup, parse_mode="HTML")
+            # ابعت صورة القسم فوق المنتجات
+            send_family_header(chat_id, fam, markup)
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(
