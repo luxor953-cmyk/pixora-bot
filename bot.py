@@ -222,7 +222,13 @@ def fetch_supplier_products(force_refresh=False):
                 continue
             try:
                 cost = float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
-                price = round(cost + 0.50, 2)
+                family_tmp = get_product_family(str(name).strip())
+                # صنف التيست: بدون مكسب، بنفس سعر التاجر (مجاناً تقريباً)
+                if family_tmp == "tests":
+                    price = round(cost, 2)
+                else:
+                    # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
+                    price = round(cost + 0.80, 2)
             except (TypeError, ValueError):
                 price = 0.0
             result[product_id] = {
@@ -761,12 +767,17 @@ if bot:
             if info["stock"] <= 0:
                 bot.send_message(chat_id, "❌ المنتج نفد من المخزون.")
                 return
-            if info["price"] <= 0:
+            # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
+            if info["price"] <= 0 and info.get("family") != "tests":
                 bot.send_message(chat_id, "⚠ هذا المنتج مجاني/تجريبي ولم يتم تفعيل تسليمه. تواصل مع الإدارة.")
                 notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(key)})")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
-            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + key))
+            # لو منتج تيست مجاني، الزرار يبقى تجربة مجانية مش دفع
+            if info.get("family") == "tests" and info["price"] <= 0:
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية - استلم الآن", callback_data="pay_" + key))
+            else:
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + key))
             markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             try:
                 bot.delete_message(chat_id, msg_id)
@@ -778,7 +789,29 @@ if bot:
             key = data[4:]
             info = products.get(key)
             bot.answer_callback_query(call.id)
-            if not info or info["price"] <= 0:
+            if not info:
+                bot.send_message(chat_id, "تعذر تحديد المنتج. ارجع للقائمة وحاول مجدداً.")
+                return
+            # ===== منتج تيست مجاني: تسليم فوري من غير دفع =====
+            if info.get("family") == "tests" and info["price"] <= 0:
+                bot.send_message(chat_id, "🧪 جاري تجهيز منتج التجربة المجاني...")
+                # اطلب من المورد مباشرة بدون Binance
+                result = purchase_order_from_supplier(key, f"free_test_{chat_id}_{int(time.time())}")
+                if not result["success"]:
+                    bot.send_message(chat_id, f"❌ فشل طلب التجربة: {safe_html(result.get('error',''))}")
+                    return
+                delivery = extract_delivery_data(result["data"])
+                if not delivery:
+                    bot.send_message(chat_id, "⚠ تم طلب التجربة لكن بيانات التسليم لم تصل. تم إشعار الإدارة.")
+                    notify_admin(f"⚠ طلب تيست مجاني بدون بيانات: {safe_html(info['name'])} - زبون {chat_id}")
+                    return
+                orders = load_orders()
+                orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": "FREE_TEST", "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+                save_orders(orders)
+                bot.send_message(chat_id, f"🎉 <b>تجربة مجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                USER_SELECTED_PRODUCT.pop(chat_id, None)
+                return
+            if info["price"] <= 0:
                 bot.send_message(chat_id, "تعذر تحديد المنتج. ارجع للقائمة وحاول مجدداً.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
