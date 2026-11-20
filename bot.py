@@ -476,9 +476,9 @@ def fetch_supplier_products(force_refresh=False):
             try:
                 cost = float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
                 family_tmp = get_product_family(str(name).strip())
-                # صنف التيست: بدون مكسب، بنفس سعر التاجر (مجاناً تقريباً)
+                # صنف Test: السعر 0 دائماً - تجربة مجانية
                 if family_tmp == "tests":
-                    price = round(cost, 2)
+                    price = 0.0
                 else:
                     # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
                     price = round(cost + 0.80, 2)
