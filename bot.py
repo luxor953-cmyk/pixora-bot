@@ -39,6 +39,7 @@ ORDERS_FILE = os.environ.get("ORDERS_FILE", "orders.json")
 SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
 SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
+NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -262,6 +263,7 @@ def save_snapshot(snap):
         print("SNAPSHOT SAVE ERROR", repr(e))
 
 def check_and_notify_changes():
+    """بس للي طلب تنبيه: لو منتج كان خلصان ورجعت كميته، نبه اللي طلبوه بس"""
     try:
         products = fetch_supplier_products(force_refresh=True)
     except Exception as e:
@@ -274,37 +276,30 @@ def check_and_notify_changes():
         snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
         save_snapshot(snap)
         return
-    changes = []
+    notify_reqs = load_notify_requests()
+    if not notify_reqs:
+        snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+        save_snapshot(snap)
+        return
     for key, info in products.items():
         prev = old.get(key)
         if not prev:
-            changes.append(f"🆕 <b>منتج جديد وصل!</b>\n🏷 {safe_html(info['name'])}\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>")
-        else:
-            if float(prev.get("price", 0)) != float(info["price"]):
-                arrow = "📉 نزل" if float(info["price"]) < float(prev.get("price", 0)) else "📈 زاد"
-                changes.append(f"💲 <b>سعر اتعدل!</b> {arrow}\n🏷 {safe_html(info['name'])}\nمن <b>${prev.get('price')}</b> لـ <b>${info['price']}</b>")
-            if int(info["stock"]) > int(prev.get("stock", 0)) and int(prev.get("stock", 0)) == 0:
-                changes.append(f"✅ <b>رجع متوفر تاني!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>")
-            elif int(info["stock"]) > int(prev.get("stock", 0)):
-                changes.append(f"📦 <b>كمية جديدة اتضافت!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية بقت: <b>{info['stock']}</b> (كانت {prev.get('stock')})")
-            if int(info["stock"]) == 0 and int(prev.get("stock", 0)) > 0:
-                changes.append(f"🔴 <b>صنف خلص!</b>\n🏷 {safe_html(info['name'])}\nالحق اللي فاضل قبل ما يخلص في باقي الأصناف 🏃")
+            continue
+        # كان خلصان وبقى متوفر؟ نبه اللي طلبوه بس
+        if int(prev.get("stock", 0)) == 0 and int(info["stock"]) > 0:
+            wanters = notify_reqs.get(str(key), [])
+            if wanters:
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 اشتري {info['name']} - ${info['price']}", callback_data="buy_" + key))
+                for chat_id in wanters:
+                    try:
+                        bot.send_message(chat_id, f"🔔 <b>المنتج رجع متوفر!</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\nالحق قبل ما يخلص تاني 🏃", reply_markup=markup, parse_mode="HTML")
+                    except Exception as e:
+                        print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
+                # امسح الطلبات بعد ما نبهناهم
+                notify_reqs.pop(str(key), None)
+                save_notify_requests(notify_reqs)
     snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
     save_snapshot(snap)
-    if not changes:
-        return
-    subs = load_subscribers()
-    print(f"NOTIFY: {len(changes)} changes to {len(subs)} subscribers")
-    for msg in changes:
-        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🛍 افتح المتجر", callback_data="main_menu"))
-        for chat_id in list(subs):
-            try:
-                bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
-            except Exception as e:
-                print(f"NOTIFY SEND ERROR to {chat_id}:", repr(e))
-                if "blocked" in str(e).lower() or "chat not found" in str(e).lower():
-                    subs = [s for s in subs if s != chat_id]
-        save_subscribers(subs)
 
 def start_notify_watcher():
     def loop():
@@ -367,6 +362,32 @@ def send_photo_smart(chat_id, fam, info, caption, markup):
         except Exception as e:
             print("URL SEND ERROR", repr(e))
     bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+    return False
+
+
+def load_notify_requests():
+    if not os.path.exists(NOTIFY_FILE):
+        return {}
+    try:
+        with open(NOTIFY_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+def save_notify_requests(d):
+    try:
+        with open(NOTIFY_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("NOTIFY SAVE ERROR", repr(e))
+def add_notify_request(product_id, chat_id):
+    d = load_notify_requests()
+    lst = d.get(str(product_id), [])
+    if chat_id not in lst:
+        lst.append(chat_id)
+        d[str(product_id)] = lst
+        save_notify_requests(d)
+        return True
     return False
 
 def supplier_headers():
@@ -1126,24 +1147,37 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # جوه العائلة: كل منتج في صف كامل لوحده تحت التاني - اسمه + نظامه + سعره من بره
+            # جوه العائلة: كل منتج زرار واحد في سطر كامل - من غير ترقيم، من غير زرار شراء تحته
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
             found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
             for key, info in found_sorted:
                 system = get_product_system(info)
                 if info["stock"] > 0:
-                    # صف كامل: الاسم | النظام | السعر
                     markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="sold_out_" + key))
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد - نبهني", callback_data="buy_" + key))
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
-            # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
-            try:
-                send_family_header(chat_id, fam, markup)
-            except Exception as e:
-                print("FAMILY HEADER ERROR", repr(e))
-                bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+            fid = get_stored_image_id(fam=fam)
+            sent = False
+            caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:"
+            if fid:
+                try:
+                    bot.send_photo(chat_id, fid, caption=caption, reply_markup=markup, parse_mode="HTML")
+                    sent = True
+                except Exception as e:
+                    print("FAMILY PHOTO ERROR", repr(e))
+            if not sent and fam in FAMILY_IMAGES_B64:
+                try:
+                    b = get_family_image_bytes(fam)
+                    if b:
+                        b.name = f"{fam}.jpg"
+                        bot.send_photo(chat_id, b, caption=caption, reply_markup=markup, parse_mode="HTML")
+                        sent = True
+                except Exception as e:
+                    print("FAMILY B64 ERROR", repr(e))
+            if not sent:
+                bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(
@@ -1195,7 +1229,14 @@ if bot:
                 bot.send_message(chat_id, "تعذر العثور على المنتج. حدّث القائمة وحاول مجدداً.")
                 return
             if info["stock"] <= 0:
-                bot.send_message(chat_id, "❌ المنتج نفد من المخزون.")
+                # المنتج خلصان: ابعت صفحته كاملة + زرار "نبهني لما يرجع" تحت الوصف
+                markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 نبهني لما الكمية ترجع", callback_data="notify_" + key))
+                markup_sold.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+                send_product_card(chat_id, info, markup_sold)
                 return
             # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
             if info["price"] <= 0 and info.get("family") != "tests":
@@ -1215,6 +1256,19 @@ if bot:
                 pass
             # FIX 1: ابعت كارت المنتج بالصورة
             send_product_card(chat_id, info, markup)
+        elif data.startswith("notify_"):
+            key = data[7:]
+            info = products.get(key)
+            bot.answer_callback_query(call.id)
+            if not info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            added = add_notify_request(key, chat_id)
+            if added:
+                bot.send_message(chat_id, f"✅ تمام! أول ما كمية <b>{safe_html(info['name'])}</b> ترجع، هبعتلك إشعار على طول.\n\nمش هبعتلك أي إشعار تاني غير ده.", parse_mode="HTML")
+            else:
+                bot.send_message(chat_id, f"ℹ️ انت بالفعل مسجل للتنبيه لما كمية <b>{safe_html(info['name'])}</b> ترجع.", parse_mode="HTML")
+            return
         elif data.startswith("pay_"):
             key = data[4:]
             info = products.get(key)
