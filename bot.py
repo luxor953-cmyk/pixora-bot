@@ -1139,6 +1139,16 @@ if bot:
 
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
+        try:
+            _handle_query_inner(call)
+        except Exception as e:
+            print("CALLBACK ERROR (bot did not stop):", repr(e))
+            try:
+                bot.send_message(call.message.chat.id, "حدث خطأ مؤقت. يرجى المحاولة مرة أخرى.")
+            except Exception:
+                pass
+        return
+    def _handle_query_inner(call):
         chat_id = call.message.chat.id
         try:
             add_subscriber(chat_id)
@@ -1338,8 +1348,18 @@ if bot:
                 bot.send_message(chat_id, "تعذر تحديد المنتج. يرجى المحاولة مرة أخرى.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
-            pay_msg = (f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
-            bot.edit_message_text(pay_msg, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            pay_msg = (f"🪙 إتمام الدفع\n\n📦 المنتج: <b>{safe_html(info['name'])}</b>\n💰 المبلغ: <b>${info['price']} USDT</b>\n\nقم بالتحويل إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
+            _pay_markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+            # إصلاح التوقف: كارت المنتج صورة، لا يمكن تعديل نصها - نمسحها ونرسل رسالة دفع جديدة
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+            try:
+                bot.send_message(chat_id, pay_msg, reply_markup=_pay_markup, parse_mode="HTML")
+            except Exception as e:
+                print("PAY MSG ERROR", repr(e))
+                bot.send_message(chat_id, pay_msg, reply_markup=_pay_markup)
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             orders = load_orders().get(str(chat_id), [])
@@ -1347,7 +1367,14 @@ if bot:
                 body = "📜 لا توجد طلبات."
             else:
                 body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
-            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            try:
+                bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            except Exception:
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+                bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
