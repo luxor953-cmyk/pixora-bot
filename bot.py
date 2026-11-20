@@ -1,5 +1,22 @@
 import os
 import time
+
+# توقيت الجزائر (GMT+1) - السيرفر على UTC فيسبب فرق ساعة
+try:
+    from zoneinfo import ZoneInfo
+    ALGIERS_TZ = ZoneInfo("Africa/Algiers")
+except Exception:
+    ALGIERS_TZ = None
+def algiers_now_str():
+    try:
+        from datetime import datetime
+        if ALGIERS_TZ:
+            return datetime.now(ALGIERS_TZ).strftime("%d %b %Y, %H:%M")
+        return datetime.now().strftime("%d %b %Y, %H:%M")
+    except Exception:
+        return time.strftime("%d %b %Y, %H:%M")
+
+
 import json
 import threading
 import html
@@ -497,7 +514,8 @@ def fetch_supplier_products(force_refresh=False):
                     and ("month" in _nl or "شهر" in _nl or "اشهر" in _nl or "أشهر" in _nl)
                 )
                 if _is_gemini_plus_6m and family_tmp != "tests":
-                    price = 0.6
+                    # Gemini Plus 6 أشهر: سعر المورّد + 0.5
+                    price = round(cost + 0.5, 2)
             except (TypeError, ValueError):
                 price = 0.0
             result[product_id] = {
@@ -1366,7 +1384,7 @@ if bot:
             if not orders:
                 body = "📜 لا توجد طلبات."
             else:
-                body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
+                body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 طلب رقم: <b>#{safe_html(str(o.get('order_id') or o.get('reference') or '—'))}</b>\n📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
             try:
                 bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             except Exception:
@@ -1476,9 +1494,10 @@ if bot:
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             orders = load_orders()
-            orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+            orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "order_id": str(result.get('order_id') or reference), "status": "delivered", "time": algiers_now_str()})
             save_orders(orders)
-            delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ بهذه الرسالة للرجوع إليها.")
+            _order_id = str(result.get('order_id') or result.get('orderId') or reference or "—")
+            delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(_order_id)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 مرجع الدفع: <code>{safe_html(reference)}</code>\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ برقم الطلب للرجوع إليه عند وجود أي مشكلة.")
             bot.send_message(chat_id, delivery_message, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
             USER_SELECTED_PRODUCT.pop(chat_id, None)
         except Exception as exc:
