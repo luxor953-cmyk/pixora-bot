@@ -106,6 +106,15 @@ FAMILY_NAMES = {
     "tests": "🧪 Test"
 }
 
+def family_sort_key(fam):
+    # ترتيب أبجدي حقيقي: أزل الإيموجي والرموز، ورتب على الاسم فقط - Test دائماً في الآخر
+    raw = FAMILY_NAMES.get(fam, fam)
+    clean = re.sub(r"[^A-Za-z\u0600-\u06FF0-9 ]", "", raw).strip().lower()
+    if not clean:
+        clean = str(fam).lower()
+    return (1 if fam == "tests" else 0, clean)
+
+
 # =========================================================
 # حل الصور: صور ثابتة من عندنا مش من المورد
 # لأن المورد مش بيبعت صور، هنعتمد على صور العائلة
@@ -817,7 +826,7 @@ def get_main_menu_markup(chat_id, is_admin=False):
 
     # ===== 1. العائلات: كل صف فيه 3 عائلات - زي ما كان =====
     # Test دايماً آخر صنف تحت لوحده
-    others = sorted([x for x in families_set if x != "tests"], key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    others = sorted([x for x in families_set if x != "tests"], key=lambda x: family_sort_key(x))
     for i in range(0, len(others), 3):
         chunk = others[i:i+3]
         buttons = []
@@ -839,8 +848,9 @@ def get_main_menu_markup(chat_id, is_admin=False):
                 label = f"🟢 {info['name']} · ${info['price']}"
                 cb = "buy_" + key
             else:
-                label = f"🔴 {info['name']} ({t['sold_out']})"
-                cb = "sold_out_" + key
+                # مثل داخل العائلة تماماً: يدخل على صفحة المنتج ليعرض زر التنبيه
+                label = f"🔴 {info['name']} · غير متوفر"
+                cb = "buy_" + key
             buttons.append(InlineKeyboardButton(label, callback_data=cb))
         markup.row(*buttons)
 
@@ -908,7 +918,7 @@ def send_main_menu_with_images(chat_id, is_admin=False):
         else:
             singles.append((key, info))
     # Test آخر واحد
-    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
+    families_sorted = sorted(families_set, key=lambda x: family_sort_key(x))
     bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - دوس عليه عشان تشوف منتجاته", parse_mode="HTML")
     for fam in families_sorted:
         name = FAMILY_NAMES.get(fam, fam)
@@ -1091,7 +1101,7 @@ if bot:
         if message.chat.id != ADMIN_ID:
             return
         markup = InlineKeyboardMarkup()
-        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: (1 if x[0]=="tests" else 0, x[1].lower())):
+        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: family_sort_key(x[0])):
             markup.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
         bot.send_message(message.chat.id, "🖼 <b>اختر العائلة اللي عايز تغير صورتها، وبعدين ابعت الصورة:</b>", reply_markup=markup, parse_mode="HTML")
 
@@ -1220,7 +1230,20 @@ if bot:
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
             bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر حالياً.", show_alert=True)
+            # توافق مع أزرار قديمة: اعرض صفحة المنتج مع زر التنبيه، مثل داخل العائلة
+            _k = data[len("sold_out_"):]
+            _info = products.get(_k)
+            bot.answer_callback_query(call.id)
+            if _info and _info["stock"] <= 0:
+                _m = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند توفر المنتج", callback_data="notify_" + _k))
+                _m.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+                send_product_card(chat_id, _info, _m)
+            else:
+                bot.send_message(chat_id, "❌ المنتج غير متوفر حالياً.")
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
@@ -1324,22 +1347,50 @@ if bot:
         chat_id = message.chat.id
         if message.text and message.text.startswith("/"):
             return
-        if USER_WAITING_FOR_SEARCH.get(chat_id):
+        # البحث: يعمل بأي نص من حرفين فأكثر، حتى لو لم يضغط زر البحث - لا يخلط بينه وبين رقم العملية
+        _txt = (message.text or "").strip()
+        _is_payment_stage = chat_id in USER_SELECTED_PRODUCT and chat_id not in USER_PROCESSING
+        _looks_like_order = bool(re.match(r"^[A-Za-z0-9_-]{8,}$", _txt))
+        if USER_WAITING_FOR_SEARCH.get(chat_id) or (not _is_payment_stage and not _looks_like_order and len(_txt) >= 2):
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-            query = (message.text or "").strip().lower()
-            if not query:
-                bot.send_message(chat_id, "أرسل كلمة للبحث.")
+            query = _txt.lower()
+            if not query or len(query) < 2:
+                bot.send_message(chat_id, "أرسل كلمة للبحث، حرفين على الأقل.")
                 return
             products = fetch_supplier_products()
-            markup = InlineKeyboardMarkup()
-            found = 0
+            def _norm(s):
+                return re.sub(r"[^a-z0-9\u0600-\u06FF]", "", (s or "").lower())
+            def _match_score(name, q):
+                n = _norm(name)
+                qq = _norm(q)
+                if not n or not qq:
+                    return 0
+                if qq in n:
+                    return 100
+                it = iter(n)
+                if all(ch in it for ch in qq):
+                    return 85
+                common = len(set(n) & set(qq))
+                return int(common / max(len(set(qq)), 1) * 70)
+            scored = []
             for key, info in products.items():
-                if query in info["name"].lower() or query in info["description"].lower():
-                    found += 1
-                    if info["stock"] > 0:
-                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
+                best = max(_match_score(info["name"], query), _match_score(info.get("description",""), query))
+                if best >= 50:
+                    scored.append((best, key, info))
+            scored.sort(key=lambda x: (-x[0], x[2]["name"].lower()))
+            markup = InlineKeyboardMarkup()
+            found = len(scored)
+            for _, key, info in scored:
+                system = get_product_system(info)
+                if info["stock"] > 0:
+                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                else:
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
             markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-            bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج لـ: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
+            if found:
+                bot.send_message(chat_id, f"🔍 نتائج البحث عن: <b>{safe_html(_txt)}</b>\nعدد النتائج: <b>{found}</b>", reply_markup=markup, parse_mode="HTML")
+            else:
+                bot.send_message(chat_id, f"❌ لا توجد نتائج لـ: <b>{safe_html(_txt)}</b>", reply_markup=markup, parse_mode="HTML")
             return
         if chat_id not in USER_SELECTED_PRODUCT:
             bot.send_message(chat_id, "⚠ يرجى اختيار المنتج أولاً من القائمة.", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
