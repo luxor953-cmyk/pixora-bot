@@ -482,6 +482,22 @@ def fetch_supplier_products(force_refresh=False):
                 else:
                     # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
                     price = round(cost + 0.80, 2)
+                # تجاوز خاص: Gemini Plus 6 أشهر = 0.6$ فقط - لا ينطبق على أي منتج آخر
+                _nl = str(name).lower()
+                # يقبل: Gemini Plus 6 Months / Gemini Plus 6 اشهر / جيميناي بلص 6 اشهر
+                _is_gemini_plus_6m = (
+                    ("gemini" in _nl or "جيميناي" in _nl or "جيميني" in _nl)
+                    and "plus" in _nl or "بلص" in _nl or "بلس" in _nl
+                ) and ("6" in _nl) and ("month" in _nl or "شهر" in _nl or "اشهر" in _nl or "أشهر" in _nl)
+                # تصحيح الأولوية: لازم كل الشروط تتحقق معاً
+                _is_gemini_plus_6m = (
+                    ("gemini" in _nl or "جيميناي" in _nl or "جيميني" in _nl)
+                    and ("plus" in _nl or "بلص" in _nl or "بلس" in _nl)
+                    and ("6" in _nl)
+                    and ("month" in _nl or "شهر" in _nl or "اشهر" in _nl or "أشهر" in _nl)
+                )
+                if _is_gemini_plus_6m and family_tmp != "tests":
+                    price = 0.6
             except (TypeError, ValueError):
                 price = 0.0
             result[product_id] = {
