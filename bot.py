@@ -289,10 +289,10 @@ def check_and_notify_changes():
         if int(prev.get("stock", 0)) == 0 and int(info["stock"]) > 0:
             wanters = notify_reqs.get(str(key), [])
             if wanters:
-                markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 اشتري {info['name']} - ${info['price']}", callback_data="buy_" + key))
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 شراء - ${info['price']}", callback_data="buy_" + key))
                 for chat_id in wanters:
                     try:
-                        bot.send_message(chat_id, f"🔔 <b>المنتج رجع متوفر!</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\nالحق قبل ما يخلص تاني 🏃", reply_markup=markup, parse_mode="HTML")
+                        bot.send_message(chat_id, f"🔔 المنتج متوفر الآن\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية المتوفرة: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>", reply_markup=markup, parse_mode="HTML")
                     except Exception as e:
                         print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
                 # امسح الطلبات بعد ما نبهناهم
@@ -855,7 +855,7 @@ def get_main_menu_markup(chat_id, is_admin=False):
 def get_admin_markup():
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("💰 فحص الرصيد", callback_data="adm_balance"), InlineKeyboardButton("💳 طرق الإيداع", callback_data="adm_deposits"))
-    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
     return markup
 
 
@@ -946,7 +946,7 @@ def send_family_products_with_images(chat_id, fam, products):
             caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفد"
             # حتى اللي خلصان يتبعت لوحده تحت اللي قبله عشان يبان كامل
             bot.send_message(chat_id, caption, parse_mode="HTML")
-    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
     bot.send_message(chat_id, "—", reply_markup=markup)
 
 def send_home(chat_id):
@@ -990,7 +990,7 @@ def send_family_header(chat_id, fam, markup):
     fid = get_stored_image_id(fam=fam)
     if fid:
         try:
-            bot.send_photo(chat_id, fid, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            bot.send_photo(chat_id, fid, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
             return True
         except Exception as e:
             print("FAMILY FILE_ID ERROR", repr(e))
@@ -998,7 +998,7 @@ def send_family_header(chat_id, fam, markup):
     if img_bytes:
         try:
             img_bytes.name = f"{fam}.jpg"
-            bot.send_photo(chat_id, img_bytes, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            bot.send_photo(chat_id, img_bytes, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
             return True
         except Exception as e:
             print("FAMILY B64 SEND ERROR", fam, repr(e))
@@ -1006,12 +1006,12 @@ def send_family_header(chat_id, fam, markup):
     url = FAMILY_IMAGES.get(fam)
     if url:
         try:
-            bot.send_photo(chat_id, url, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+            bot.send_photo(chat_id, url, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
             return True
         except Exception as e:
             print("FAMILY URL SEND ERROR", fam, repr(e))
     # 3. لو فشلت الصورة، ابعت نص
-    bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
+    bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
     return False
 
 def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
@@ -1075,7 +1075,7 @@ if bot:
             for order in orders[-30:]:
                 rows.append(f"📦 <b>{safe_html(order.get('product', 'منتج'))}</b>\n🔑 <code>{safe_html(order.get('item', ''))}</code>\n🕒 {safe_html(order.get('time', ''))}\n──────────────")
             body = "📜 سجل مشترياتي السابقة:\n\n" + "\n".join(rows)
-        bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+        bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
     @bot.message_handler(commands=["language"])
     def cmd_language(message):
@@ -1156,11 +1156,11 @@ if bot:
                 if info["stock"] > 0:
                     markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد - نبهني", callback_data="buy_" + key))
-            markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
+            markup.add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
             fid = get_stored_image_id(fam=fam)
             sent = False
-            caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:"
+            caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>"
             if fid:
                 try:
                     bot.send_photo(chat_id, fid, caption=caption, reply_markup=markup, parse_mode="HTML")
@@ -1184,7 +1184,7 @@ if bot:
                 InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"),
                 InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
                 InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"),
-                InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")
+                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
             )
             bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup)
         elif data == "show_apis":
@@ -1193,7 +1193,7 @@ if bot:
             for key, info in products.items():
                 if "api" in info["name"].lower() and info["stock"] > 0:
                     markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
         elif data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
@@ -1218,19 +1218,19 @@ if bot:
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
-            bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            bot.answer_callback_query(call.id, "❌ المنتج نفد من المخزون.", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر حالياً.", show_alert=True)
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
             bot.answer_callback_query(call.id)
             if not info:
-                bot.send_message(chat_id, "تعذر العثور على المنتج. حدّث القائمة وحاول مجدداً.")
+                bot.send_message(chat_id, "تعذر العثور على المنتج. يرجى تحديث القائمة والمحاولة مرة أخرى.")
                 return
             if info["stock"] <= 0:
                 # المنتج خلصان: ابعت صفحته كاملة + زرار "نبهني لما يرجع" تحت الوصف
-                markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 نبهني لما الكمية ترجع", callback_data="notify_" + key))
+                markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند توفر المنتج", callback_data="notify_" + key))
                 markup_sold.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
                 try:
                     bot.delete_message(chat_id, msg_id)
@@ -1240,16 +1240,16 @@ if bot:
                 return
             # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
             if info["price"] <= 0 and info.get("family") != "tests":
-                bot.send_message(chat_id, "⚠ هذا المنتج مجاني/تجريبي ولم يتم تفعيل تسليمه. تواصل مع الإدارة.")
+                bot.send_message(chat_id, "⚠ هذا المنتج غير مفعّل. يرجى التواصل مع الدعم.")
                 notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(key)})")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
             # لو منتج تيست مجاني، الزرار يبقى تجربة مجانية مش دفع
             if info.get("family") == "tests" and info["price"] <= 0:
-                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية - استلم الآن", callback_data="pay_" + key))
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية", callback_data="pay_" + key))
             else:
-                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + key))
-            markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع", callback_data="pay_" + key))
+            markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             try:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
@@ -1261,24 +1261,24 @@ if bot:
             info = products.get(key)
             bot.answer_callback_query(call.id)
             if not info:
-                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                bot.send_message(chat_id, "تعذر العثور على المنتج. يرجى تحديث القائمة والمحاولة مرة أخرى.")
                 return
             added = add_notify_request(key, chat_id)
             if added:
-                bot.send_message(chat_id, f"✅ تمام! أول ما كمية <b>{safe_html(info['name'])}</b> ترجع، هبعتلك إشعار على طول.\n\nمش هبعتلك أي إشعار تاني غير ده.", parse_mode="HTML")
+                bot.send_message(chat_id, f"✅ تم تسجيل طلب التنبيه بنجاح.\nسيتم إشعارك عند توفر المنتج: <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
             else:
-                bot.send_message(chat_id, f"ℹ️ انت بالفعل مسجل للتنبيه لما كمية <b>{safe_html(info['name'])}</b> ترجع.", parse_mode="HTML")
+                bot.send_message(chat_id, "ℹ️ طلب التنبيه مسجّل مسبقاً لهذا المنتج.", parse_mode="HTML")
             return
         elif data.startswith("pay_"):
             key = data[4:]
             info = products.get(key)
             bot.answer_callback_query(call.id)
             if not info:
-                bot.send_message(chat_id, "تعذر تحديد المنتج. ارجع للقائمة وحاول مجدداً.")
+                bot.send_message(chat_id, "تعذر تحديد المنتج. يرجى المحاولة مرة أخرى.")
                 return
             # ===== منتج تيست مجاني: تسليم فوري من غير دفع =====
             if info.get("family") == "tests" and info["price"] <= 0:
-                bot.send_message(chat_id, "🧪 جاري تجهيز منتج التجربة المجاني...")
+                bot.send_message(chat_id, "🧪 جارٍ التجهيز...")
                 # اطلب من المورد مباشرة بدون Binance
                 result = purchase_order_from_supplier(key, f"free_test_{chat_id}_{int(time.time())}")
                 if not result["success"]:
@@ -1286,7 +1286,7 @@ if bot:
                     return
                 delivery = extract_delivery_data(result["data"])
                 if not delivery:
-                    bot.send_message(chat_id, "⚠ تم طلب التجربة لكن بيانات التسليم لم تصل. تم إشعار الإدارة.")
+                    bot.send_message(chat_id, "⚠ لم تصل بيانات التسليم. تم إشعار الإدارة.")
                     notify_admin(f"⚠ طلب تيست مجاني بدون بيانات: {safe_html(info['name'])} - زبون {chat_id}")
                     return
                 orders = load_orders()
@@ -1296,11 +1296,11 @@ if bot:
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             if info["price"] <= 0:
-                bot.send_message(chat_id, "تعذر تحديد المنتج. ارجع للقائمة وحاول مجدداً.")
+                bot.send_message(chat_id, "تعذر تحديد المنتج. يرجى المحاولة مرة أخرى.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
             pay_msg = (f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
-            bot.edit_message_text(pay_msg, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.edit_message_text(pay_msg, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             orders = load_orders().get(str(chat_id), [])
@@ -1308,7 +1308,7 @@ if bot:
                 body = "📜 لا توجد طلبات."
             else:
                 body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
-            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "main_menu":
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
@@ -1338,7 +1338,7 @@ if bot:
                     found += 1
                     if info["stock"] > 0:
                         markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
-            markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج لـ: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
             return
         if chat_id not in USER_SELECTED_PRODUCT:
