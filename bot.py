@@ -933,6 +933,38 @@ def send_home(chat_id):
     bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
 
+
+def get_product_system(info):
+    """يطلع نظام المنتج من الاسم والوصف عشان يبان من بره"""
+    text = f"{info.get('name','')} {info.get('description','')}".lower()
+    # المدة
+    duration = ""
+    if "سنة" in text or "year" in text or "سنوي" in text or "12 شهر" in text or "12month" in text:
+        duration = "سنة"
+    elif "6 شهور" in text or "6 month" in text:
+        duration = "6 شهور"
+    elif "3 شهور" in text or "3 month" in text:
+        duration = "3 شهور"
+    elif "شهر" in text or "month" in text or "30 يوم" in text:
+        duration = "شهر"
+    elif "أسبوع" in text or "week" in text:
+        duration = "أسبوع"
+    elif "يوم" in text or "day" in text:
+        duration = "يوم"
+    elif "مدى الحياة" in text or "lifetime" in text:
+        duration = "مدى الحياة"
+    # النوع: خاص / مشترك
+    kind = ""
+    if "خاص" in text or "private" in text or "شخصي" in text:
+        kind = "خاص"
+    elif "مشترك" in text or "shared" in text:
+        kind = "مشترك"
+    # اجمعهم
+    parts = [p for p in [duration, kind] if p]
+    if parts:
+        return " - ".join(parts)
+    return "اشتراك"
+
 def send_family_header(chat_id, fam, markup):
     fid = get_stored_image_id(fam=fam)
     if fid:
@@ -1094,16 +1126,17 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # رسالة واحدة بس: صورة القسم فوق + كل منتجاتها تحت بعض في نفس الرسالة
+            # جوه العائلة: كل منتج في صف كامل لوحده تحت التاني - اسمه + نظامه + سعره من بره
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
             found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
             for key, info in found_sorted:
-                # كل منتج في سطر لوحده - اسمه كامل
+                system = get_product_system(info)
                 if info["stock"] > 0:
-                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} · ${info['price']}", callback_data="buy_" + key))
+                    # صف كامل: الاسم | النظام | السعر
+                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} (نفد)", callback_data="sold_out_" + key))
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="sold_out_" + key))
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
             try:
