@@ -1,7 +1,7 @@
 import os
 import time
 
-# توقيت الجزائر (GMT+1) - السيرفر على UTC فيسبب فرق ساعة
+# عرض التوقيت بتوقيت الجزائر (GMT+1) - عرض فقط، لا يغيّر التسليم
 try:
     from zoneinfo import ZoneInfo
     ALGIERS_TZ = ZoneInfo("Africa/Algiers")
@@ -514,7 +514,7 @@ def fetch_supplier_products(force_refresh=False):
                     and ("month" in _nl or "شهر" in _nl or "اشهر" in _nl or "أشهر" in _nl)
                 )
                 if _is_gemini_plus_6m and family_tmp != "tests":
-                    # Gemini Plus 6 أشهر: سعر المورّد + 0.5
+                    # Gemini Plus 6 أشهر: سعر المورّد + 0.5 دولار - فقط هذا المنتج
                     price = round(cost + 0.5, 2)
             except (TypeError, ValueError):
                 price = 0.0
@@ -1384,7 +1384,7 @@ if bot:
             if not orders:
                 body = "📜 لا توجد طلبات."
             else:
-                body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 طلب رقم: <b>#{safe_html(str(o.get('order_id') or o.get('reference') or '—'))}</b>\n📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
+                body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
             try:
                 bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             except Exception:
@@ -1494,7 +1494,7 @@ if bot:
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             orders = load_orders()
-            orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "order_id": str(result.get('order_id') or reference), "status": "delivered", "time": algiers_now_str()})
+            orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
             save_orders(orders)
             _order_id = str(result.get('order_id') or result.get('orderId') or reference or "—")
             delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(_order_id)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 مرجع الدفع: <code>{safe_html(reference)}</code>\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ برقم الطلب للرجوع إليه عند وجود أي مشكلة.")
