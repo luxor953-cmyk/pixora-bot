@@ -243,16 +243,27 @@ def extract_image_url(item):
         if isinstance(v,str) and v.startswith("http") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg",".jpeg",".png",".webp"]): return v.strip()
     return ""
 
-# ===== وصف المورد: من غير رموز - ترقيم فقط =====
+# ===== وصف المورد: مفيش إيموجي خالص - الإيموجي يتبدل بشرطة - =====
 def _clean_desc_line(s):
-    # شيل كل الإيموجي والرموز، وسيب الحروف والأرقام وعلامات بسيطة
     import re as _re
-    # شيل الإيموجي
-    s = _re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF\u2700-\u27BF\uFE0F\u200D]+', '', s)
-    # شيل الرموز المزعجة اللي كانت بتخلي الوصف مرعب
-    for ch in ['✅','✔','✓','⚠','🚨','⏳','👤','🛡','📩','📦','🔔','💰','🏷','📝','🔑','•','●','▪','▫','➤','▶','»','«','★','☆','⚡','🔥','💎','📌','📋']:
-        s = s.replace(ch, '')
-    s = s.strip(' -:;•. ')
+    # 1. شيل إيموجي تليجرام المخصص
+    s = _re.sub(r'<tg-emoji[^>]*>.*?</tg-emoji>', '', s, flags=_re.DOTALL)
+    s = _re.sub(r'<tg-emoji[^>]*/?>', '', s)
+    s = s.replace('<tg-emoji>', '').replace('</tg-emoji>', '')
+    # 2. شيل أي تاج HTML
+    s = _re.sub(r'<[^>]+>', '', s)
+    s = _re.sub(r'emoji-id="[^"]*"', '', s)
+    s = _re.sub(r'emoji-id=\S+', '', s)
+    # 3. أي إيموجي أو رمز في أول السطر أو في نصه يتبدل بشرطة -
+    # ⏳ ✅ ⚠ 🔹 • 🛡 🚫 وكل الإيموجي
+    s = _re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF\u2700-\u27BF\uFE0F\u200D]+', ' - ', s)
+    for ch in ['✅','✔','✓','⚠','🚨','⏳','👤','🛡','📩','📦','🔔','💰','🏷','📝','🔑','🔹','🔸','•','●','▪','▫','➤','▶','»','«','★','☆','⚡','🔥','💎','📌','📋','🚫']:
+        s = s.replace(ch, ' - ')
+    s = _re.sub(r'\s+', ' ', s)
+    # نظف الشرطات الزيادة في الأول والآخر، وسيب شرطة واحدة في الأول لو السطر كان فيه إيموجي
+    s = s.strip()
+    s = _re.sub(r'^(-\s*)+', '', s)  # هنضيف الشرطة بنفسنا بعدين بشكل موحد
+    s = s.strip(' :;•. ')
     s = _re.sub(r'\s+', ' ', s)
     return s.strip()
 
@@ -273,11 +284,10 @@ def get_product_system(info):
     return " - ".join(parts) if parts else "Subscription"
 
 def format_supplier_description(info):
-    """وصف المورد كما هو، لكن من غير رموز - ترقيم فقط.
-    لا يغير السعر ولا المدة، فقط ينظم العرض."""
+    """وصف المورد كما هو، لكن من غير أي إيموجي.
+    أي إيموجي يتبدل بشرطة - . لا يغير السعر ولا المدة."""
     raw=(info.get("description") or "").strip()
     name=(info.get("name") or "").strip()
-    # نظف كل سطر من الرموز
     lines=[]
     for l in raw.splitlines():
         s=_clean_desc_line(l)
@@ -286,36 +296,20 @@ def format_supplier_description(info):
         if "http" in low or "telegram" in low or "whatsapp" in low or "t.me" in low: continue
         if len(s) < 3: continue
         lines.append(s)
-    # لو الوصف الخام طويل ومفيد، نظمه بترقيم
-    # قسمه لأقسام: معلومات أساسية / مميزات / ضمان / مهم
+    # شيل التكرار + اسم المنتج لو اتكرر + عناوين مقطوعة لوحدها
+    seen=set(); uniq=[]
+    for l in lines:
+        k=l.lower()
+        if k in seen: continue
+        if k == name.lower(): continue
+        if k in ["first 1 hour","first 72 hours","warranty policy","important","features","fraud prevention"]: continue
+        seen.add(k); uniq.append(l)
+    lines=uniq[:16]
     if len(lines) >= 3:
-        # خد أول 12 سطر بس عشان الوصف ميبقاش مرعب
-        # شيل التكرار
-        seen=set(); uniq=[]
-        for l in lines:
-            k=l.lower()
-            if k in seen: continue
-            seen.add(k); uniq.append(l)
-        lines=uniq[:14]
-        # حاول تستخرج Duration / Account / Warranty / Delivery لو موجودين في الوصف
-        header=[]; body=[]
-        for l in lines:
-            ll=l.lower()
-            if any(k in ll for k in ["duration","مدة","account type","نوع الحساب","warranty","ضمان","delivery","التسليم"]):
-                header.append(l)
-            else:
-                body.append(l)
-        out=[]
-        if header:
-            for i, h in enumerate(header[:4], 1):
-                out.append(f"{i}. {h}")
-            out.append("")
-        if body:
-            out.append("Features:")
-            for i, b in enumerate(body[:6], 1):
-                out.append(f"{i}. {b}")
+        # كل سطر يبدأ بشرطة - ، من غير أي إيموجي ومن غير ترقيم
+        out=[f"- {l}" for l in lines]
         return "\n".join(out)
-    # لو المورد لم يرسل وصفا مفصلا، ابن وصفا مختصرا بترقيم فقط
+    # لو المورد لم يرسل وصفا مفصلا، ابن وصفا مختصرا بشرطة - فقط
     system=get_product_system(info)
     duration=system.split(" - ")[0] if system else "Subscription"
     nl=name.lower()
@@ -326,22 +320,25 @@ def format_supplier_description(info):
     base=name
     return (
         f"{base}\n\n"
-        f"1. Duration: {duration}\n"
-        f"2. Account Type: {acct}\n"
-        f"3. Warranty: 3 Days\n"
-        f"4. Delivery: Email + Password + 2FA\n\n"
-        f"Features:\n"
-        f"1. Pre-activated subscription\n"
-        f"2. Full access to {base} features\n"
-        f"3. Ready to use account\n"
-        f"4. Password and 2FA can be changed\n\n"
-        f"Warranty Policy:\n"
-        f"1. First 1 Hour: Warranty covers incorrect password and invalid 2FA codes\n"
-        f"2. First 72 Hours: Free replacement if account is deleted or deactivated\n\n"
-        f"Important after purchase:\n"
-        f"1. Change your password immediately\n"
-        f"2. Update your 2FA authentication\n"
-        f"3. Change the email to your personal email if available"
+        f"- Duration: {duration}\n"
+        f"- Account Type: {acct}\n"
+        f"- Warranty: 3 Days (72 Hours)\n"
+        f"- Delivery: Email + Password + 2FA\n"
+        f"- Pre-activated {base} subscription\n"
+        f"- Full access to {base} features\n"
+        f"- Ready to use account\n"
+        f"- Password and 2FA can be changed\n\n"
+        f"- WARRANTY POLICY\n"
+        f"- First 1 Hour: Warranty covers incorrect passwords and invalid 2FA codes\n"
+        f"- First 72 Hours: Free replacement if account is deleted or deactivated\n\n"
+        f"- IMPORTANT - AFTER PURCHASE\n"
+        f"- Change your password immediately\n"
+        f"- Update your 2FA authentication\n"
+        f"- Change the email to your personal email if available\n"
+        f"- Secure your account as soon as you receive it\n\n"
+        f"- FRAUD PREVENTION\n"
+        f"- False claims regarding incorrect passwords or 2FA after changing account credentials will not be accepted\n"
+        f"- Fraudulent buyers may be permanently banned from our store"
     )
 
 def fetch_supplier_products(force_refresh=False):
