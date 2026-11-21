@@ -123,6 +123,58 @@ FAMILY_NAMES = {
     "tests": "🧪 Test"
 }
 
+# أيقونات البراندات - الإيموجي الحقيقي اللي بيعبر عن هوية كل منتج
+# كل براند له إيموجي بلونه وشكله الأصلي قدر الإمكان
+BRAND_ICONS = {
+    # AI
+    "claude": "🧠", "chatgpt": "🤖", "openai": "🤖", "gemini": "✨", "google": "🔵",
+    "grok": "✖️", "perplexity": "🔍", "manus": "🤖", "gamma": "📊", "muse": "🎵",
+    # تصميم وفيديو
+    "canva": "🎨", "capcut": "🎬", "figma": "🎨", "framer": "🖼️", "leonardo": "🎨",
+    "runway": "🎬", "heygen": "🎥", "kling": "🎬", "higgsfield": "🎬", "descript": "🎙️",
+    "picsart": "🎨", "openart": "🎨", "gumloop": "🔄", "suno": "🎵",
+    # إنتاجية
+    "notion": "📝", "n8n": "⚡", "n8n2": "⚡", "airtable": "📊", "miro": "📌",
+    "wordwall": "🎮", "quizlet": "📚", "readwise": "📚", "granola": "📓",
+    "linear": "📐", "autodesk": "📐", "jetbrains": "🧑‍💻", "cursor": "💻",
+    "replit": "💻", "codex": "💻", "bolt": "⚡", "lovable": "💻",
+    "supercut": "✂️", "pangram": "✍️", "quillbot": "✍️", "text": "📝",
+    "langsmith": "🔗", "supabase": "🗄️", "resend": "📧", "factory": "🏭",
+    "arize": "📊", "posthog": "📊", "fin": "💰", "jam": "🎵",
+    # تعليم
+    "coursera": "🎓", "udemy": "🎓", "edx": "🎓", "duolingo": "🦉",
+    # موسيقى وفيديو
+    "spotify": "🎵", "youtube": "▶️", "hbo": "🎬", "crunchyroll": "🍥",
+    "apple": "🍎", "gmail": "📧", "outlook": "📧",
+    # VPN وأمان
+    "nordvpn": "🔒", "expressvpn": "🔒", "surfshark": "🦈", "hma": "🔒",
+    "avast": "🛡️", "sentry": "🛡️", "proton": "🔒", "vpn": "🔒",
+    # أعمال
+    "microsoft": "🪟", "office": "📄", "adobe": "🎨", "stripe": "💳",
+    "mercury": "🏦", "railway": "🚂", "linkedin": "💼", "trading": "📈",
+    "zoom": "📹", "discord": "💬", "intercom": "💬", "joinsecret": "🔐",
+    "scribd": "📚", "amazon": "📦", "osn": "📺", "king": "👑",
+    "mobbin": "📱", "wisp": "🌊", "warp": "🚀", "waking": "⏰",
+    "bide": "🔍", "ploy": "📦", "super": "⭐", "eleven": "🎙️",
+    "elevenlabs": "🎙️", "magic": "✨", "api": "🔑", "test": "🧪",
+    "chat": "💬",
+}
+def get_brand_icon(name):
+    n = (name or "").lower()
+    # أول تطابق لكلمة مفتاحية في الاسم
+    for key, icon in BRAND_ICONS.items():
+        if key in n:
+            return icon
+    return "📦"
+def get_product_icon(info):
+    # الأولوية: اسم المنتج، ثم العائلة
+    icon = get_brand_icon(info.get("name",""))
+    if icon != "📦":
+        return icon
+    fam = (info.get("family") or "").lower()
+    return get_brand_icon(fam)
+
+
 def family_sort_key(fam):
     # ترتيب أبجدي حقيقي: أزل الإيموجي والرموز، ورتب على الاسم فقط - Test دائماً في الآخر
     raw = FAMILY_NAMES.get(fam, fam)
@@ -493,9 +545,9 @@ def fetch_supplier_products(force_refresh=False):
             try:
                 cost = float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
                 family_tmp = get_product_family(str(name).strip())
-                # صنف Test: السعر 0 دائماً - تجربة مجانية
+                # صنف Test: بنفس سعر المورّد بدون ربح - كما كان
                 if family_tmp == "tests":
-                    price = 0.0
+                    price = round(cost, 2)
                 else:
                     # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
                     price = round(cost + 0.80, 2)
@@ -1207,10 +1259,13 @@ if bot:
             found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
             for key, info in found_sorted:
                 system = get_product_system(info)
+                _icon = get_product_icon(info)
                 if info["stock"] > 0:
-                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                    # سطر أخضر زي الفيديو: 🟩 في الأول والآخر + إيموجي البراند الحقيقي
+                    markup.add(InlineKeyboardButton(f"🟩 {_icon} {info['name']} | {system} | ${info['price']} 🟩", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
+                    # سطر أحمر زي الفيديو: 🟥 في الأول والآخر
+                    markup.add(InlineKeyboardButton(f"🟥 {_icon} {info['name']} | {system} | غير متوفر 🟥", callback_data="buy_" + key))
             markup.add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
             fid = get_stored_image_id(fam=fam)
             sent = False
@@ -1443,10 +1498,13 @@ if bot:
             found = len(scored)
             for _, key, info in scored:
                 system = get_product_system(info)
+                _icon = get_product_icon(info)
                 if info["stock"] > 0:
-                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                    # سطر أخضر زي الفيديو: 🟩 في الأول والآخر + إيموجي البراند الحقيقي
+                    markup.add(InlineKeyboardButton(f"🟩 {_icon} {info['name']} | {system} | ${info['price']} 🟩", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
+                    # سطر أحمر زي الفيديو: 🟥 في الأول والآخر
+                    markup.add(InlineKeyboardButton(f"🟥 {_icon} {info['name']} | {system} | غير متوفر 🟥", callback_data="buy_" + key))
             markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             if found:
                 bot.send_message(chat_id, f"🔍 نتائج البحث عن: <b>{safe_html(_txt)}</b>\nعدد النتائج: <b>{found}</b>", reply_markup=markup, parse_mode="HTML")
