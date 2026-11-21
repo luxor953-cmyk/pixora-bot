@@ -43,6 +43,7 @@ SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
 SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
+WALLETS_FILE = os.environ.get("WALLETS_FILE", "wallets.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -50,6 +51,9 @@ USER_WAITING_FOR_SEARCH = {}
 ADMIN_WAITING_IMAGE = {}
 USER_LANGUAGES = {}
 USER_PROCESSING = set()
+USER_SELECTED_QUANTITY = {}
+USER_WAITING_WALLET_DEPOSIT = {}
+USER_WAITING_WALLET_CUSTOM = set()
 _PRODUCTS_CACHE = {"data": {}, "time": 0}
 CACHE_TTL = 60
 
@@ -160,6 +164,74 @@ def add_notify_request(pid,cid):
     d=load_notify_requests(); lst=d.get(str(pid),[])
     if cid not in lst: lst.append(cid); d[str(pid)]=lst; save_notify_requests(d); return True
     return False
+
+# ===== المحفظة - ملف مستقل، لا يمس الشغل القديم =====
+def load_wallets():
+    if not os.path.exists(WALLETS_FILE): return {}
+    try:
+        with open(WALLETS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f); return d if isinstance(d, dict) else {}
+    except Exception: return {}
+def save_wallets(d):
+    try:
+        tmp = WALLETS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, WALLETS_FILE)
+    except Exception as e: print("WALLETS SAVE", e)
+def get_wallet_balance(chat_id):
+    w = load_wallets()
+    try: return round(float(w.get(str(chat_id), {}).get("balance", 0)), 2)
+    except Exception: return 0.0
+def add_wallet_balance(chat_id, amount, reason="deposit"):
+    w = load_wallets(); k = str(chat_id)
+    cur = w.get(k, {"balance": 0.0, "history": []})
+    try: bal = float(cur.get("balance", 0))
+    except Exception: bal = 0.0
+    bal = round(bal + float(amount), 2)
+    cur["balance"] = bal
+    hist = cur.get("history", [])
+    hist.append({"type": reason, "amount": round(float(amount), 2), "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+    cur["history"] = hist[-50:]
+    w[k] = cur; save_wallets(w); return bal
+def deduct_wallet_balance(chat_id, amount):
+    w = load_wallets(); k = str(chat_id)
+    cur = w.get(k, {"balance": 0.0, "history": []})
+    try: bal = float(cur.get("balance", 0))
+    except Exception: bal = 0.0
+    if bal + 1e-9 < float(amount): return None
+    bal = round(bal - float(amount), 2)
+    cur["balance"] = bal
+    hist = cur.get("history", [])
+    hist.append({"type": "purchase", "amount": -round(float(amount), 2), "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+    cur["history"] = hist[-50:]
+    w[k] = cur; save_wallets(w); return bal
+def wallet_cashback_for(amount):
+    # كل 25 دولار شحن = 1 دولار كاش باك
+    try: return int(float(amount) // 25)
+    except Exception: return 0
+
+def get_quantity_markup(key, info, qty):
+    total = round(info["price"] * qty, 2)
+    mk = InlineKeyboardMarkup()
+    mk.row(
+        InlineKeyboardButton("➖", callback_data=f"qty_dec_{key}"),
+        InlineKeyboardButton(f"الكمية: {qty}", callback_data="qty_noop"),
+        InlineKeyboardButton("➕", callback_data=f"qty_inc_{key}"),
+    )
+    mk.row(InlineKeyboardButton(f"💰 الدفع من المحفظة - ${total}", callback_data=f"pay_wallet_{key}"))
+    mk.row(InlineKeyboardButton(f"🪙 الدفع عبر Binance - ${total}", callback_data=f"pay_{key}"))
+    mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+    return mk
+
+def get_wallet_markup():
+    mk = InlineKeyboardMarkup()
+    mk.row(InlineKeyboardButton("💳 شحن 5$", callback_data="wallet_dep_5"), InlineKeyboardButton("💳 شحن 10$", callback_data="wallet_dep_10"))
+    mk.row(InlineKeyboardButton("💳 شحن 25$ + 1$ هدية", callback_data="wallet_dep_25"), InlineKeyboardButton("💳 شحن 50$ + 2$ هدية", callback_data="wallet_dep_50"))
+    mk.row(InlineKeyboardButton("💳 شحن 100$ + 4$ هدية", callback_data="wallet_dep_100"), InlineKeyboardButton("✏️ مبلغ آخر", callback_data="wallet_dep_custom"))
+    mk.row(InlineKeyboardButton("📜 سجل المحفظة", callback_data="wallet_history"))
+    mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+    return mk
+
 def load_image_ids():
     if not os.path.exists(IMAGE_IDS_FILE): return {}
     try:
@@ -460,12 +532,15 @@ def lookup_supplier_order(key):
     try: d=r.json()
     except Exception: d={}
     return r.status_code,d
-def purchase_order_from_supplier(product_id,payment_reference):
+def purchase_order_from_supplier(product_id,payment_reference,quantity=1):
     if not RESELLER_KEY: return {"success":False,"error":"RESELLER_KEY غير مضبوط."}
     pv=int(product_id) if str(product_id).isdigit() else product_id
     key=f"pixora_{payment_reference}_{product_id}"[:120]
     headers={"X-Reseller-Key":RESELLER_KEY,"Content-Type":"application/json","Accept":"application/json"}
-    payload={"product_id":pv,"quantity":1,"idempotency_key":key}
+    try: q=int(quantity)
+    except Exception: q=1
+    if q<1: q=1
+    payload={"product_id":pv,"quantity":q,"idempotency_key":key}
     data={}; order=None; order_id=None
     try:
         resp=requests.post(f"{VENTEBOT_API_URL}/orders",json=payload,headers=headers,timeout=30)
@@ -565,8 +640,9 @@ def get_main_menu_markup(chat_id,is_admin=False):
             if info["stock"]>0: btns.append(InlineKeyboardButton(f"🟩 {ic} {info['name']} · ${info['price']}",callback_data="buy_"+k))
             else: btns.append(InlineKeyboardButton(f"🟥 {ic} {info['name']} · غير متوفر",callback_data="buy_"+k))
         mk.row(*btns)
-    mk.row(InlineKeyboardButton(t["search"],callback_data="search_product"),InlineKeyboardButton(t["orders"],callback_data="my_orders"))
-    mk.row(InlineKeyboardButton(t["deposit"],callback_data="payment_methods"),InlineKeyboardButton(t["support"],url=SUPPORT_WHATSAPP))
+    mk.row(InlineKeyboardButton("💰 محفظتي",callback_data="wallet_home"),InlineKeyboardButton(t["orders"],callback_data="my_orders"))
+    mk.row(InlineKeyboardButton(t["search"],callback_data="search_product"),InlineKeyboardButton(t["deposit"],callback_data="payment_methods"))
+    mk.row(InlineKeyboardButton(t["support"],url=SUPPORT_WHATSAPP))
     mk.row(InlineKeyboardButton(t["api"],callback_data="show_apis"),InlineKeyboardButton(t["lang"],callback_data="menu_lang"))
     if is_admin: mk.row(InlineKeyboardButton(t["admin"],callback_data="admin_panel"))
     return mk
@@ -723,12 +799,114 @@ if bot:
             if info["price"]<=0 and info.get("family")!="tests":
                 bot.send_message(cid,"⚠ هذا المنتج غير مفعّل. يرجى التواصل مع الدعم."); notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(k)})"); return
             USER_SELECTED_PRODUCT[cid]=k
+            USER_SELECTED_QUANTITY[cid]=1
             if info.get("family")=="tests" and info["price"]<=0: mk=InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية",callback_data="pay_"+k))
-            else: mk=InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع",callback_data="pay_"+k))
+            else: mk=get_quantity_markup(k, info, 1)
             mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu"))
             try: bot.delete_message(cid,msg_id)
             except Exception: pass
             send_product_card(cid,info,mk)
+
+        elif data == "qty_noop":
+            bot.answer_callback_query(call.id); return
+        elif data.startswith("qty_inc_") or data.startswith("qty_dec_"):
+            is_inc = data.startswith("qty_inc_")
+            k = data[8:] if is_inc else data[8:]
+            # qty_inc_ length 8, qty_dec_ length 8 - both 8
+            info = products.get(k); bot.answer_callback_query(call.id)
+            if not info: return
+            cur = int(USER_SELECTED_QUANTITY.get(cid, 1))
+            if is_inc:
+                if cur >= max(1, int(info["stock"])):
+                    bot.send_message(cid, f"⚠ الكمية المتوفرة {info['stock']} فقط.")
+                    return
+                cur += 1
+            else:
+                if cur <= 1: return
+                cur -= 1
+            USER_SELECTED_QUANTITY[cid] = cur
+            USER_SELECTED_PRODUCT[cid] = k
+            try: bot.delete_message(cid, msg_id)
+            except Exception: pass
+            # اعرض الكارت من جديد بالكمية الجديدة - من غير ما نغير السعر الأساسي
+            mk2 = get_quantity_markup(k, info, cur)
+            # رسالة الكمية فوق الكارت
+            bot.send_message(cid, f"📦 <b>{safe_html(info['name'])}</b>\nالكمية: <b>{cur}</b> | الإجمالي: <b>${round(info['price']*cur,2)}</b>", reply_markup=mk2, parse_mode="HTML")
+            return
+        elif data == "wallet_home":
+            bot.answer_callback_query(call.id)
+            bal = get_wallet_balance(cid)
+            try: bot.delete_message(cid, msg_id)
+            except Exception: pass
+            bot.send_message(cid, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${bal}</b>\n\n- اشحن محفظتك مرة واحدة واشتري منها على طول\n- كل 25$ شحن تاخد 1$ كاش باك\n- لو حصل مشكلة في التسليم، الفلوس بترجع لمحفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
+            return
+        elif data == "wallet_history":
+            bot.answer_callback_query(call.id)
+            w = load_wallets().get(str(cid), {"balance": 0.0, "history": []})
+            hist = w.get("history", [])[-15:]
+            if not hist: body = "📜 لا توجد حركات في المحفظة بعد."
+            else:
+                rows = []
+                for h in reversed(hist):
+                    sign = "+" if h.get("amount", 0) >= 0 else ""
+                    rows.append(f"{sign}${h.get('amount')} - {h.get('type')} - {h.get('time')}")
+                body = "📜 سجل المحفظة:\n" + "\n".join(rows)
+            bot.send_message(cid, body, reply_markup=get_wallet_markup(), parse_mode="HTML")
+            return
+        elif data.startswith("wallet_dep_"):
+            bot.answer_callback_query(call.id)
+            if data == "wallet_dep_custom":
+                USER_WAITING_WALLET_CUSTOM.add(cid)
+                bot.send_message(cid, "✏️ اكتب المبلغ اللي عايز تشحنه بالدولار (مثال: 30):", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")))
+                return
+            try: amt = float(data.replace("wallet_dep_", ""))
+            except Exception: amt = 0
+            if amt <= 0: return
+            USER_WAITING_WALLET_DEPOSIT[cid] = amt
+            bonus = wallet_cashback_for(amt)
+            extra = f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد اللي هيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
+            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا."
+            try: bot.delete_message(cid, msg_id)
+            except Exception: pass
+            bot.send_message(cid, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            return
+        elif data.startswith("pay_wallet_"):
+            k = data[len("pay_wallet_"):]; info = products.get(k); bot.answer_callback_query(call.id)
+            if not info: bot.send_message(cid, "تعذر تحديد المنتج."); return
+            qty = int(USER_SELECTED_QUANTITY.get(cid, 1))
+            if qty < 1: qty = 1
+            if qty > int(info["stock"]):
+                bot.send_message(cid, f"⚠ الكمية المتوفرة {info['stock']} فقط. قلل الكمية وحاول تاني."); return
+            total = round(info["price"] * qty, 2)
+            bal = get_wallet_balance(cid)
+            if bal + 1e-9 < total:
+                bot.send_message(cid, f"⚠ رصيدك <b>${bal}</b> مش كفاية. الإجمالي <b>${total}</b>. اشحن محفظتك الأول.", reply_markup=get_wallet_markup(), parse_mode="HTML"); return
+            if cid in USER_PROCESSING: bot.send_message(cid, "⏳ طلبك قيد المعالجة."); return
+            USER_PROCESSING.add(cid)
+            try:
+                new_bal = deduct_wallet_balance(cid, total)
+                bot.send_message(cid, f"⏳ جاري إرسال الطلب للمورد... تم خصم <b>${total}</b> من محفظتك. رصيدك الجديد: <b>${new_bal}</b>")
+                ref = f"wallet_{cid}_{int(time.time())}"
+                result = purchase_order_from_supplier(k, ref, quantity=qty)
+                if not result["success"]:
+                    # رجع الفلوس للمحفظة
+                    add_wallet_balance(cid, total, reason="refund_failed_delivery")
+                    notify_admin(f"🚨 <b>دفع من المحفظة لكن طلب المورد فشل - تم الاسترجاع</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}\nالكمية: {qty}\nالمبلغ: ${total} - تم إرجاعه للمحفظة")
+                    bot.send_message(cid, "✅ تم إرجاع المبلغ لمحفظتك لأن المورد لم يؤكد الطلب. لا تدفع مرة تانية.", reply_markup=get_main_menu_markup(cid, is_admin)); return
+                delivery = extract_delivery_data(result["data"])
+                if not delivery:
+                    add_wallet_balance(cid, total, reason="refund_no_delivery")
+                    notify_admin(f"⚠ <b>دفع من المحفظة لكن بدون بيانات تسليم - تم الاسترجاع</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}")
+                    bot.send_message(cid, "✅ تم إرجاع المبلغ لمحفظتك لأن بيانات التسليم لم تصل. تم إشعار الإدارة."); return
+                orders = load_orders(); orders.setdefault(str(cid), []).append({"product": info["name"], "item": delivery, "reference": ref, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S"), "quantity": qty}); save_orders(orders)
+                oid = str(result.get("order_id") or ref or "—")
+                dm = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{qty}</b>\n💰 الإجمالي: <b>${total}</b> (من المحفظة)\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>")
+                bot.send_message(cid, dm, parse_mode="HTML", reply_markup=get_main_menu_markup(cid, cid == ADMIN_ID))
+                USER_SELECTED_PRODUCT.pop(cid, None); USER_SELECTED_QUANTITY.pop(cid, None)
+            except Exception as e:
+                print("WALLET PAY ERROR", repr(e)); bot.send_message(cid, "حدث خطأ أثناء معالجة الطلب من المحفظة. تم إشعار الإدارة.")
+            finally: USER_PROCESSING.discard(cid)
+            return
         elif data.startswith("notify_"):
             k=data[7:]; info=products.get(k); bot.answer_callback_query(call.id)
             if not info: bot.send_message(cid,"تعذر العثور على المنتج. يرجى تحديث القائمة والمحاولة مرة أخرى."); return
@@ -747,7 +925,7 @@ if bot:
                 orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":delivery,"reference":"FREE_TEST","status":"delivered","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders)
                 bot.send_message(cid,f"🎉 <b>تجربة مجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>",parse_mode="HTML",reply_markup=get_main_menu_markup(cid,is_admin)); USER_SELECTED_PRODUCT.pop(cid,None); return
             if info["price"]<=0: bot.send_message(cid,"تعذر تحديد المنتج. يرجى المحاولة مرة أخرى."); return
-            USER_SELECTED_PRODUCT[cid]=k; pay_msg=(f"🪙 إتمام الدفع\n\n📦 المنتج: <b>{safe_html(info['name'])}</b>\n💰 المبلغ: <b>${info['price']} USDT</b>\n\nقم بالتحويل إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
+            USER_SELECTED_PRODUCT[cid]=k; _q=int(USER_SELECTED_QUANTITY.get(cid,1)); _tot=round(info["price"]*_q,2); pay_msg=(f"🪙 إتمام الدفع\n\n📦 المنتج: <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{_q}</b>\n💰 المبلغ: <b>${_tot} USDT</b>\n\nقم بالتحويل إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
             pm=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu"))
             try: bot.delete_message(cid,msg_id)
             except Exception: pass
@@ -771,6 +949,34 @@ if bot:
     def handle_incoming(message):
         cid=message.chat.id
         if message.text and message.text.startswith("/"): return
+        # شحن محفظة: مبلغ مخصص
+        if cid in USER_WAITING_WALLET_CUSTOM:
+            USER_WAITING_WALLET_CUSTOM.discard(cid)
+            try: amt=float((message.text or "").strip().replace("$",""))
+            except Exception: amt=0
+            if amt < 1:
+                bot.send_message(cid, "❌ اكتب مبلغ صحيح، 1$ على الأقل."); return
+            USER_WAITING_WALLET_DEPOSIT[cid]=amt
+            bonus=wallet_cashback_for(amt)
+            extra=f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
+            bot.send_message(cid, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا.", parse_mode="HTML")
+            return
+        # شحن محفظة: استقبال رقم العملية
+        if cid in USER_WAITING_WALLET_DEPOSIT:
+            amt=USER_WAITING_WALLET_DEPOSIT.get(cid,0)
+            ref=(message.text or "").strip()
+            if not re.match(r"^[A-Za-z0-9_-]{8,}$", ref):
+                bot.send_message(cid, "❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل."); return
+            USER_WAITING_WALLET_DEPOSIT.pop(cid,None)
+            bot.send_message(cid, "⏳ جاري فحص عملية الدفع عبر Binance...")
+            pay=verify_binance_transaction(ref, amt)
+            if not pay["success"]:
+                bot.send_message(cid, f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}", parse_mode="HTML"); return
+            bonus=wallet_cashback_for(amt)
+            new_bal=add_wallet_balance(cid, amt, reason="deposit")
+            if bonus: new_bal=add_wallet_balance(cid, bonus, reason="cashback")
+            bot.send_message(cid, f"✅ <b>تم شحن المحفظة!</b>\n\n💰 شحنت: <b>${amt}</b>\n🎁 كاش باك: <b>${bonus}</b>\n💰 رصيدك الجديد: <b>${new_bal}</b>", parse_mode="HTML", reply_markup=get_main_menu_markup(cid, cid==ADMIN_ID))
+            return
         _txt=(message.text or "").strip(); _is_pay=cid in USER_SELECTED_PRODUCT and cid not in USER_PROCESSING; _looks=bool(re.match(r"^[A-Za-z0-9_-]{8,}$",_txt))
         if USER_WAITING_FOR_SEARCH.get(cid) or (not _is_pay and not _looks and len(_txt)>=2):
             USER_WAITING_FOR_SEARCH.pop(cid,None); query=_txt.lower()
@@ -806,10 +1012,10 @@ if bot:
             pk=USER_SELECTED_PRODUCT.get(cid); products=fetch_supplier_products(); info=products.get(pk)
             if not info: bot.send_message(cid,"تعذر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع."); return
             bot.send_message(cid,"⏳ جاري فحص عملية الدفع عبر Binance...")
-            pay=verify_binance_transaction(ref,info["price"])
+            _q2=int(USER_SELECTED_QUANTITY.get(cid,1)); _tot2=round(info["price"]*_q2,2); pay=verify_binance_transaction(ref, _tot2)
             if not pay["success"]: bot.send_message(cid,f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}",parse_mode="HTML"); return
             bot.send_message(cid,"✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورد...")
-            result=purchase_order_from_supplier(pk,ref)
+            result=purchase_order_from_supplier(pk,ref,quantity=_q2)
             if not result["success"]:
                 notify_admin(f"🚨 <b>دفع مؤكد لكن طلب المورد فشل</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(ref)}</code>\nالخطأ: <code>{safe_html(result.get('error','غير معروف')[:700])}</code>")
                 bot.send_message(cid,"✅ تم تأكيد الدفع، لكن المورد لم يؤكد إتمام الطلب. تم إشعار الإدارة، لا ترسل دفعة ثانية."); USER_SELECTED_PRODUCT.pop(cid,None); return
@@ -820,8 +1026,8 @@ if bot:
                 orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":"قيد المتابعة مع المورد - لم تصل بيانات التسليم بعد","reference":ref,"status":"pending_delivery","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders); USER_SELECTED_PRODUCT.pop(cid,None); return
             orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":delivery,"reference":ref,"status":"delivered","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders)
             oid=str(result.get('order_id') or ref or "—")
-            dm=(f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 مرجع الدفع: <code>{safe_html(ref)}</code>\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ برقم الطلب للرجوع إليه عند وجود أي مشكلة.")
-            bot.send_message(cid,dm,parse_mode="HTML",reply_markup=get_main_menu_markup(cid,cid==ADMIN_ID)); USER_SELECTED_PRODUCT.pop(cid,None)
+            dm=(f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{_q2}</b>\n💰 الإجمالي: <b>${_tot2}</b>\n🔢 مرجع الدفع: <code>{safe_html(ref)}</code>\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ برقم الطلب للرجوع إليه عند وجود أي مشكلة.")
+            bot.send_message(cid,dm,parse_mode="HTML",reply_markup=get_main_menu_markup(cid,cid==ADMIN_ID)); USER_SELECTED_PRODUCT.pop(cid,None); USER_SELECTED_QUANTITY.pop(cid,None)
         except Exception as e:
             print("PAYMENT HANDLER",repr(e)); notify_admin(f"🚨 خطأ غير متوقع أثناء معالجة طلب:\nالزبون: <code>{cid}</code>\n<code>{safe_html(str(e)[:700])}</code>"); bot.send_message(cid,"حدث خطأ أثناء معالجة الطلب. تم إشعار الإدارة. لا تعاود الدفع قبل التواصل مع الدعم.")
         finally: USER_PROCESSING.discard(cid)
