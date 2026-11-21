@@ -247,8 +247,7 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    # لا صورة افتراضية: لو مفيش صورة للمنتج، نرجع بدون صورة بدل ما نحط صورة منتج تاني بالغلط
-    return None
+    return "https://logo.clearbit.com/openai.com"
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -441,7 +440,7 @@ def send_photo_smart(chat_id, fam, info, caption, markup):
         except Exception as e:
             print("URL SEND ERROR", repr(e))
     bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
-    return True
+    return False
 
 
 def load_notify_requests():
@@ -941,19 +940,6 @@ def get_main_menu_markup(chat_id, is_admin=False):
             buttons.append(InlineKeyboardButton(label, callback_data=cb))
         markup.row(*buttons)
 
-    # ===== زرار المتجر (Web App) + الأزرار العادية - الاتنين شغالين مع بعض =====
-    # المتجر: صور حقيقية وسطور ملونة زي الفيديو - الدفع والاستلام نفسهم بالظبط
-    if WEBAPP_URL:
-        # زرار المتجر: لو WebApp مش مدعوم في نسخة المكتبة، نستخدم رابط عادي - المهم القايمة متقعش
-        try:
-            from telebot.types import WebAppInfo
-            markup.row(InlineKeyboardButton("🛍️ المتجر - صور وألوان", web_app=WebAppInfo(url=WEBAPP_URL.rstrip("/") + "/shop")))
-        except Exception as e:
-            print("WEBAPP BUTTON FALLBACK TO URL:", repr(e))
-            try:
-                markup.row(InlineKeyboardButton("🛍️ المتجر - صور وألوان", url=WEBAPP_URL.rstrip("/") + "/shop"))
-            except Exception:
-                pass
     # ===== أزرار الخدمات زي ما هي =====
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
@@ -1065,19 +1051,7 @@ def send_family_products_with_images(chat_id, fam, products):
 
 def send_home(chat_id):
     # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
-    # حماية: لو القايمة الكاملة فشلت، ابعت قايمة بسيطة بدل ما البوت يسكت
-    try:
-        bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
-    except Exception as e:
-        print("SEND_HOME ERROR, fallback to simple menu:", repr(e))
-        try:
-            _m = InlineKeyboardMarkup()
-            _m.add(InlineKeyboardButton("🔍 بحث", callback_data="search_product"))
-            _m.add(InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
-            bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=_m)
-        except Exception as e2:
-            print("SEND_HOME FALLBACK ERROR:", repr(e2))
-            bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"])
+    bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
 
 
 
@@ -1145,9 +1119,8 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
            f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
            f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
-    # send_photo_smart بيبعت رسالة واحدة (صورة أو نص) - كفاية، منبعتش رسالة تانية
-    send_photo_smart(chat_id, info.get("family"), info, msg, markup)
-    return True
+    if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
+        return True
     image = get_product_image(info)
     print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
     if image and image.startswith("http"):
@@ -1489,30 +1462,6 @@ if bot:
                 pass
             send_home(chat_id)
 
-    @bot.message_handler(content_types=["web_app_data"])
-    def handle_webapp_data(message):
-        # الزبون اختار منتج من المتجر - نكمل الدفع في البوت بنفس الطريقة
-        try:
-            import json as _json
-            data = _json.loads(message.web_app_data.data or "{}")
-            pid = str(data.get("product_id") or "")
-            if pid:
-                products = fetch_supplier_products()
-                info = products.get(pid)
-                if info:
-                    # ابعت كارت المنتج بنفس الطريقة العادية
-                    markup = InlineKeyboardMarkup()
-                    if info["stock"] > 0:
-                        markup.add(InlineKeyboardButton("🪙 إتمام الدفع", callback_data="pay_" + pid))
-                    else:
-                        markup.add(InlineKeyboardButton("🔔 تنبيه عند توفر المنتج", callback_data="notify_" + pid))
-                    markup.add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
-                    send_product_card(message.chat.id, info, markup)
-                    return
-        except Exception as e:
-            print("WEBAPP DATA ERROR", repr(e))
-        bot.send_message(message.chat.id, "تم استلام اختيارك من المتجر.")
-
     @bot.message_handler(content_types=["text", "photo"])
     def handle_incoming(message):
         chat_id = message.chat.id
@@ -1629,48 +1578,6 @@ def health_check():
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
-
-# ===== المتجر Web App - نفس المنتجات والأسعار والترتيب، بس بشكل الفيديو =====
-# الأزرار العادية والمتجر شغالين مع بعض - الدفع والاستلام يتمون في البوت فقط
-@app.route("/shop")
-def shop_page():
-    html = """<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <title>Pixora Shop</title><style>
-    body{font-family:system-ui;margin:0;background:#f2f2f2;padding:12px} .search{background:#2f7bff;color:#fff;padding:12px;border-radius:10px;text-align:center;font-weight:700}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
-    .card{border-radius:10px;padding:12px 6px;text-align:center;cursor:pointer;background:#e8f5e9;border:2px solid #2ecc71}
-    .card.sold{background:#fdecea;border-color:#e74c3c} .icon{font-size:28px} .name{font-size:13px;font-weight:700;margin-top:6px} .price{font-size:12px;color:#333;margin-top:4px}
-    .note{text-align:center;color:#666;font-size:12px;margin-top:12px}
-    </style></head><body><div class="search">🔍 بحث &nbsp;|&nbsp; 🛍️ متجر Pixora</div>
-    <div id="grid" class="grid">جارٍ تحميل المنتجات...</div>
-    <div class="note">اضغط على أي منتج لإتمام الدفع في البوت</div>
-    <script>
-    fetch('/api/products').then(r=>r.json()).then(d=>{
-      const g=document.getElementById('grid'); g.innerHTML='';
-      d.products.forEach(p=>{
-        const el=document.createElement('div'); el.className='card'+(p.stock>0?'':' sold');
-        el.innerHTML='<div class="icon">'+p.icon+'</div><div class="name">'+p.name+'</div><div class="price">'+(p.stock>0?('$'+p.price+' 🟢'):'غير متوفر 🔴')+'</div>';
-        el.onclick=()=>{ const tg=window.Telegram&&window.Telegram.WebApp; if(tg){ tg.sendData(JSON.stringify({action:'buy', product_id:p.id})); } else { window.location.href='https://t.me/PixoraShopBot?start='+p.id; } };
-        g.appendChild(el);
-      });
-    }).catch(()=>{ document.getElementById('grid').innerHTML='تعذر تحميل المنتجات'; });
-    </script></body></html>"""
-    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
-
-@app.route("/api/products")
-def api_products():
-    try:
-        prods = fetch_supplier_products()
-        out=[]
-        for k, v in prods.items():
-            out.append({"id": k, "name": v["name"], "price": v["price"], "stock": v["stock"], "family": v.get("family",""), "icon": get_product_icon(v)})
-        # نفس الترتيب: أبجدي، Test في الآخر - لا تغيير
-        out.sort(key=lambda x: (1 if x["family"]=="tests" else 0, x["name"].lower()))
-        return {"products": out}, 200
-    except Exception as e:
-        return {"products": [], "error": str(e)}, 200
-
 
 def keep_alive():
     while True:
