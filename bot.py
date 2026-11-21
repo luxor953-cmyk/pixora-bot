@@ -110,6 +110,15 @@ FAMILY_NAMES = {
     "tests": "🧪 Test"
 }
 
+# ترتيب العائلات أبجديًا على اسم البراند فقط، بدون الإيموجي
+# مثال: "🤖 ChatGPT" -> "chatgpt"، و "🧪 Test" يبقى آخر واحد دائمًا
+def family_sort_key(fam):
+    name = FAMILY_NAMES.get(fam, fam)
+    clean = re.sub(r"[^A-Za-z0-9 ]", "", name).strip().lower()
+    if not clean:
+        clean = str(fam).lower()
+    return (1 if fam == "tests" else 0, clean)
+
 # =========================================================
 # حل الصور: صور ثابتة من عندنا مش من المورّد
 # لأن المورّد مش بيبعت صور، سنعتمد على صور العائلة
@@ -874,7 +883,7 @@ def get_main_menu_markup(chat_id, is_admin=False):
 
     # ===== 1. العائلات: كل صف فيه 3 عائلات - زي ما كان =====
     # Test دايماً آخر صنف تحت لوحده
-    others = sorted([x for x in families_set if x != "tests"], key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    others = sorted([x for x in families_set if x != "tests"], key=family_sort_key)
     for i in range(0, len(others), 3):
         chunk = others[i:i+3]
         buttons = []
@@ -967,8 +976,8 @@ def send_main_menu_with_images(chat_id, is_admin=False):
         else:
             singles.append((key, info))
     # Test آخر واحد
-    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
-    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - اضغط علماذا لعرض منتجاته", parse_mode="HTML")
+    families_sorted = sorted(families_set, key=family_sort_key)
+    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - اضغط عليه لعرض منتجاته", parse_mode="HTML")
     for fam in families_sorted:
         name = FAMILY_NAMES.get(fam, fam)
         count = sum(1 for _, v in products.items() if v["family"] == fam)
@@ -1187,7 +1196,7 @@ if bot:
         if message.chat.id != ADMIN_ID:
             return
         markup = InlineKeyboardMarkup()
-        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: (1 if x[0]=="tests" else 0, x[1].lower())):
+        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: family_sort_key(x[0])):
             markup.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
         bot.send_message(message.chat.id, "🖼 <b>اختر القسم الذي تريد تغيير صورته، ثم أرسل الصورة:</b>", reply_markup=markup, parse_mode="HTML")
 
