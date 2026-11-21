@@ -247,7 +247,8 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    return "https://logo.clearbit.com/openai.com"
+    # لا صورة افتراضية: لو مفيش صورة للمنتج، نرجع بدون صورة بدل ما نحط صورة منتج تاني بالغلط
+    return None
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -440,7 +441,7 @@ def send_photo_smart(chat_id, fam, info, caption, markup):
         except Exception as e:
             print("URL SEND ERROR", repr(e))
     bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
-    return False
+    return True
 
 
 def load_notify_requests():
@@ -943,11 +944,16 @@ def get_main_menu_markup(chat_id, is_admin=False):
     # ===== زرار المتجر (Web App) + الأزرار العادية - الاتنين شغالين مع بعض =====
     # المتجر: صور حقيقية وسطور ملونة زي الفيديو - الدفع والاستلام نفسهم بالظبط
     if WEBAPP_URL:
+        # زرار المتجر: لو WebApp مش مدعوم في نسخة المكتبة، نستخدم رابط عادي - المهم القايمة متقعش
         try:
             from telebot.types import WebAppInfo
             markup.row(InlineKeyboardButton("🛍️ المتجر - صور وألوان", web_app=WebAppInfo(url=WEBAPP_URL.rstrip("/") + "/shop")))
-        except Exception:
-            pass
+        except Exception as e:
+            print("WEBAPP BUTTON FALLBACK TO URL:", repr(e))
+            try:
+                markup.row(InlineKeyboardButton("🛍️ المتجر - صور وألوان", url=WEBAPP_URL.rstrip("/") + "/shop"))
+            except Exception:
+                pass
     # ===== أزرار الخدمات زي ما هي =====
     markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
     markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
@@ -1059,7 +1065,19 @@ def send_family_products_with_images(chat_id, fam, products):
 
 def send_home(chat_id):
     # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
-    bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+    # حماية: لو القايمة الكاملة فشلت، ابعت قايمة بسيطة بدل ما البوت يسكت
+    try:
+        bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+    except Exception as e:
+        print("SEND_HOME ERROR, fallback to simple menu:", repr(e))
+        try:
+            _m = InlineKeyboardMarkup()
+            _m.add(InlineKeyboardButton("🔍 بحث", callback_data="search_product"))
+            _m.add(InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
+            bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=_m)
+        except Exception as e2:
+            print("SEND_HOME FALLBACK ERROR:", repr(e2))
+            bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"])
 
 
 
@@ -1127,8 +1145,9 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
            f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
            f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
-    if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
-        return True
+    # send_photo_smart بيبعت رسالة واحدة (صورة أو نص) - كفاية، منبعتش رسالة تانية
+    send_photo_smart(chat_id, info.get("family"), info, msg, markup)
+    return True
     image = get_product_image(info)
     print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
     if image and image.startswith("http"):
