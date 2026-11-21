@@ -1,7 +1,5 @@
 import os
 import time
-import io
-import base64
 import json
 import threading
 import html
@@ -10,1048 +8,1472 @@ import requests
 import hmac
 import hashlib
 from urllib.parse import urlencode
-from datetime import datetime
-
-try:
-    from zoneinfo import ZoneInfo
-    ALGIERS_TZ = ZoneInfo("Africa/Algiers")
-except Exception:
-    ALGIERS_TZ = None
-
-def algiers_now_str():
-    try:
-        if ALGIERS_TZ:
-            return datetime.now(ALGIERS_TZ).strftime("%d %b %Y, %H:%M")
-        return datetime.now().strftime("%d %b %Y, %H:%M")
-    except Exception:
-        return time.strftime("%d %b %Y, %H:%M")
 
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, BotCommand
+from telebot.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardRemove, BotCommand
+)
 from flask import Flask
 
+# =========================================================
+# إعدادات البيئة - أضف القيم في Environment على Render
+# =========================================================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "1004439571"))
 BINANCE_ID = os.environ.get("BINANCE_ID", "957483337").strip()
-SUPPORT_WHATSAPP = os.environ.get("SUPPORT_WHATSAPP", "https://wa.me/213555668244").strip()
+SUPPORT_WHATSAPP = os.environ.get(
+    "SUPPORT_WHATSAPP", "https://wa.me/213555668244"
+).strip()
+
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
-VENTEBOT_API_URL = os.environ.get("VENTEBOT_API_URL", "https://web-production-1c7b1.up.railway.app/api/reseller").strip().rstrip("/")
+VENTEBOT_API_URL = os.environ.get(
+    "VENTEBOT_API_URL",
+    "https://web-production-1c7b1.up.railway.app/api/reseller"
+).strip().rstrip("/")
+
 BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
 BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "").strip()
+
 ORDERS_FILE = os.environ.get("ORDERS_FILE", "orders.json")
 SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
 SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
-WALLETS_FILE = os.environ.get("WALLETS_FILE", "wallets.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
-ADMIN_WAITING_IMAGE = {}
+USER_QTY = {}
+ADMIN_WAITING_IMAGE = {}  # chat_id -> fam اللي مستني صورته
 USER_LANGUAGES = {}
 USER_PROCESSING = set()
-USER_SELECTED_QUANTITY = {}
-USER_WAITING_WALLET_DEPOSIT = {}
-USER_WAITING_WALLET_CUSTOM = set()
+
+# ===== Cache للمنتجات عشان البوت ميبقاش بطيء =====
 _PRODUCTS_CACHE = {"data": {}, "time": 0}
-CACHE_TTL = 60
+CACHE_TTL = 60  # ثانية
 
 LANG_TEXTS = {
-    "ar": {"welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر القسم أو المنتج المطلوب:", "search": "🔍 بحث عن منتج", "orders": "📜 مشترياتي", "deposit": "💳 شحن الرصيد / الدفع", "support": "🛠 الدعم الفني", "api": "🔑 خدمات API", "lang": "🌐 اللغة / Language", "admin": "🛠 لوحة تحكم الإدارة", "no_products": "⚠ لا توجد منتجات متاحة حالياً...", "sold_out": "نفد"},
-    "en": {"welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose a category or product:", "search": "🔍 Search Product", "orders": "📜 My Orders", "deposit": "💳 Top up / Payment", "support": "🛠 Support", "api": "🔑 API Services", "lang": "🌐 Language", "admin": "🛠 Admin Panel", "no_products": "⚠ No products available right now...", "sold_out": "Sold out"},
-    "fr": {"welcome": "🔥 Bienvenue sur Pixora Store Numérique !\n\nChoisissez une catégorie ou un produit :", "search": "🔍 Rechercher", "orders": "📜 Mes Commandes", "deposit": "💳 Recharger / Paiement", "support": "🛠 Support", "api": "🔑 Services API", "lang": "🌐 Langue", "admin": "🛠 Panneau Admin", "no_products": "⚠ Aucun produit disponible...", "sold_out": "Épuisé"}
+    "ar": {
+        "welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر القسم أو المنتج المطلوب:",
+        "search": "🔍 بحث عن منتج", "orders": "📜 مشترياتي",
+        "deposit": "💳 شحن الرصيد / الدفع", "support": "🛠 الدعم الفني",
+        "api": "🔑 خدمات API", "lang": "🌐 اللغة / Language",
+        "admin": "🛠 لوحة تحكم الإدارة", "no_products": "⚠ لا توجد منتجات متاحة حالياً...",
+        "sold_out": "نفد"
+    },
+    "en": {
+        "welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose a category or product:",
+        "search": "🔍 Search Product", "orders": "📜 My Orders",
+        "deposit": "💳 Top up / Payment", "support": "🛠 Support",
+        "api": "🔑 API Services", "lang": "🌐 Language",
+        "admin": "🛠 Admin Panel", "no_products": "⚠ No products available right now...",
+        "sold_out": "Sold out"
+    },
+    "fr": {
+        "welcome": "🔥 Bienvenue sur Pixora Store Numérique !\n\nChoisissez une catégorie ou un produit :",
+        "search": "🔍 Rechercher", "orders": "📜 Mes Commandes",
+        "deposit": "💳 Recharger / Paiement", "support": "🛠 Support",
+        "api": "🔑 Services API", "lang": "🌐 Langue",
+        "admin": "🛠 Panneau Admin", "no_products": "⚠ Aucun produit disponible...",
+        "sold_out": "Épuisé"
+    }
 }
-BANNED_KEYWORDS = ["spotify","anghami","netflix","shahid","disney","apple music","iptv","movie","film","music","osn","watchit","prime video","اغاني","موسيقى","أفلام","مسلسلات","سينما"]
-FAMILY_NAMES = {"chatgpt":"🤖 ChatGPT","claude":"🧠 Claude","google":"✨ Google","capcut":"🎬 CapCut","canva":"🎨 Canva","zoom":"📹 Zoom","elevenlabs":"🎙 ElevenLabs","gamma":"📊 Gamma","lovable":"💻 Lovable","microsoft":"🪟 Microsoft","miro":"📌 Miro","notion":"📝 Notion","quizlet":"📚 Quizlet","railway":"⚙ Railway","wordwall":"🎮 Wordwall","api_services":"🔑 API","vpn":"🔒 VPN","tests":"🧪 Test"}
-BRAND_ICONS = {"claude":"🧠","chatgpt":"🤖","openai":"🤖","gemini":"✨","google":"🔵","grok":"✖","perplexity":"🔍","manus":"🤖","gamma":"📊","muse":"🎵","canva":"🎨","capcut":"🎬","figma":"🎨","framer":"🖼","leonardo":"🎨","runway":"🎬","heygen":"🎥","kling":"🎬","higgsfield":"🎬","descript":"🎙","picsart":"🎨","openart":"🎨","gumloop":"🔄","suno":"🎵","notion":"📝","n8n":"⚡","airtable":"📊","miro":"📌","wordwall":"🎮","quizlet":"📚","readwise":"📚","granola":"📓","linear":"📐","autodesk":"📐","jetbrains":"🧑💻","cursor":"💻","replit":"💻","codex":"💻","bolt":"⚡","lovable":"💻","supercut":"✂","pangram":"✍","quillbot":"✍","text":"📝","langsmith":"🔗","supabase":"🗄","resend":"📧","factory":"🏭","arize":"📊","posthog":"📊","fin":"💰","jam":"🎵","coursera":"🎓","udemy":"🎓","edx":"🎓","duolingo":"🦉","spotify":"🎵","youtube":"▶","hbo":"🎬","crunchyroll":"🍥","apple":"🍎","gmail":"📧","outlook":"📧","nordvpn":"🔒","expressvpn":"🔒","surfshark":"🦈","hma":"🔒","avast":"🛡","sentry":"🛡","proton":"🔒","vpn":"🔒","microsoft":"🪟","office":"📄","adobe":"🎨","stripe":"💳","mercury":"🏦","railway":"🚂","linkedin":"💼","trading":"📈","zoom":"📹","discord":"💬","intercom":"💬","joinsecret":"🔐","scribd":"📚","amazon":"📦","osn":"📺","king":"👑","mobbin":"📱","wisp":"🌊","warp":"🚀","waking":"⏰","bide":"🔍","ploy":"📦","super":"⭐","eleven":"🎙","elevenlabs":"🎙","magic":"✨","api":"🔑","test":"🧪","chat":"💬"}
 
-def get_brand_icon(name):
-    n=(name or "").lower()
-    for k,v in BRAND_ICONS.items():
-        if k in n: return v
-    return "📦"
-def get_product_icon(info):
-    icon=get_brand_icon(info.get("name",""))
-    if icon!="📦": return icon
-    return get_brand_icon((info.get("family") or ""))
+BANNED_KEYWORDS = [
+    "spotify", "anghami", "netflix", "shahid", "disney", "apple music",
+    "iptv", "movie", "film", "music", "osn", "watchit", "prime video",
+    "اغاني", "موسيقى", "أفلام", "مسلسلات", "سينما"
+]
 
-def family_sort_key(fam):
-    raw=FAMILY_NAMES.get(fam,fam)
-    clean=re.sub(r"[^A-Za-z\u0600-\u06FF0-9 ]","",raw).strip().lower()
-    if not clean: clean=str(fam).lower()
-    return (1 if fam=="tests" else 0, clean)
+FAMILY_NAMES = {
+    "chatgpt": "🤖 ChatGPT",
+    "claude": "🧠 Claude",
+    "google": "✨ Google",
+    "capcut": "🎬 CapCut",
+    "canva": "🎨 Canva",
+    "zoom": "📹 Zoom",
+    "elevenlabs": "🎙 ElevenLabs",
+    "gamma": "📊 Gamma",
+    "lovable": "💻 Lovable",
+    "microsoft": "🪟 Microsoft",
+    "miro": "📌 Miro",
+    "notion": "📝 Notion",
+    "quizlet": "📚 Quizlet",
+    "railway": "⚙ Railway",
+    "wordwall": "🎮 Wordwall",
+    "api_services": "🔑 API",
+    "vpn": "🔒 VPN",
+    "tests": "🧪 Test"
+}
 
-FAMILY_IMAGES = {}
-FAMILY_IMAGES_B64 = {}
+# =========================================================
+# حل الصور: صور ثابتة من عندنا مش من المورد
+# لأن المورد مش بيبعت صور، هنعتمد على صور العائلة
+# لو عايز تغير صورة أي عائلة، غير اللينك اللي جنبها
+# =========================================================
+FAMILY_IMAGES = {
+    "chatgpt": "https://logo.clearbit.com/openai.com",
+    "claude": "https://logo.clearbit.com/anthropic.com",
+    "google": "https://logo.clearbit.com/google.com",
+    "capcut": "https://logo.clearbit.com/capcut.com",
+    "canva": "https://logo.clearbit.com/canva.com",
+    "zoom": "https://logo.clearbit.com/zoom.us",
+    "elevenlabs": "https://logo.clearbit.com/elevenlabs.io",
+    "gamma": "https://logo.clearbit.com/gamma.app",
+    "lovable": "https://logo.clearbit.com/lovable.dev",
+    "microsoft": "https://logo.clearbit.com/microsoft.com",
+    "miro": "https://logo.clearbit.com/miro.com",
+    "notion": "https://logo.clearbit.com/notion.so",
+    "quizlet": "https://logo.clearbit.com/quizlet.com",
+    "railway": "https://logo.clearbit.com/railway.app",
+    "wordwall": "https://logo.clearbit.com/wordwall.net",
+    "api_services": "https://logo.clearbit.com/openai.com",
+    "vpn": "https://cdn-icons-png.flaticon.com/512/3064/3064155.png",
+    "tests": "https://cdn-icons-png.flaticon.com/512/1828/1828640.png",
+}
+
+
+# صور جاهزة مدمجة جوه الكود - Claude / Google / Microsoft
+FAMILY_IMAGES_B64 = {
+    "claude": "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",
+    "google": "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",
+    "microsoft": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAJYA4QDASIAAhEBAxEB/8QAHAAAAgMBAQEBAAAAAAAAAAAAAQIAAwQFBgcI/8QARxAAAgEDAgIGBwUHAgUFAAIDAAECAwQRBRIhMQYTQVFhcRQiMoGRscFCUnKh0QcjM1NiguEVQyRjc5LwFjREg6IlVLLC8f/EABsBAQEBAQEBAQEAAAAAAAAAAAABAgMEBQYH/8QAMREBAQACAgEEAgEDAwMEAwAAAAECEQMSMQQTIUEFUSIGMmEUcaEjQpEzgbHwFRZS/9oADAMBAAIRAxEAPwDwPEKYqCfqX54QYCQoGAogQCFAQQIEhAgohCEDEIiFQcBIQgKREuIUQqCshTYA4AYiREFIApBwQJREhsACASBRAiBSJgIEQ2AIIEwHBCATAVEISgpEIEiIEAUUHAccSBQQyIRBAgUiIJUTASBAIeIBkgIhscAIZBNhjiMiYIggoZN94EEBuPexsvxFQyICkHBEHAREuIUiYGXAKiQeJBggEwFBSAiRYuQEhkiAoPEiDgCYJgZBXIigkMshSCkAeIcESGwANoVFBwENREsDIhMEBywkwHAESCkRIdABIZEQyRlYmAbRiEUu0O1BIQDBAkKCm+8mWQgE4kJ2ACoTLIQCAwMAAYBgYAQrRA4JgAZfeDLDgAAa4C7RiFQjiTAzFCplgy+8IoE3NEA+ZAafIkMgBNOokIDABCAIBXMJCFBIQgQUQiYUEEhAgHAcEIFFBSAgoIIwEgrmERDICQUAQkwRAEKREhkipaKJgZIKRWdgkHaMkHANl2k2j4DgGyYDgbaTAXYYCiYCBA4Ik2OoA2RRHSGUSyNJyeEgm1SRMGidvOnjdHAm0Sl+CJBwM4gwERIOCcg5AiWBkAhQwUKFEDIYVBQDBAmFBKKDgCGRWRCkRDEUUMhRkAUFAQwEGFGRAcBS4gQyCGSGwKh0BEMBDYAmBkiBRFRIZIiCgCkMBBAgUiBRGhCTAcEEQ2AJDJBESDggSVqCgg7AgTGQkCQAgSEVMEwEgVCEIBAEIBCEIACdoQFRCEIACBAABWuA4rYgUgQFQGKFgAgGQDAmSEwQD5EhuYuQ5NOxkTAvIbI0IFcgBAJAZIioYIEFBEwMuQExoxlLhFNvwQACi1Wtw1nqKuPwMRxcXiSafc0QAISIoiGSAh0gJgOCBIiBRMDJFBQUiJDYKiRQ6iSKHwGS4CkNgIQEhsEQyQQMB2jJDYKhNpMD4DtBtVjiNGBYqZZGBF2SMB1AtjAfqwm1SgWUlsmpdw+0O3AJTV6rq9hncC7ArEmluVt3VDQuCyXMrbKbAnaQKQBwFIKQyRU2XAcDpBwNGyYCNgmBo2AUTaHBDaIYGAoBkh0BBQQewIEMgCuYQJBCogh7CYAaPEfGBYrAxAUFECkEFDioZBRCRIO1kQUMgKI21kVEMDGAoCDJAGQaQZIiGRBApEChRMEIEgiGSAhkRUIQgVCEyTJAQByAAgCAKPABCAQhCBAfMhGQohCEAgAgYCsAe0DABCA7SwBgGfAUAEZAMA4IFciFHx8KJgJXVAgCUFkJkgECiJBCCmabaxr3UXOEGqcfam+SOr0V6M1+kV7JL1LSit1er2Jd3mVdK9boRqvTdMSha0fVzH7XicsuT51G8cN/Nc6rdWNjLal19Rc2+RbbdKHRkuqowXlE804uUsvibrailFY4s5dsnXri95pvTi+Tiuqi13bD1FHpFpGp01T1XSreonzezDPn2l0p7lu4I91pLspJRrUYz78oxnf3FnFL4YtV6GaVqEZV+j13sqYz6NWfB+TPDXFrXs7idC5pSpVYPEoyXE+vV+i9td0uv0mq7e4Szsz6rOJ6Fb69cy0jWYu2v4LFKvjipdnmi8fNNefDGfDlK+cpDI2arpN1oupVbG8p7atN8+yS7GvBmQ9Uss3HCzV1UGQAmkRFiQqQyQBQyAhkis06CkRIZIIAUhsBwEBLgNjAUg4DKIbABkiptEh4xJFFsYhEjAZRHihlEibCMR8ExgmfEEqMRsLYjDSNiSkRyKnLJVkGUith7Q4yVUQyFGQDRHEQwjNMEUKKyIQYCgfIhwQKIqYCkEhFQYAQGSyMkKhgqBIHAREOkLgYAoZAQUQNgZICHSAiWRoxIhkRRSwHBAkEHQi5joLDIOEBMZEUu1hS4jomAAgomBkuIEQcEwHJAAoHaEApBwRBI0BCEAhCBIIAIAITIeAAIQhMAQhCdgEATJCiAyEUgIAkyFKwDPkLkqAAICgPkKFsAEAEDRQ0eRCQ5EA+QhA2TtDqYhEFFExwIuYQFBLKNGdetTo0ouVSpJRiu9srPRdC6MJ9IIXFRZhaxdV+a5Et+Ee21Wk+jXQ7/Q9NaVd0usvK673zR8hqWvOcj6rr9059H1Ul7d3PrJvtx2I+e16e9t4wjhx4/DduvLiyp4fIsoycJGqdLwKJRwzeiZOvp944yWWeotLrGGmeCp1HCSaZ6LTLpzjhs5cmP27ceX0+laNqThKPrfmaOmNhC70+nq9pwurfi3Hm4njrG8dOaWT11neqvZVKMnmM4tNHjy3jlMo9U1ljca5/SGjS6X9C6WqUop6jYR9fHOUO1fU+Xp5Pf9B9S9H1e406o80qjlBxPGapZ+gavd2nZSqyivLPD8j2enurcPrzHi558TJlQwEhj1POiHQqGQBRZErRZErNWRH4FaHXIibEIEMGRQQBwVBSHSJGI6RWRii1ICilgZEQ6DkVMnIiaM2I5AbwK3ksWC5FcpMkmJJlbkBzFzxB2kDRkECCUMEXIQyKGQowDByKFFTRshFQyIqDIGBkDQoYUZLgRdCFExgiCGCgYGQKgyAhkgiIdASCEEKREMkRRUR0RBQBQ65CIdIlBCRIbCI1oEhkgY4jE2qJDpAQUAQgCgCgkDggmCYCQAEIHAVAkIRRAQgEIAIE5kIQAECQQAgCZKGATJCCEIQAZA2EAAyEUgDZEYci9pRM4I+RBWBGAIAIwPmEVlDx5EFTIQfIhkKMV1FBIuRCqJCEwAD1XRGk5WerVILMo0kuB5Y9n+zutH0zUbOSy69v6q8U/wDJnK6iabtZmq1ha0YvlTR5ytabY8Ueqenz24lH2eCMVzZPa1tNSajhc+2TyNWljJjnTPR1bFYk5HKuKG3Ji5R3kvly3DBqtLv0eTyVziVOJmzcalsdeOs1MpQSj4mqhrF01h15JdyZ5xZUjXDfGm5PkcM8I74Z13Oi1xJ9J4zy+Mzb0zil0qu2l7W1vz2ox9DaDlq1Ko1xcsl3Sqsq/SW9mnlKSj8EdePHVcOXPfw5CCBDHdyRDIAyKhkiyKERYgzRSGQEMGRSGJGMp+zGUvJZLFQrfyqn/awapUhkguEo84yXmhkis0Uh0Klwzlc+XaOih5NN5imljlnJMAQSVkeQGyZAQQDCBlUjElyHkI+JWorCRogbRDirmMgIEhCoIQJBDIjICGSKChkKMjKmIuRAgFDpiIZIUlN2hQEMkDYhAMgzaKGSBgZFQcBwAJAcFkeRWWRykiLIIyAMkFFIdICQxCCgkQ+3KzkzWoXAUQKRAQgCVRCgJDAEIMEwzIIA4CkF0BA7QYAJABAASAAgCEKmxyTICBBISKcvItSwZt03JtSwZLmiuUO1CUuIJhFQSoICZI2BBWEAAIQjADYAsBRBWEjAXJCMgAbFbGlyEZQyfAghBofJkEUYOo5Yy5ChyAxCIhVQ6nR7Uv8ASddtbt+xGe2f4XwZyw4yLNzTL7/W0yFSMa9JJ06kd0Wjj3ulyWfVF/Zn0po6jYrQ76aVzRX7mUn7ce7zR7S9054fq5R8738uPPpm3eDtO+L5Jf2bhKSweeuqGG0fRta09xm2onj762ccto9Pn5iY36ry1Wnh8ivqlhm+4iotmGpUUeCNyFqjYlM6Ftbyu3GlFcO0wJ4y+1nq+jtv18oW1CO+tUfrNdgklvyZZdcfh2dBsqdjSrX81tpW8G0eNr1pXNxUrS9qpJyfvPYdLb2lZ20NDtJqTjiVxOPa/unkFA3jZflyxxs8q0mOosujT7x1SLuN9VGCGjqwdX4CZFxVxLUTZgfNO3t53Vw/3UHjCfGcvuou2OttMoRjT62tUVKly3Pm33JdpnnqtGHC3oLH36vrP4cl+ZyLm+q31d1ajwuUYrlFdyKsszvbpjxyOu9ZrS4Sqza7s4XwDDV9rzhv3nHyHsLGtO9DW0ue9eUmXLWaUsbpS9/E84uQyG01HpY6pbvtj74IujfW0l/tfBr6nlUFNofKdY9dGvby5OHum0WZotcE/dNP6HkIzl3ssVaa+2y7rPt4/p6rZDsc/wDtT+pOrWOE/jFnmVd1Vym/iWx1G4jyqMbT28Xoer/qh8cfMV05vkk/KSZxo6xcx+0n5otjrdX7VOEvcNp7UdF0qnbTl8CqUWuaa8yqGs0vtW8c+BfHWbbk6c15SY7Htf5VZ4gNcdS0+ftxl70mWqvpc/8AcS84L6F7L0rnjI6PVafP2a1P819Qqxt5exWg/Kp/gd4lwyYEFcew3/6Y37Ms+UkwPS68eUZP3f5L2idMmLBMGqVjXjzg/fF/oI7aqvsr44LtmyqUOhupqLnB+7iDZNc4S+BdpoBkLyGQTZkMBIYCIZCoZBDIJEEaNiMhUMghgogUBBkBIZICY4FoiLUjNaiIKQUgogKGAkNgioMgDJEECiJBCxEMhRiAhREg4IsHBMBwQNIarG19KuFTzhc2zMWUqs6NRTg8NGcpbPhrDUynbw6GoaZG1pKpCWVnDyco13F9WuYqM3wRlMccyk/k3y3C5fw8FaAsj4Bg6OOi4CuRCGkBogWKwggIQC6KxFBwLF5imhkc67zwDAFgAqfCTQMkbzJsBtxQPMBMlUWAmSZIABsLYrfAogCNgAIGQDAgMkAygSYuQtigT3kBxIVNvlCQSIhHYQoUgDhAu8KKohRCIIutrita14V6FSVOrTe6MovDTPrvRn9pkL63haaooxuUklLOFPy8fA+PxGOXJxYcn90axzyxv8a+161eutTc7dwqrntfCSPnWpajUdSSlT2+BgsOkmoWEVTU41qS+xVWfzN76RadcvN1pjjLtdOfD8y4YdJqMW7u3mruvOTe1NsrtrO/vJbaNtOXjg9bS1Xo9CW70Ss/BxTL6/S62VLq7OznFeLUfkZz7fUdMOv28y9CuaclCtwqv7C7PM7Vnef6JbunaSTupLDqLlHy8TDW1C4u5Pc1CL7I8BYQySb+2r1vgMSnNyk25SeW32lkYYLIxwWKKTLciYK4wQ6iO0uwhNtdSbSbCxELtNEhRlUqRhBZlJ4S72zidIbqNXUlZUZZoW3qZXKUvtP4/I9HRq+iwuLv/wDr0ZTX4sYX5tHhqDc91STy5PLLLupIuSwHIMkNBgrmBDIrNFDZFDgoIwEHBEqBT4g7R0URBIQAoICANkZcRQoByEIVDJyXax41JrlJiEIjRG6rR5VJfEtjqV1DlVl8TIuRMDTW3Up67fU+VZl8ekl59rbJeKOKEdYm670ekcsevb0pf2l0OkFs/bsoL8PA84Eml29THWtNl7VCpHymyyN/o9Tm6sfcn9DyYS6/ynx+nsIvSans3WPxQ/QtjZWU16l5SfnlHi8tPmNGpNfaZP5fs64/p7H/AEnc/wB3XpS/v/wB6Rcrks+TT+p5SFxVjyqS+JfDULqD4Vpr3l3kz0w/T0L0y6jzpT/7SuVpcR505fBnLp65fU+VeXxNMOk2oQ/3M+ZO+R7WFaupqLnH8yKEvusEOlt0lidOnLzih49J6c3+9sKMv7R7mX6T2cf2m1rmn8Al8Ne0yXtWW38Mmi6OqaNU5xqw/uyX3P8ADPsfqsYxuVbRqnK5nHzimOrfT5+xfw/uj/ke7E9jJgQ8OPA3R0yE36l3Ql/c0P8A6Lcc4Spy8poe5h+z2c/0xJcQo2PS7uK/gt+TTKpWdzD2qFRf2sd8b9p7eU+lSGI4Sj7UZLzWAJ+K+I2mrDYCiYeOQcMCYClxIhkiiJDRQEiyKM1YKRMBwHBloocBxxCkAuA4CQBcEwMTtAXBBuAMApWhS3sEfAsrNKKMAoAAkCDGW1+DLU8rOSkHJks21MtLyuc8LC5iZbFExW57EhCGqyBMkYCAgyTIM4LoRisLYoByQBCCZAwisCAIQoVgyFivmASAyQfI+ToYUIdhIAIDIYVBQUyYcihREOhkIOgGDgAVzKCkXU4ZEismmlDJm1ZFlOGTTCPAWnBF6Swcrfl3xxBIYmAMjQhwKhisikQhCpay6xV6no5eyT41JQp/N/RHlLdYpRPQdKJ7NEoU+2pXb+CX6nBpcIIuPkvg4yQAo6MmCAIZooIEEqGQQLkFEWilxGFQSoYgEwgEOOQMkAZDCIYgbIUKFGkMFARCIciFCFMMKmFFBCAJAUEBAaMTBAogKCBBCCmNkQKCnCmIMgGTGTFQUA+RlKS7REMRFka1SL4TkveXw1C6hyrT+JkQRqLt0oa1fQ5V5/E0Q6S6jD/eb8zjIK5k64/pe1eip9Lb5e1tl5o0R6Wyl/FtKUvOKPLhJePH9L3r1kOkdhP+Jp9NeSwWrWdGn7VtKP4ZNHj8hROk+l72+Xso32i1OVStD35L4rTKizG+kvxRR4cbdJdrHW/VTc/T3EbW3l7F9Rf4o4+patOqNepWt5eU8Hg1UmuUn8S6N1XiuFSS95OuX7JMP09t/pt52UlJf0zQrsbuPO2qe5JnkqerXtP2a817zXS6R6jT5V2/Mn/UXrxu9KjVh7VKovODE3Jc3jz4HOh0u1CPOSfuNEemNz9ulCXmhvP9J0w/bSpRfKSfvCUrpXQn/FsKMv7UOtf0mft2Ki/6eA75feKe1j9U+CYGjqeiVP5tPymy6NTR6ns3tSPnhj3P3Kezfqs+CNG2NtZz/h6jB+cR/wDTNyzC7oS/Inu4p7ObDTg6klFcxa9J0pbXzN/+k3UXmDpS/DMrqabfN5dCUvFSTLOTHflm8WevDmsBqnYXcfat6q/tKZUqkfapzXnFnSZY37YuGU+lZCYa7CYZWQITBGVAYAsBURgCQqgRkBkioQjAEAjIBgQXIQBUyQBAIBhAwodojC+YGWInMhE1ghR8t2RYHTfZxGGRjbupwyF+E1xQkodw2hUQGQplUyGQqCgHSG7AIKIgoZAQ65gW045ZtpU+Rmoo30lyOeVdcIsjAsUQxQ7OW3VVIXtHkJ2moygwMBKiBJgKRUcLpbL1dOof0Sm/fJ/ocmKxFHQ6WSzrdGl/Kowj+Sf1MC5FwXIUEATbJkwioJUpkxkxBioZBFTGMqKCBBKzRQcgIUMEVDAFDCoLID2jIVBKhkwpioIDZCKFMBkFC5GTAZBAbLbTby7pupQt51Ip4zExnyY4TeV06cfFnyXWE2ypZJyZtlpV/BetZ3C/+tlMqE4e3CUfNNEnLhfFjV4c8fMsVII20mw1uOdxoEDtIosqaQPMmAA0dBQqGImxTGFSGQZ2ZcggSDgGxQQByFHtCDJMhTLiFZFTDkIYKYmeIyYIYiYMkzxIpwiZDkocgOwKYDIbIqCRRDgVMIRMByyEQUVOS5SaLYXNaHs1JL3lRAbbIaneU/Zrz+JfDX9QhyryOYQnWX6XtXcp9KtSh/uZNdPpndr24RkeYwTkYvFhfpr3Mv29pR6ZUp4VxaQa8snVtr3QdUW1wjSm+7gfN8jwnKDzGWGc8uDH/t+Gpy37+X0K/wCjc6cHWs59bT54zxOBKLjJprDXYPoHSutZ1Y0rmTnSfDj2HpNX06jqFp6fZ43JZkl2ozjy58eXXk8ftM+HHPHtx+f08sxRsY4MVnseICMgHyKAyAIwITIAAHIGQBVEDYCEEAQUoYDYuWiZGjaMVhAwBx7CBTIVHy5DCoYw9BkMhEEIMoRkvEpcXF4ZfgjSfBhVKGRHHayI0HT4BFQTKHTLIcWUltPsBG2ilwN1JcDDRXBG+kccnowXLgiORAMw3QbQEB8xkajCBRBk/U24XPmaREPCG6aj3vAiNNph3VLPJSTfu4hHiekNX0jpReyT4RqOK8lwKVyKKlR19SuKr5ym3+ZcjWM+FojChNMiHIEw9gByMKhkioKGQqCQN7w5FCis0wRchKhkFCjIKbJMgIQMEVBKHQRUEImRkK+ZFyCnG5CZwJUqYRLdCV7qNCDk3yR29Mk5WcZ8Vu/RHhtUruXqJ83g97YQ22VJeGT8x/UHNvDHD/L9p/SfDrk5M/8ADbCvWpv1K1SPlJo0LU71LDuajXdJ5+ZjQx+XmVniv2mfHhl5ka/T6svbhQn+OhF/QZXVvL+JptlPypuPyZiyMmdcfU82PjK/+Xmz9F6fP+7Cf+GmX+mT9vS4r/p1pL9St2ujzfGjeUvw1Yy+aK8kPRj+S9Xj4zry5/hvQ5+eOLqej6Vc1oUqd/dU5TkorfQUub8Gca+tPQr6tbOan1U3HeuUsdp3tMju1O38JqXw4/Q8jqWp776tNvjKo/mfe/Eev5ua5e7dyR+V/P8A4z0/pccbwzVr0tp0Wvby0hcUa9piXKEqyjJfEeXQ/W17NrCp/wBOtCX1OlpacdLtk+exP4mxM+X/APsnqZfnGPzd4sXmqnRrWqXt6Zde6m38jNPTryj/ABbWvD8VNr6Hs4VqkH6tScfKTRphqV7D2but/wB7O+P9TZz+7D/lPZx/b59sceDTXmTYz6G9Tupr95KFT/qU4y+aKpV6E/4um2FTzoJfI9GP9S8V/uwqexP28BsZMHupW+kVfb0egv8Ap1Jx+o9v0f0K/rxoqhdW8p5xKNbclw7mj18X5/0ud18xP9PfqvAvgHI9xT6qvUp5zsk4578MqTPuS7m44nTCKiFUyGyKg54A0bKJkCeQgEKFyEBiAyHINmTGXgIg5AbIyYiDkGzZDkRBCnyTIqJngQODIMkAZSJkQIDZJngLkmQGzxyex6Ia1KE3Z1ZZi+WTxmTTYV3QvaU12M58mEzx1W8MrjluPU6nQVtqFWmvZfrR8mZDdrNVTuLOpnjODT+Zgzg1xW9Jtw5sZM7oHzFfILYr4nVyKQhGAGAPYDIEAQGSqICZA2QQHaQhUDtAEUAsVhFbCg2QD5kKPmiiOohwHBy29Og2om0fBMF2uoGCYDgOBtLCuOVgpacXhmgEoKawWVnSlMORWnFtNENIYup9hSi2myUb6T5G2mzBRlk2Qawjjk9GDSmHOStMbJzbqBAE0zYJotI28qklczlCO14cVniZxkX6ZNFcS3d1dGvV+5RnL/8ALK4lOqVOp0O/qf8AKUfi0RHhLf2pS72ajLbL92majrCoFACVDYChQgNzYUBBBoyeA5yKFFQwUKhkyApcR1Ft8EKjVRSXFi0kV9TJLLRZG1nKG9I0OpHbjAYXfVxccczO611jnvg8MKJUkpTbQDbBkwoUKCHQciZC2VBbJkhCLAbwZ608RLpPmY7iWIsxlfhvGORX/eX9vDvqx+Z9It4uNCnHuij5xbJ1tctopfaz+TPpaWOB+O/N5b5MY/f/ANMYa4c8v3TIIA5Ph1+nRBQoyAZMIENgm0atPe2vUn9yjUl/+WfMJVnX1OjH71bP5n0qFTqdP1Ks/sWsvzwj5lpMHX1+yhz9fJ9r8denp+XP/D8l/UeW88Mf/v8A9+X2OhHq7enD7sEvyLUxG+wOT84/G7WJjZKkxsgWqQBExitbMjfpL23U6nZTpTl+Rzcmq3qdTYajV+7bSXxO3BN8mMWV4KpLfOU/vNsrwFcYg5H9QxmpI8P2mQrkBk7DTRskyLkKZUNkKYpMgWJkyJkZMKbIUAhENkKYuQopo2QoUOQh0QVMmSKcguQhRTyTIEQgYguQhUyBsgAg5ZZR/jR8yovtlm4gvELHodTqvrtNh5/ILM+oS3axZQX2YN/kXsuE/jHLmv8AMBWFsU05JkjZGDIAbARsBRGwZIwBUZAw27vW5AljLxyCBkBAcgDkAMgbALYrI2BsKDIBkNbHzsiZMBwc+rr2FJk4oKGxkXFZSZCgtAI0OBkuJEMgKqtPesrmjNy5m/HAor0n7cfeWVFKLYFSHi+JUbaMuRrpyOfTlg2U2c8o64ZNiYyK4PgWI5OxkMhRkERDLmDA0VxKzTx5HO6S1Or6OVOP8StGPwTf6HTSOH0xns0yypffqTn8l+oSeXmqC/dovWXyRXSWIIto7nc04JKUZ+pJZ7+06ojjKMtsouL7msEGqVXVUE1whHavLLf1EKhkFMUPMB0MVoujHIIRhQ0lgUAoORU+IxWDxzwL4ywkZ4tIfdwFalXb/ERvKEzwDkaHe1G90ytpMKNvGLq+q4pRw4Y55ZwsAQSs60OQoUKAYhCdpAcgIBsBZPBhuX6rNknwMN08RZy5PDpgz6FDrOkdP+lZfxR9DXM8J0Uh1mt1Z/dil8/0Pdo/Efl8t+o1+o/pP9PYdfRy/u0xABPlvuIgoCDyAbI2SvI2eBF0XU6nU9FNWqfejCmve/8AB4fojDrelNDPKKb/ADPWdJqnVdDqq7atzGPwX+TznQGlv6QVqnZCn+p9ji/h+O5L+34f+oc9+p1+o+n54hEyHJ+ej8qbIyfeVpjZCnTGTK0wplFmR7qp1XRnVKna4xh8clSYusz6volV/wCbXUfhg9n4/Dv6nCf5W3UrxmeBMg7AH9MjxGyTIM8CFUQoXIcgNkmQZJkLs2QpioKCnTCIHJAwci5DgBkw5EyHIQyDkVBAbIciZDkBshFJkBiZBngAKOSAJkgJpseN3TXiZcmzS47r6n5i+Fnl0q7c+kKX3KL+hsfIx03v127l92mo/n/g1suPxHHku8qVgIwFcwbA2FilggGRitlBADJM8AGeI051ZyjClTW6c5PCivEz2evaRXuoUYW91dbntUlJU034Li8HK1XUHdurp0V+6pSTkl9p45v5fHvOLQqztbqNWDxKLyjlZllt2w6z5r7BV6NWdxautaVp0ppZa3KpFeeEmeWrUpUajhPGexp5TXemNovSaUcSlPZUXbngyitqtC71a7tYRSTXXU2lwz9pLw7fccOG8mOXXK7jvzYceWPbD4TIrCwHteNAMgGEQgCBXz7AcDYyTBWtokMkRDE0uy4A44HJgzY1KrGRJR7gIlalPkZCDJ5I0z1qOx5Xsv8AIrRvwmsNZTM06Tpy8HyZqVixIPGDVSkZUi6DwMptcbp0KbyXxMVOZqhM42O+OS0eEJTeIxba4vCK00zRQqTpbnCTi5LDx3GdNF28BlF80QeJWaiPM9Mqub2woZ9min8W2eoksM8f0szPpPKmsvq4Qj8IoTyRiilhJSj/ANyLadOanvxhRTefcynZLHGL+ANqXYvgdWFihLsWfLiTa1zT+BWox7l8Blw5NryYDIIMyx7cvjkKlLvi/OKAZDqWBFPvjB/FfUjmn/t/Cf8AgCxvICJx7YzXlhkbh96S84/oxpNhkYC2v/dj7019BlHPKcH/AHosRBkwKnU7IN+XEOyS5xa80AUECXiljm28JFk6U6ag5JbZrdGSaakvBoBUMKEoIRchyE2ZZIRMmQDkVkbA2QJLkYLp+ozdI5948QZx5PDrh5behkM3N3Ux24/8+J7JHzHS9fqaROrCO3Enl7o5/wDOR3KPTiP24Un8UfjPX+l5c+fLKT4f0T8T6703F6TDjyy1Xswo8tT6Z20+dJe6f+DZT6VWMucZr3pngvpuaf8Aa+tj630+XjOO6TJyo9IdOn/uuPnEuhq9hP8A+TBeeUc7xZzzHbHm474yjegszwvbWfs3NJ/3oujOMvZlF+TOdlnl1ll8OZ00qKn0d06l21K05/Dh9DD+zqmnWvq3lEs6f1MUNKo59mhKT97Lv2c08abc1PvVP/PkfW9R/D8ZJ+6/nn5zPt6rP/Ee07QomAn558AQgIUFDJioY1FOmUdJZbOjtlD79aUvh/8A8LkZOlkttlpdL+iUvi/8n1Pw2Pb1mCZX+NeWfIAWKf0OPKJMgIa0ghyLkmQuzZIAiZAyGyIhgpskyLkiYDphyKQKcguR3tjwlVpxl92UsNERENkGzPszpS/DUi/qMqNbHClNrvSyDRWEElKPtRkvNC7gqwMakadSMpxbjyeFlrxwV5JnIF0qkJPPVyfimo592OAN9PPFVF7k/qVZJkC3NJ/bkvOH6ZBiOeFaHvyvmitPvDkirFBPlUpvymv1Opo9Co7xPY2l2ricfJ1tBhF3M5bVhRzyJl4MfLRZPdqF/N/eivmbzFpadSF1U4vNZ/kjY3g28+XkBWEDDJXyAPtk4tpcCtl2VGxGw5FKiEAwZKqQ6OTq311UguFzTVak128MNfE8zcaNdU68ozpyTT7j6Does0bOUbe9i3RTbhUSy6bfPzR6e5tNPv7R1oKhXeMqVKaz8Dx5c94suuc+HonH3nbGviqtatGcN2c54I9BLTadpe20py/4nqJTnH7qeEl8xdc9JtdQpq1tG5p5i5rgvEW2pVYynWuKrq3NV5qTfyXgeiTfzHO2yfLVkACHRzRsDDkVgTmQiyQqPBdoyK0x0aaNgJEHBNEoEIEjQA25DgKJY1ASwRDom0xY3KMSzYpxwxYxLYojTLKk4PD5djIkbdqktsllMpqUJU+POPeWVLiWDNEJYMvFDqeBZslsbYS4mmElyObGoXwqMxcW5m3riaIwzHODBTrLPE3+l0FQxGPrk0WhFbq0Y97SPBavU9L6S3tRLKdWWPie7tpr0iMn9nMn7ln6HzqMJVbutPZnMn2E18tS/C/q2l7El7g5kvtzX9zEcHH7LX5BU5L7c/8AuZ0Z2bfL73xSYYyfbtf9oN8n9rPmkwqT7ovziEM5f0Q/P9SKSxxp/Cf+Abv+XH3NoO5fcful/gA5h92a8sMZdX96S84CZj2qa9yf1Dmn99rzi/oVD5h2VI+9NfQmE+U6b/vQq2/zI+/K+hZCk5tRi4Sb5JTXEAxo1H7MG/LiDAuNk01mM4vKa4NM0SauKbrRUY1I/wAWEeH9yXc+3ufmBRsi/sr4BWY+zKS8pNBRCgq4cHKNaNWrSnHGYvMoPOU8PmiyNRejQoxi1GMpTWeeXj9CsPYSQ2fISsdPgVBIDJMgNkmQIgEIRkASRjuIKSaZsm0onJ1C62ReDjnZI6Yb38Ojp3Qyx1Sz9IuNTqW1ST9WMbffHHi8osn+zWm/4GvWcv8Aq0pw+jO5oy26Tb+Mcm46z0XHlJXyOT8r6jj5LjL8SvGVP2aalHjRvNNq/hudvzSMlT9nnSSm/wB3Zdau+jXhL5M98THgYv47jvit4/nOeeZHzWp0S6TW+XLSdQSXaqMmvyMdS01e0/iULmnj79Jr5o+t0ritSeadapD8MmjZDWNRisK9rtdzm38zjl+Ln1Xpw/qHOecf+XxRX99TeN696L6Or3sZL1YvyPsk9Sr1f41O2rf9W2hL5oqhHTq9xCNbQdJq7pJP/hlF8X/Tg4Z/ip+o9nH/AFLlPjdj5fVuLi7oKVdvKWIrOcIbR+lNfRqMqFOpUhFyz6qTTO50ts7Oy1+/t7Gl1VtCeIQznb4Hp9E/Zd0f1LRLa5vLjUIXVSO6cqU4bc+Ca+p8f8rl6X0vDjhz/Evh9P0/u+tyufmvM0f2jVVjdWi/xUjo0P2iUpY3ejv3uJ2qv7FtGnnqNdu6f/Vtoy+TRzq/7D5t5tukNpLuVWhOHyyfA7fjM/GenfL0Oc84LqXTm1njNKH9tX/Btp9LrCfOnUXk0/qeYuP2KdIKfGhc6ZX/AA3Li/8A9JHOrfsq6Z2/Gnpk6njQuIS+Ujc9J6TP+zljll6TXnGvoVPpLpkudSpHzg/oaYa5plR4V5TXnwPk1bod00s2+s0jVopdqoykvyyYpw6Q2T/fUbqnj+bQa+aL/wDi9/25yuV9Pj/l9wp3trV/h3NGXlNGTpfVjK7sqcJRlGFuuTzx/wDEfIbTUdRqVFCfVPzieytJVPR4KrLc0seR9X8P+M5OH1Hu5eI8nqMZhjqVpbFyRsVs/XR4hyEUZFECDIQCk28JN8OxANenanLTqtR9T1kZpcVLDi19DNOrKdSU3Tpes28JNY/Migg5Fc8c6KflUa+jCqtFOPWRlCLaTlKaaWe/guAUQoseIqcbiKp1ItbXGL4rxSz8RM03yr0/flfNBByGKcnhLLBhfzKT8qiYsnlbVwj2+PmBY5JexLzkvp+oFwQq5EQBeHzSZFCGeEUvJDRpzmm4QlJLuWQNSi+Ka80FPGpUj7NWpHym0Hrq3bWm/wAWH8xMoZU5yi5RhJxXNpE+F+T9dPHHq5edNfTAOt76FJ+W5fUr5hGk2ffB/wCy15VP1RN1H7tZeW1/VCEGlWLqc/xJr8VP9Gw4p9laHvUl9CoA0LVHLwqlJ/8A2JfNnc0S3qQp15uDfqPiuPyPP5O3pe2np1zU2rO3ngmU+GsfLTpLcbCTTxuqSb+JqZk0vK06jl5zl8fFs1s1fLy3yUGSMUug++SjjPArYRW+AF1K0rV6NSpTScaazLiZWx1UlFNKTSfPDJW6pSXVtvhxyJvfyXWvhW2K2QHM0gNkXAmQNhBz3k7RchyFMKTICKIGRsABTIBENI8AixFcR0aU6LFxK0x0GRaFH5g2kahSD7UDCyTTUoIeKBtHhzI2siuBYkLFFsV3mNNShGJfTe3synzT7RFEsijLW1VWzVRbqPP7j+hhnCUZNSTTXYzqcnwLHGnVWK0FLufaiy6LHHjwLIywbKmm540Kil/TLgzJOjVpPFSEo+aN/FYOpssjUM4yJpdtir9Xa3dX7lvN/lj6nhLVKScmuLZ669qdToOoz7XCMF75Z+h5S1cuqXHHuOVn8nXH+3a9LHLK8mMpSXKcve8/Mik+3b74oaNTbLLpxax2f5NoG6T7U/OKIpPtjB+5/qGclKblGKin9ldgMgMpLtgvc2iNx+5JeUk/oKEInq/1r+1fqHEfv/GLIMipo3VtU1UTUoN4ynyfcxWk1hoelU6qTe3dGSxOH3l+vcw1IKEk4vdCSzGWOa/UKfjdRlJvNxBZl/zIr7Xmu3494kHOnUjUpvE48uGV5PvQsW4yjOEnGcXmMlzTNE1GtSdenFRkuFWmvsvvX9L/ACfDuJ/g/wApUhCVNV6KxBvEoc3Tl3eXc+33MqWQ06s6M3KCTUltnCXKa7n80+wG6PbTl7p5+hYg5IDdB9lRf2p/UOYffa84sqCggSj/ADYe94+Yyju9mUH5TQ2oBG6mr/Ln7kK4yXOLXmgg5yiBjHOcyjFLnKUkkvexqtKdGo6dSOJLD55ynxT8UAgGyAkSqprTaizg3snUqxh3ySO1Wfqs5GN+pW8X/MXzPNy/Pw7cfx8voVlDq7KiksLajRkFNbaUI90UiH1pPh+Qzu8rRSCAKCIMgEDJjXpsd+pW0X/Mi/g8mRG3Smlfqb5U4Tn8Isxn/bXTD+6PnPSS6dfWr1p5c67S+OD7lo9PqdItYd1NHwCebrXKK59ZdL//ACP0NbR2W1KPdBL8j+Y/1jy7y48P96/p/wCB4+vHb/svIAh+Mj74+ZMYBkJYi2FerD2as15SZar66xjr5teLyZUE645ZTxWbhjfMXwVK5uaca9ra1lKST6yhB8PgfL9coULfXr6lbQVOjCtJRguUV3I+o2X/ALuHhl/kfKtTq9fql5V+9Xm/zZ+1/pLk5c88+2Vs0/Pfm8MMcces0xtgIyH7uPzSIYUKZQSLkDJMlBJkGQZwA4GlJNNJp88gzwCmRQp04Uo7YRjFd0VgtjCc+MFnyEI4xl7UU/NFRa6NRcXSmvOLBjHPgLFKPstx/C2vkWddWXKvV982/mRS8xliPGXbyXf/AIA61X76f4qcX9CJOblJvxlJ9gQWpVJLg3LklHs8hm69Lg514eDlIRtNYTaj+b/87gqpUgsRq1Yrwm19QG6+t/Nb/FGL+aFjcJyh1tObq05ZjUhGKT458MPs5E6+r21ZP8WH8yddPupvzpr6YGllWdcnJt0KXF59VyX1D1lN86El+Gr+qE63POjRfluX1J1kO2i/7an6ogZyo91Ze6L+qBmk/wDcmvxU39MiuVJ/Zqr/ALX+hMUn/uTj+Kn+jZVPiHZXp+/K+aJtXZOk/KpH9StqHZXh71JfNBVPdyqUpf8A2R/UmxZ1VXspyfks/I69spUtCuHKLi33rBx1aVHxVLPjFZ+R16u+36PST3xcnjDb+RL5kan232Udlhbx7qaLsi0I7bemn2QXyGZqvIRsXIXlsVmkRsVsjYuQqPiwTi4SafMm5p5BKbawklHuSKFbBkjYCKmScwEKIQgCCEYCdgByDIAZCGTIBYwQ1pHgIyLEzNGWS+LNN2LUOhEWwWWGadRwsg4jMXIEwHAUshKsSMS6NNPsEiXQZNNmVPA6iNFlmEzFjUpIodIZUu5jdU0YsXsRRyNjuG2PuGUX3GWtkXAtVWSWHxXcxcAaeChnG2qP16Ec98eAFZWcuW+PkyqTeRoMqOd0qpUbTo7tpTk3WrLO7+lf5PJUVimj0nTKolYWFFvG6U5/JfQ87BRUF68fzRznmus/thwpgS7pRf8Achurn91vy4mhCE2yXOMl5onIqCEUIDIKFCuZYhh6c1HMJ5dKTy8c4v7y+q7V7isbsAedOVOe2WH2pp5TXY14EhOVKoqkMblww+Ul2p+DJCqo0uqnCUoJ5hJc4PtXk/mDMO+a84foxPlP9lk3QlLdSnti/sTTzF92cYfmLtT5Tpv+9CrZ/Mj7019A4j/Mpv8AvQRYqM3yjnyeSOnOPOEl5oRUc8VCL8sMOypFZSqRS7soomWTamuKTDCrVUJU3UlKDaliTzxXaQgCpwXHal5DqU0vVqVF5TaAQBlcyUZ060KlWM2pRnFpuLSaw0+aeQym5RprDShBQim+SQpAqCSYzEmyUjNXeIs51ilV1y3j4tm25fqso0Cn1vSCH9CycL85yf5dMr14sr/ivfkATJ9WvyIhXIBMkDZJkXPEKYQcmu3qdTZajX/l2s8ebwjIG7n1XRfWKnfTjD4t/oc+X4wrtwY9uSR4DQabr9JtPhjP7zd+TP0JHhFLuR8J6EUev6ZWq+5Fv5I+65P5L/VfJv1eOP6j+rfh8dcFv+TZDkUh+Z2+qIyYpMlDphyIFGpTTRbyUOtqP7FOT/I+QuTk5Sf2m38T6pd1eo0bUq2fZt5Y+B8ojwgl4H77+j8P+nnn/s/M/nL/ADxiNgIA/bR+epskFQTUZo5JkAsq0KEoVKmeqU472llqOeLwW/BPlY01zTWeWQDUq8YdbCV16TRnHhGNVTxLKxKL444Z88i76P8Azl/an9SSrYmQpg3Uv5kl+Km/pkidL+fT97cfmkEOFAjHd7E6cvw1Iv6lioVv5U8eCyNmgRM5I4TjzhJeaCsRjulxWcJLt8+4ijGKS3SeI8s977kBtya4YiuUe79WDc5PMuL7O5eQyxjLeIrmwiRTbwkFSafqNr+pPD93cJuznhiPd+oclDutV5uo3+JKXzROtn2qk/OmvpgtlbRVCNTeo7oqSlJ4jJPuZUqcn7MqcvKaf1JNL8i6nD+DS925fUO+m+dCS/DV/VA6itjKpTa70siuMlzi15oJ8mbo44Ksn5Rf1QH1P82S86b+mRGwBVmKfZXp+/K+aIobuU6UvKpH9SsOE+aGlWq0qSeVQcvGKz8jr3salHR6NLEoObxh54+44kYw3L1I578HevE5Q0+inL1px4Z8TP3F/wC2u0qeEl3cA9Tk0JLBGYuTEwil28GoqGXLHHPIplQ4GtsXA7VfbjC6Db4LiV1qNSjwnFrPedFS2SUlzQt3Vlc4ckuBqcl2zeKaclgLqlPHYUM6y7crNA2AgACQ0WVFXFzCm5bVJ4ydbXtDhpUKUoVlPrFyOWXNjjnML5rtjw5ZYXOeI4L5CkzxBk6bckbADKBnJUpmxckyDJWRyyCZIaR8+iy+DwZ4vGC1Mr0WNMWX03xMkZF9OXrFcrGh8GKWbHPCissRwlF4ksMrJ4OKi8oiwIgrmA64FsGatJtLa9vFRubpW9Pa3vfyMzUYVZxjJSipNKS7V3k+9Ny/S6LLYtGdSHjLPaZsaaoSLU8mWLLlLJmwXDFSkFSMaFvAScU0TIWRdss1xGjwGmssVI0u3mOmVTdqFnR+5QT+Lb+pyorEUbulM9/SarBcqUYw+EUjJTpVKu5U4OW1OTwuSXacsXo+oXh3E2x7kFRlJNqLaSy8LkRJ4NIaLxycl5Njb5/zJ/HIqCVDbp/eT84r9AbpdsYP3NfUhAHp1aca0FV204PK35eE8cM+GcFyrydtUo1anWtSjKnJyUnHnuWe58OBmcU1hoMUorCSS8AGQUKOipRQWAIQCY7wkZUBwi+cV8AwWx5i2uGODxwIggMg9oqCgGIQhFEgM8SA2DK59pZkqqPgSkYrp4iyzolHdq1afHhHBnu36rOj0Np5nc1PHHyOPH882KeqvX02detAEB9Wx+WEgCEDEAggFFGv1Op6GXPfVuIx+C/yXHP6Xy2dGbKn9+vKT+H+Dj6j4469Xopvnxc/9mtHreldSpjPV0v/AD5H2Y+V/spobr+/r45JRz7v8n1TJ/Gf6kz7/kMp+pH9Z/GY9fTQyyQCeCNnxY90EhCFEzxDkBCqx9IJ9X0U1Br7SjD4s+aL2T6H0tqdX0Vce2pXivhx+h88bP6X/SeGvR3L91+R/NZb59f4AAQH6yPiIEUJWaIGk+ZCFQIwjFeqkvJDAyQgOCYIEoVwT5pPzQFSprlCK8lgcg0ox3R9mpVj+GpJfUtz+7y+MpTbb7+CKk+I74Uqfjuf54+hNBo4csceTfADk5Y3NcOSXJEpP1pvug/mkAAhFyTIEjCMPZWFzxngF4fNJkyRMCKKXJJeQ6qVI+zVqLymxSA+VnXVsfxpv8WJfNA62eePVy86a+mBMkyQ3VnWZ50qXu3L6g3w/lP3VP8AAmQZCrqcqTqRW2quPen+h3q22eq6bCLfBp4kscuJwLZZuILxO9H1ukVpH7sJP/8ALJ9tXw9BkORMkycaSmYrZMitkaRsV8iNgyUVThlGOrHGTezPVhnJvG6Yzx3GFgbGmsMrbOzz2aPGo4Synhlta7q10lUqSnjll8jLkiZm4ze25lZNGyB8iAYjINittEfAGco0lHJBSNlZFywQrk+JCj5/GWSyMip05Q8u8ZDGvVY0QkXxZki8F8J8Dcc7HUtK2yaljJZcy62SaRz6dTDzk2QqprDLpzsV4wQucU+Qjg0VkFyGTFwMkRqVZF8B1LBWjVRpprLRK1sIzLVIqqQ2PK5AUmTQ0qQymUKQ6ZmxV6kNuKFIZMzYixrIaMFOtCPfJIRMtoS21N/ZBOfwTZPpZHz7U6vpGv3lXvqy+YIycc7W1lYeHjgZYSdS6qz75Nmk54+HrvwenUnTU1CbiprbJJ80NTrThTqU4vEKntLBWglYXQrOFGdLZBqePWa4ryYVOCtpU3STqOSaqZ4pd2CpEKLc0fRtuyXX7s788NvdgaSoK2hKMpuu5PdFr1UuzDKSFRdOFGNtSnGtuqyb3w2+z3cSVKKp0qU+shLes4i+MfMpCgLqlCdGFOctrVRbo4efiIhRu0IYiIQBiACUQhAhEQRQgHIyYqCQHtIAhQCuZYJJZM1qObdr1Wcy11W402pNUpSim8+q8HcrUtyOVW09Sk3g8vJMpd4u+HWzrlNxoh0uu486tT3pM0w6Z117U4vzgch6cuxCS0547TM5uefbN9L6XLzi9HDpny3RpP4o1U+l9CXtUo+6Z46VhJFbsZdxqeq555cr+O9Jl9Pf0+k9lPnGa8sM0Q1+wl/uSXnE+bOznHvIoV48pTXvNz13JPMcsvxHp74r6lDVrCfK5h7+BzemN3SrWWmU6FWNRRhNy2vOHk8HTjduXq1Je86kaNT0fNSTlLvZc/U3lw1YnF+Nw4OWZzLb6N+yimlpt5VclunVfDPHsX0Pop+bbPWrzS99Ojhw3Zw8rB06PTrUaLT/AHi/DVZ/Ovyf4H1HqPVZ82N8v23pPX8OHDjhfp+gCHxCl+02/hwdS4XvUjoW/wC1O4X8Ss/76WfkfKy/A+sx+tvZj67gv2+vhPmFH9qkW/XlbPzTidKh+0y0njdTov8ADWPPl+K9Xj5wdZ6nivivfEPJ0enunVPapVF+Fpmyn0x0mfOdWHnA4Zek9Rj5wrU5ML9m6cS2aNYU/v1nL4JnhWem6Xata6lR05WtTfCEZt9nHh/k8wf1H+m+K8f4/Dc87fjfyue/U5JkAGBM+/HyzMGSZA2UMDJABNGyRPiAIBDkBC7QSZARBfgwzfqU/wAOfi2/qJnHEepziu6EV+SIDS5VX/Sl+f8AgDJF4pz8XFfMGQDkhAZCmCLkmQGyTIuS1VqatZUupi6jllVc8Uu4CtsmR5So+jRShLr93GWeGO7BJdT6PTcJT67L3pr1V3YAXJGxqkacYU5QqbpSWZRxja+4lWkqap4qwnvju9V+z4MirrBb7umvE71mt/SSb+5Rf0OVYW06Opwp1Nu5JPg8ridjSIt61ezf2YKPxf8Agl+zLw7LfEXsJMTJz0xKfIrYMiuSJpuUWwZFyHIalRsSXFBFYaYq8cNmVs2XHaYmzvj4ebPygRcgyKkO2DIu4GRoGTFyRsDNM0cgbBkGSobGSCN+JAaeKXFYaKqlNrjHkWdoyOMuntsZkyyMgzpY4x+BWpHaXbnY0wmWxq4ZkU+JZGRuVzsdCnX48zTCopLicqM+JrouUnhF2z1224iwYQyoVFHOGVuW14YmUvhMsMsfIltOs4cOwp3IOUXUZ2unV3vjyIitIuihpdnSGQE8AckSxT5wRT4lTkDJmxdtSkC4q9Vp17UTxtt5cfPh9SqMjNrNbq+jt9Lk5bIL3vP0Oec1GsPnKPEWq4N97NRRbL92i85zw9N8ihkKhkVDLgE2afpdfUG+qlThFfaqS2o3PovqfHZCjV/BWizUxrFyjikOpU6P6tT9qwrPxit3yMtSwu6X8S1rw/FTa+heqdozIg7g1zWPMA0dgzwCgEIpwioJAyZEwERUMAJMBNpkhMBwQ2iGQCLgFEIuQ5KJgVobiTBKSqnEqlTTfI1YFcTNjUrL1XgTqDVsJtM9YvZkdBdwrtk+w3bCOBOsXtXPdou4Cs4t8UdHZ4BUPAnSHZip2cU84Lp0Fsxg0qOCNF6RO1cWtp8Jyb2maWmruPQOCYjpo53hldJy2POvTF3MV6a0uB6PqV3AdBdxz/0+Lc568y9NkI9On3HqHboHo67jN9NGpz15f0GpF8E15GyztbvrFi4rRXhNncVrFvkaKNuovgkSejxt+Yt9TlJ8NtnmFCKlJyeObeTRv7CmPBYHye/HGYzUeLK3K7p85AKE2yOSAIDZkw5FTIAwRe0mSBiZBkhYDkKFyFMCT9h+RZV4VpruePgV43NLvaX5jTlmpJ97bIQ0X+6f438kAC/hx8W3+ePoTJUMAmQ0qk5KuqG3rqbi3mCm1F544fjwJVk2BC1zp1IU5VJQpV3H95GNOW3OXxWE8ZWHgXbB8rii/Oe354G1JkmR+qk/ZlTl+GpF/Ujt6y49TPHhFlSkIgNSjzi15om5AMTtFyTIHT0Vf8XnsSO5oHrXF/UfbUivyZxNIe2dSXdE7fRzjZ3E/vV3+SRi/Zl4difFFMngtkymfMxHMjkLkEmI5F01KfcRSK9xEyadJVu4GRUw54EaZrhmGXM13D4mJvidcfDhnfkWxWwMGTWmdjkgMkyFRsDYGDPErNTJMgyBsGkbyyA3JcyFHkVFPkRRwJSnngWs4PbtEU1qOfWhz7V3loUyy6L8sKbzgsiy6tR3Jzjz7fEzJnWZbc7i0QZ6Do/Qp3F3ThU5NnmYy4nSsb6VtUjKLw0Y5e1xsxb4bjjluvst70esYaN1kVFSUT5VqCVO4lFdjOnU6X3VW16h1Xtxjmedr3LrTcmzyei4uTjt716vWcnHnj/E6qDqrgyKY6mj6kr5VxbI1S+FVHPUh1M0x8xvdTIm9GbrBlNBpfuIpFKmMpIzY00KRg6S1NvR2Me2pcfKP+TTuOX0pn/wOn0u175483j6HHl/tdeKfycOj7CRaJDhELZyjqfOCudeNOLbElPCOfd1dywu0znn1jWOO69fp7bt4y7opL4Z+pq3NPmzNaR2UMeOPhwLuR6sfEebLzV8bmtD2a1ReUmaKerX9PG27re+TZz0+I2SsO3Za1cu43XEqdWnGMpSVSmnwSyI9NXSzo69YsrejS1Ch/Gt6MdqqU/vJd5xLqt1GlX9XPFUHFe9pHY6LXtbSrCyrUHtqRjnjyku1PwOeUtv8fLc+JuvKOD7UK0e76W6JQurf/1BpNPFvU/91Rj/ALU+1+R4eUTMsym418ykQyAHKXaFE0U7O6q0+sp21ecPvRptr44EsZ06moUqckpLOcPtPodHV723go0bidOK5KPI+T6/8n/ps5hjN1Zjvy+dypzg8ThKL/qWCLj2n0e76TXtrYV7qvLr6VCO6adOMnjOPqSOq21zCM6ulafUUkn61uk+J5Mfzs/7sP8Alfb/AMvnOCYPor/0KtwraBa+dOUofIqnpfRerz0+6o/9O4b+Z2x/N8F8yxPbr5+THE9xLo10am/VvtQovulGMwf+i9Jq8KHSCUW+XW2z+jO+P5b0t+/+Dpk8RgB6DpF0TvujnU1a1SlcWlf+FcUXmLfc+5nBxxPocfJjyY9sbuJZZdVFyDgiRZTpzqNqEJSaWXtTZq3U3STfgmCYLeraeGsPxJt8jO5WutivAMF2Dr2HRbV9TtVc2lqp05PEc1Ixb9zZjk5uPim+TKSf5bw4s+S6wm3DSDg6WpaLqOj1YU9QtKlvKazDdykvBrgzBg3jljnN43cZyxuN1S4BgswBo0yQmA4IELgG1D4AAuAqIyCuY0E2hUPAsQyQ0bVqmWJYCg9hZEtFPiNkUKNaBTGFQQhkQBAgkIQAkyAgU2Q5EyEgIQKE5JuMZNLm0uRN214jxl39i/yUO5dVOL2qck09reF7xc5YOXvCuPd72QN/tw8s/myZI4NUaU04Sg44U4SUk2uayu0VMqGKqtvSqzjOcMyjykuDXvLCE8rD0qdNxhHft3PEXtys5xx94/otx/JqPyi2ZoRnByUas1TlLc4cMZ712r3DKEIvKil5IfJ8HnSafr03nxiVbIJ8IpeXAujUqQ9irUj5TaC61b+dJ/ixL5oGlcalSPCNWqvBVH+oyrVf5sn+JKXzROtm+apS86aXywDrOPGjRfluX1Cj1s+1U3500vlgKn306b8ty+oFOn20P+2r+qIp0e2FZeTi/wBCK6+mbFQrT6px9XsqZ+h2uj2FpEWvtVJv8/8ABxbRU46ZWlGU1lfah+jZ3NFWzSbfxTfxbJr4Zz+nRbKpFmVgrkySOaibKW+JbUKHzNEMmMitPAyZmukWZwCUmkDJXVnhE01vTPXnxMrZZUllspbO8mo8+V3UbFyRgBB3EyLknEimyK2Qj5FAbBkjIwhJZzyIEhR4qDecmyD3RM0Ui+nmLOD2bM0BlrjlZRW4sgkZFNelnM4LzRZnAUxLpfMYkx1LAa9La90fZf5FSZ1lc7F6l4jKRSmHJYlXqbGUvEpTHizcrNjQpjKfeURY2TcrNxaFNMO7Bmyw7mXsnVpUx1UMu4KkTa6bN3A4/SeT9PtKL/27eHDz9b6m9Sb4Lt4HJ1+fWdIrhZyoNQXuWPocOa/EjrxT5rMuSFbG7BGcnSKqr4GCEetv6FPslUin8TZWfAz2K36tR8G5fBNnDk+bI7cfxuvY0OFCPjx+JYJBbYRS7EVX0tQsLqdKenVZRi+FSPKS70fQ3I8Mlt+F+SHN/wBXUf4lrXj7sjLWLT7TqR/FBjtF6ZfpqvqXpOmXVspbZVIra8cMp5wziUtR6QW1ONJUnKEVhJNHUWp2U/8A5EF58C+lWt6ssU6tOUu5Syc8sO13jdN45XGayx2mj9L+ktjUlGnY9bTqLbUp1KeYzXjxL9bsJWNzTl1XUwr01VjS3btmVnbnwyWUo4kkubH6X1nLVo0s8KcFH4JL6Dr1+bds3KZeJpwWyitV2RZZKXAwXc3tZyzuo64xu6Lt3GtOT4qOPr+h7W61aysrr0a5rqlVwpbZJrg+R5HoLS33dxVfZ/59T6BX6m9UVeWdpcuEFCMq1CMpKK5LOMn4/wBfl257t2yk3pydUv7W46L6hChc0pyqOlTxGXHDms/I3U6tPZFQqQaS7JIxazpGk07HT3Q023oVLm8VKp1WY76aWZLn8gvor0flxha3dF/8q7l//smeTWOvKWTxt0IyQyZ5+86NU7XXLOztdW1GlQrWsq83KUZyg1LCS5cDZDo7fwa6jpTPyr2j+jZLhP2lx/ye8in0toRjldXp6c0nwblLKOnGXHmcCena7PpDfxp6hp8rq2hToVJ1FKMZpLKxweOHPJrp0OklCtD0mhYVaO5Kc6Nwm0u/HP8AIZYlxeg1+5f/AKB6mp6ydxmGeziv8nzts9v0uqdV0X0+j9+pu+f6HhJPgfp/w+56fd/bjyXdO6kYrLZ6Hof0toaHUr7pNKb4uOM+B4q8qSUXgydHqDvek9rRmsxcm2mPy2uT02WNuvv/AMPo/jN4c+OWt/T7vS6faVcLFV0p57KlJSDPWei93/GsdNnnvoqL/IxT6L6TVS3WNHPhBIpl0M0mXs0HD8E5L6n4fHn6/wBudj9dl6fjvnCN3ofQu6XGwoRz/KuJR+p1rOholGlGla1LinCKSSVRS+Z5Kr0Gs3/DrXMPKpn5md9C7in/AANSrx80mXk5suaTHk5NyftOP0/Hx23DHX+z2euaLY9Iba2pVNVr0vR921ukpZzjx8Dzdb9nUW/+H1u3l4VKUo/LJzH0e6QUHmjqal5qS+pFb9LaHKtCpj+v9Uez0/5H1Xp8Jhx5zUeXm/G+n5su2cu2qf7OtVw+qurCr5VWvmjJU/Z/0jjnZZQq/wDTrQefzLo6n0ror17Tev6XF/oaIdM9V0nqrm/sJ0qTniMpLCk+5PvPdx/nPW9pNTL/AGeTk/DenmNvbTxdxRqW1epQrU5U6tOTjOElhxa7GVHS1zUVq+tXV/GO1VpJpe5L6HNZ+x4sssuOZZTVsfl+TGY5WS7kEBEMlk6yOdqYRBsEwXSbDiMDAQbFBAECDAJkA5CmKQB8hyKggEIEgpeRTQBDtBgGkC+QCEGaNxJ3FJq4q0a9Kp7CUtrWc5WODTXBp9xqbTk2kkm+C7hcEJItpsizqdXOE3SlUprKnCOMtNYys9q5hyQqbGm4KNRUYzUJyUnvjtbaWOWX3hAg5AOSAIUMiMBEQEAcg7SKIVGU5KMYuUnySF7SPD5rIQ8qVWK9alNecWVvhz4ETa9luPk8DKtWjyrVP+5squpTnt0Wb72egsZ7LC3j3U4/I4NaUv8ARoJtScn2pHYpz2wjHsSwSTcY5bqx0I1MhbMkJvsZcpZQ057Cb4GaXMunIzyfEaWUchUimUhHVx2k01MmqVRIzVKmclM6zbBGWTWOLOWWwlxFaLduUK4m6zIraFaLXHwBtM2tyK8ALdoNuDO10THAUswI0WVLCsDC0RQlOW2Kcm+xI0hHnJDVGxr447I+EpLJCbhqvncajT5mmFcxdo+Tk9WnTp10X4jNZTOPGTXJmmlcSiwfLXOngpaaL4V4VFh8GNKjuWVxIu2XOVh8mZakXTljs7DXODg+Is4KpHHb2Fh5ZkPgRLa2mWJ8DaROQYsDeULnBqVixemMpFKkNk3tNLckyJkZcSobIyYI05Pki+nbSfMpbpZYx331CL5OpHPlk83dVvSdVuav3qjf5nrrWjGnOVRv+HTnP4RZ4ii81Jy72zz8v90jpxeLWliN8AtiMxXSKKz4MXR479Sm/uwf5tL6krvgzR0ehuuK833xj839Dj55MY6+MLXpsPKSEp6xGm9kL5wxwwqjRdQquhXhVik5QkpJNZXASvS024qznU02mpSbb2Ta+eT33f08M19r46tUmv8A3UJrultl8xncqft0LafnRj9Ec+WlaPN/+3uKf4aif0F/0TTf9u9u6fnFP5Mby/S6x/bZOFlUXr6dbPxW5fUp9CsY1YVaFt1U4vPCeUVrRI4/da5JeFSMv8hpW13a19ta7pXFJrhKHNMn/sXx8V0rKHW3tCH3pxX5nO6RVuu124l3PB1dHjnU6L+693wWTz2oz6zUriX9eCZ+DDyyzlwZzbqXBm+b4HNvHwZ5OW/D08c+Xr/2f0U7ecm1FTm1ufJccZ/I7d3W6QWt1VhHQKtxShJqNS3qRmpLvWDm9DKfV6LGXfx+v1PRqbT4PHkfjfUZb5srW8rO124OoazXlLSnc6TfW/o1SrOdOdJ7nlJJpYzjxLo9LNLXCrOpSfdUptHRvruq+lFio1ZqVDT85Unw3SydBX1zOSjOq5p8MTSl8zlbj+kunn6+t6dV6TRufS4Kh6DTp05vk3nLOrb39nXrU4wu6L3SS9td5kp0bO56R63KrY2lalGvGlGFShFqOIrOFjhx7jTR0DQLq5hGpolrBdroynTePdLAvVbIpsqqraprNzlfvL2SXHsikjoJ8eZ5rSdC0vUNOV1WV1CrOpPEqNfbwUmlwaa5I6dholGwvY1be9vakWtrp15KS9zSRMpP2zZF/TqaVLS6C+zSz+S/U8VPuPVdPan/APN0aK5UqOPzx9Dyc2frPxuOvTYuOX9zDdLMXk19BaCq9LYSx7EfqjHdvEWdv9mlJVNcuar+ykvmeX8xl19Nk+t+Lx7c+L6+pDxlwKFJZGU+J+AfstNCeQ5RQ6gVPgXaaaODJtj3FSn4jbsl2mjbI9x5r9pMIR6OaZSSScrjd8Ez00eZ5P8AaZPhpVDujKfyPqfhse3rMHzvymXX02TwUeCSI3hcQN4MV7cOnTbR/RO2o/Fdbbp1tOuFB168bf0j0em6slt3bYrm8HpNK6V2Wq2anHTbCpjhKMqWJLzweV6JXFWgndU5banfzznPB968Cazpr0eu9f0SGLRv/irVcepb7fwPs7uXcLl8S2fBMJbcZ5e39J0Wr/F0Ggv+nNxA7foxU9rT7ul/062fmcHTtSoanbKvQl+KPbFm3cb6S+HG5WXVbpaP0aqexdahRf8AVGMhH0Z0if8AC13b4VKD+hk3B3Dpf2dp+lz6IKT/AHGs2E/xNx+YJdCdV/2p2db8FdCJseNRx45x4jWX7XcVT6G6/BcNOnP8ElL6nFuLata1pUa9KdKrH2oTjho13vS+5tqvo2kyq17p8Fsk8RO30i1CvqnRnSLvUYw/1JZhUnHtXiZlz7arWprbyhAEybQyZptLSreVNlJLC9qT4KPmZIZqVY0485M6WpahS0TTM8E8erHvfiX629HBw9/m+HSjS0XSafWXjVxNc3Ulsh8FzKn+0XS7N7LahaRS/l2qf5s+V319e6nXdSrKST5LuMvolbm2zyZ8svibe6XDD4j7LR/aVo95ine2FjVi+DdS22P4rkdCGmdGtfhv065em15ezGc+soyfdnnE+E7K1J5yzfp2sXNhWU6NRwfaux+aMTLHfx8Lemc1lH0jVdFvtGueovKLhJrMZLjGa74vtRznwPTdFeldr0k03/RdX/gy9ib4yt59kov7pxdV0240nUa1lcrFSm+a5SXY14M9PHnb/HLz/wDLw8/B7fzPDEyEYMnR5xCJkKbKlhkwip5HSDKYJjB0LbRtSvI7rfT7qrF8nClJr44La+garaQ3XGm3VOPfKlLHxM98d62ur+nKDktdNlclhmjZSZIAlag5JkACBsk7RRoLM4rxCuvcL/g7Wn96S+Z1G+45t1/GsYdmUzbk1j4cebyvjPBfCqkuJj3YFdQunJrnWTeEVSyVQlkd8iyJaqnJ5KZPiWy5lM+AWEb4l1KSKG+I0XhkrpI3LiN1awV0p5RoXIxcm5iolFCtF1RFMmZbkDCFaCwEXRWhVByklFNt9iNNG2nW9b2Kf3n9O81RUKMdtJY75Pmx20dds9OxjHjXlj+iPP39xY5Rpx20oKEXzx2+8LeRJLgTe/Ka14V7yEaIaZfLxhQkdjJjporGQU6k0+ZfTuZw7WZlzGCOhG6hPhOIyp0p+xUx4M56HUmu0DRXs6jW+KUvwvJmcJrnFr3F0Ksk8ptFiuJ/eePM1EY8MKTfYzarpru96D6U89nwNbRjjTm3wizRTtKsuawXK5k+0PXSfayxm0YWSXtyLVSow8SpSl3jxyzcrFXKUVyQVNgjDJYqfA0xQqTcNNv6ufZoNfFpfU8Zbr1c+J6/VpdT0cu32znCHzf0R5KgsU0eXP5zeri/sWNFcixlU+0zW4y13wOh0dj+7qS76j/Jf5OZcv1TsdH44s4vv3S+Lx9Dnx/PLHTP44q71BUJzcLiU405Ra3QWXF44P4nPekVU/3Ws8P61JfQ1EZ7rJXjls8M0dN1VP8Ad6ha1PByS+ZbQjeUnOneKnvT4ODTTXuLAiRblaOcLLeEFTi+Uk/eZrurCEbalKmqnWVfWi21lLs4G1x0V8Z6VKn3ulcSXzL5Z1J5dDRV/wAVVn9yjN/lj6nk60t9erL702/zOz/qWi2O92cb9VZRcds6sZQ4+7Jws8DlnW8YrqPgcu8l6rOnUfA5dyt04x72kePnusa9PFPl9L6MUaK0SnSr9Yqc6bi5U3iUXjCa8mN/6frx/wDb9JbpeFa2UvlIFpWo2Gj0qteeykkk5NcE3yNNrq2n16sIxvaLzJLjLB+Mzt7Ww3XOnp+rz128p0tSs5XVrTp0alStGUY1OGVjCeOHebbe26VU7im42+mXWJJ7adyk37nglrWjV1jWK7nHNS7eOPNJJI7NjLbcdZnhThKfwi2ZuX1otm9aebsqusb7y6ttErXdKvczqOpRkn62eKxz4YwaqWu3FtOfpejajbZpzSnUoPam4tLLxyJ0dytEt5t8Z7pv3ts6epXVSj0Z1eXWSx6M4pZ4es0i7m9aNzby+k9JNOsNKt7a4nUpzhHDcqbw3zPR6HqVnq17TVpWVRKcVJLs4mm0uq1Gwt6DqboQpxiozSklheJq0uNOWrU6kaNKEm8ydOmo5wu3CJlcb4T4eS6Y1uv6TXLz7KS+v1PPSOprlTrddvZf8zHwWDlVHwZ+x9Hj14MJ/hx81hvHiDPV/suorN5Wxzk1+SPLq0q393StKO3rKstsdzwl4s+s9Euhd1oGnulO6s61STbbpza5vxR8P8/zY48Xt7+b/wDD9B+G477nuXxHXTJuNT0y9XKjGX4akX9SqVjeR9q0re6OfkfjdX9P1Myw/arcPGRVKE6ft05x/FFoCqR7JL4mdta34aosti8GSM+5lkZjZ1bIPLPEftIrKev29JP+Fbr82/0PaW73VYrvaPnfTqp1vSy6/ojGP5Z+p97+nce3q9/qV8T83evBp5ipLCONqVX90zqVuCOHqTbjjveD9xy3WL8rxzeT0/R6OzT17vkd63uJ29TfHDTTjKMllSi+aa7UcjSIbdPhw5tm/OD2Yz+Mjx8l/na4uqafPo7dLWdIUpabUlitQzl0JPsf9L7Gd+yvaOoW0a9GWYvmu1PuZIXcLSM51dkqEouNWFT2ZxfNM8a7p6NqdW60unXlpMppYqLKjnsb+TOf/p358Ouven+Z/wAvdIZMzWl5SvbaNejJSg/y8GYtR1uhZepD97XfKEfqdb+3nmN3p07i6o2lF1a01GK7zgVbq+12bp22aFmuEpvhuKbS3qazJXl7WU6afq0oPgvM71NRhBQglGK5JCTbd1j8fZLCwt9PpbKEfWftTftSNnSCahZadQ/o3fFsqi8i9KJYvbamvsUYr34QqS7rkN8CqpVUYsMnwGs7JalWq05VlRp06bnKTWeS5GLXXHC5ZajR0dpu8vJ1Oai8I5Wu1Jajqc8vNKk9sF9T6F0WvtMs9Nt4S0a1mpc54e9572eZ6cWen6Z0iuKWnU+qtnFSVNvO19qXgcrlb/Gx9DkxuHFJHnLPTHc1o0qcVl82+SR6+w6NdHaEF/qMru4qdqpNRijjdHJqpGrV9x3d5rpNN8XHOu8mqr0B6Ma3SdPSL+vZXv2KV3iUJvuz2HzHXej15omoVbO9oSo16b4p8mu9PtR9HhNxknnBq6bqGudDba/rJO9s6nVSqds4cOfxXwPPnxWX9xvLCa3i+U6LqFTT76nNP2Xx8V2o+wa3OGsdFrLU091e2aoVJdsoNZi38j43Gxr19QpUbWjOrVnLEYQWWz7BpelanadDr6hfWNxRxRjL14PnF8PyLh8a39Ma78djyskJxTLJcxGeuvlpkIoJT2LLIlbLO1q3lzC3oR3VJvgvq/A+i6Pomn6LTjUlSjdXnN1Ki9WPkv8AxnmuhdGLhO5+3Pl4RT/U9g8s4ct38GP7dD/V7x+zWcF3R4FlLWr6Ek3Xcl3SWTmYYMtHnvHh+nScmU+2++sdG6RQdO7toWt3JYjc0ljj4rt958z13Q7vQ9QnaXcVnnCcfZqR70e/UuJrvrW06R6RGyvqyo16Ms0a7Wdvh5DDK8N+P7Wrrknz5fHmmA9dr3QfUNItXeU507uzXF1aP2fNdx5GS4ntwzxzm8a43HLG6oACA0u0LKCzWj5lZbbcbiHmKrrVuOpW0e6OfyNm5GGUs6sv6YM0ORrHw48n9yyVRcivfxK2yLizTnpppyLHLgVxWIj44BjXyV8Sqayi/GeQHFrjgza3jiyNY7ApF0otvINhi13mI05NM1wllGPGC2nLjgy1Y0y4lU4lifADWXhLiCM7TNNG3UMTrLyh+pdCnGlxlh1Pyj/kWTbeWYtbkNOq5eS5JdhW5ZYAZMrTZFfEG4mSs0pAMhdsvl4ci9gUadTLiFCDIIZBTAgooZDx4srRZDmWRm3S1IIGsIGTWtMymURlDiVbsDqbQ2ul8aZdGmjJ1zQyry7y7Z1W5U1jmNmEEYevfeTrW+0bOrd1yXInpBg3sZSHZOo6/W//AIGjH+ZXk/gkvqzgU16qOp0jni102j/Q5v3yf6I5keEUcbd2vRjNYxHyK58mWMrkSrGC69lnV0jUKFK3jTqPbiKWfe/1OXcxbi8GD14P1W15Hn9y8efbT0TCZ4ae3V/bS5VofEsjcUpcqkPieF66uvt/FB9KrLti/cdp6zH7jnfSfqveqSfJp+8Y8LDUK0ez4Noujq9ePJ1F5SNT1fGxfS5/T1Ny0tQtFN4UYOWff/gw6lqSTcKfL82cv/U69w4t7nKK2py7EPSoOT3TeZPvN+/uawZ9rV/ke3jOc98+fYu42MWEMJYGfIzC3dU1Wc9RdS/oQ75r5m+pyyc+NdW9/SqvlFnk9V/6d07cT61ZVOqsuocKdSlOKU6dWmpxljlwZbb6Tot3cwjcaLYNN8XCm4PH9rRw7LX7GtSjvqqlPCzGR2LDVrCNdSncRlBpxeySzxTXA/H2Zys7scfTNJ0jUrN3N1aVnVnUnidK4lD1U2kscVyRrnoGnWdjeXltd6nSlb0JVFCVwpRl2Yfqp4eS2ypULO1p29GrvhBYUm1lmuvb+naLqNrCvClVq0dsN+cS9ZNr4Dtd/wCDtd6cbT9BrqxoSodIbihmEX1c7dSjHK5LEuRZqun6vbaHWVXWLW5t7ipTotdTKElJvMXy5cOJ1aUdkIxX2UkTWbavcaPYKlTc6av4yqtfZSjlZEztpLuub6B0rpYUHpF0l9y4UW/+7B3+javN9SV/QjQr04T3QjNSXdnKMe7PM6WmzVK2varfs0fqZt7fGk3P0+dXlTrL24qfeqyf5mKo8RZa23mT7eJRU5H7rDHrhI44uZU1GpY3tKvT9qDzg9DQ/abewwpSqcO+KZ5y7tusfIxOy8D5XrPQcfqMu2c2+t6T1ufBj1wr6DR/anP7Uo++DR06H7WIRxmUPdUa+Z8odk0VTtJJHzM/w3D+n0MfyvJfOq+5Wv7VKVRpOc/dNSOtS/aDY1l6+JfipJnzDoT0Ou4zjqF7RUaFWPqQl7TXfg6n7ROjlelo1pf6fbNUaUmq9Slw292cHxsvT8N5/ZwyfUnLlOH3c8H0KPS3Q638Sja58ae01UtY6PV+UacX/TWaPzVC41Cn7NzWX97LY6tqtJ/+5k/NJnrv4XP/APr/AIeWfk+L9Wf+79O29fR+sjKnXqxaeUlUjI8N+0LSLe0vKWp291Kqr1vfCSWYNJcsdh8nt9e1VzSzCXnHHyPQf6jd3dtShdVHJU87Vngsn0PxP43n9Pz95Zr7eH8j6zh5eHr87+ldaXA4d7xr013zR160vVZxqnrX1JZ+1k/Scv6fD4vL2+nxxp9Ff05BeX1KzhmbzN+zBc2Z53sqFGjbW9NzruC8o8OYbfTlSqdfcy664fNvike6T4eO+d1TTtK+ozVa+bjR5wox+p16c406UqHVQnbzjsnRa9WUe5/qVEL1jNzu3Kn0XnRqzqaXq8aVtPi6NXcpw8OCxLzOhpdhbaXVVVQjcVPtyrLO5dqx2F6CYnHMW8uXLJw9QtKnRq/V/ZbqmkXMuKfF0pdsJeK7H2o71CtTuKMKtKSlCSymi2jVp7KlC4pKta1o7atKXKS+jXNM89OlV6Kaiqcpyr6RcvNCt3eD7pLtRmbwvW+G/jlm5/d/8vSUU5VIx72kUdJainrdRLlFYNVg41bmhKDUoykmmu1HJ1mr1mrXEk+06Xw44+XOr1lTg3kXR7lStL+pn7GPoY7+b2Sx3HGstRlbupb7sRqNJ+Kzk8mfJrLVfR9Lj87fUdIjilZ0/CKPN9N7l1NdvHnOMI6+karaSuLbFaOE0eX6Rz6/VbyaeU6jN5/27j0c1/jIfolew/eUJSxOXFeOD1WT5TTuKlncbotxaeU1zTPV2PSzdTUbiCnL70XjPmjnxc0s1fLrL8PXRkZ9bv1T0OVpnjUnnH/nkcOt0opRj+6pvd2ZZzLi8rXj62q/Jdx2ueOnPkzkx0v0Os469SdNtSTSyv8AzwPr2i67d0bqUJ15zpOlPdGbysYPjvRlKer7+6XyR9FtaqhG4m3wjRkcpjM8fl04vjFk6S6Xb6dWtq9lVlUtLul1sFLnB9sX5HBzk7Gt3SqWdjRTz1cHk4bmoptvB2xlk1Xy+fGY8lkara3rXdxChQpupVm8Riu09xp/QTTKVKM9bvKlSb50LZ4S85c3+RzOh9JQpyul/EqLg+6P+T1Lm28t8Tjy234l05S6+Qo6dpunPZplOrToqKio1JbsYK7/AFCNhZ1K74uEW0vEdyPP9Jqj9CcPvNL8zExLXttI1Kld29sq2n0HKolukspmSvtVeooLEVJ48si6KtkbVd0E/wAhVuqzxFZb4mJhJldNZZbkPCMpv1U35IjbiXULqVlUi6MvWT9aX3vDyNN9QpzhG6t1+5qdn3ZdqHbWWqnX42Ol38qNfqp+tQqrbOEuKeT5n0l06npmvXVrRWKSluprui+KXu5HuN+yafcy/UNA0vpVByot2eqqOIuUswqY7GWZTiz7XxfLUlzx6vkr4MD4GzUbG4069q2t1TdOtSltlFmF8z2Syzcc5+kNFjxu4eZlybdNX/FJi+Gp5boPOpXEu6OPzL2zLQ43FxL+pL5mpQk1lRbNzw45+S5GpcZCxhKTwjdTsLiFB1upqOn2z2vHxFsjMhchjxeBGX0FxWTNpMV9K3bWQzo4NVKpGMSurNSfA5729GOMkYnTRTKGDU2iueGY26TH4ZXkGeJbKKyJs4l2zpopNywksvsNsYKjHvqd/cZ6Ueojl/xH/wDn/I6k32kuWyY6GQjHfIVmdtaIxXzCxWIaQnIVvAN2S7TR+ZBN2CDaafMAkSGNqGAohMFF1Om5FjotIlCaijQ5RcTpJHLK3bHtwyyCwJOS3G6wsbjUa8aFrTc5v4LxZJqF2ytkPTXmkadoNvuvnO7umv4cHiK8zzNXXcVWqdlQpwzyxk5Xnx+nWcOWvkHzIer6Nz0vVakaF7YUpOfDMXhnd1v9mFSNGdzpFSUmlu9Gq82v6WS8uM8r0v0+b5Cg1ac6FaVKrCUKkHiUZLDTAdIyYKYoclQ6YyZWiynHdOMe9pBGDpHPOq0qPZSoU44/tTf5syLkaNdkqnSS87lUaXu4Gc44u9+kYrQwDSKZ09xQ7dPsNuAbTFxlamWmB2yfYI7Vdx0tiDsXcZ9uNe5XM9ET7B4WazyOh1aGUMEnFC8tZ6VuomqMcBSGO0kjlbsRWHtB2hFNRZicm7pScso7TRnq0lI48mHaadePPrXFjOvTWIzkl3DK7uo/aT80dJ2y7hHbJ9h5MvSyu/uY3zGWGqXUOTXubRpp9ILynyqVV5VGK7RdwjtV3HK+ixv0nbC/To0+l99TX8at78M2UunV7FYlUTXdKH6HAdomD0LwOWX4/C/Rrjerp9OZ59aNF/FGpdLa93RnRpRjCM1tbi8nkKWnpvijrW9FUopJG+D8XxzOZZTw48nST+LY/ZKZLLHIfa04RnlTT7BepXcacE4GLjGpWOdFJZPV9D+hsr+tT1O/p4tYvdSpyX8R978PmeR1Cu6VN7eZ6qz/AGiVnojtYU83Cjtg9uNvmfE/L31GWE4vTz5vmvr/AIycMyvJz34nht/aB0y/07Zp2nSXXp5nKP2UdX9nnSWGuWFSw1F9bGpFwqQnx3RfBr6nyu6t53EqlWrJzqzblKT5tk6P6pU0HWKdZScYbvW7j5nN+H9n08mH90+dvfxfk/d5tZf234ej6T9FavRzWa1lUjupe3Qqdk6b5P6M4bsk3yPp3SrpHpWv9GKFN4d9QmnSfaov2l5f4PCbUfc/G8l9RwTPOavh8j12Hsc1xl+GOhaRg84NyWI4IkF8j6eOMj5+WVrPW9k4NzU6q5jPuZ36sco419bOfFI48u/MduKzfy71t0pTtaFKtTU3ShsjKOM47maIdILWXtQqR9x4iVrNdgvVVY8pSXvGPq85NWLfS8du5Xv461Yy/wB1rziWx1OzlyuIe8+drr48qk/iMq1xH7efNG56z9xm+jn1X0mN1QkuFaD/ALixVIvlJP3nzRXddc1F+4sjqVaHY15SaNz1mH2xfRZfVfSUyxxt7u1q2N7BztKvtJc4S7JR8V+fI+c09cuIcp1V5SNdPpNcx51p++KZb6niymqz/peXG7j2Gh2eo6FrK067jKtaNOrb3MV6k4+D+nYzHeT33daWec2c2h0lv7unGhGu+rTzjGEjU8vi3lvizeOUuGpds5Y3vuzTHdR3RZ5q5oSjVbWU+89XUgpIx1LRSfFHn5OPs78XJ1cuwhcSqxk5YS7e09RY6NU1FOc6io0c+tUlxb8l2nNo016TToQ9qT+CPVw9SlGmvZisJHTiwmvn5ejCXku74Vx6MdE4xxXpahczfOaqqC9ywUT6E9E60807vVbddzjCaXyNiYyy8JcX3IXgwv09M+PiBadAej8/Vt+kMqdR8vSbbEX5tM4vSXo3qHRyUY3lOLpVP4Vek91OovBndWU8PKfisHRt76nX0+rpGoNVLCusYlx6qXZKPcZvFZ/a55ceOX+75hpGprT7tuMd9Ry4R78o9RcdILiNtVoVLOrb1a1L1d6ayn2+RxNB0GtW1+pVazb29RxdTsk/A7/Sa4he6xDY04UaUaaJxduvymeXTDbJQqTlRj1knJpdpk1G52UpYeDQnsp4OPqkm4Nd5vPLWL5+M7Zbr6v0TmpablY4JR/I724+f9AtahOkrepLjNJLP3l2HvM8DEu/lyzlxulm7HFs51xYUdftN9pqFrupVcShNtPg+/GC65lLqZJdx4S0vq/RvpC3Jt2dxLiuxNkyMZt9V02LdSME4qSptLdLCzjvPKdK6vSPQZwurenD0eScXtnGS4cew69XUKNG0jXUt0ZrMEvtHn9Uq1aunXFau/WlF4j2RXcTrfK7jtdHb+51TRqF1cqKq1M8IrGAaf0ov/8AWb3SalhH0eEpU5VG3jhykvEs6L0ur0qxh4L5l1alCN7WqRik5Tbb94sl+Kb1Nr5Ty8jUqsqc4zi2pReU12GdSGTLYzKq/aFRpahpNlrMIpV0+prYXPufx+Z82lzPonSW4jDolOlJ8Z1o7V7/APB86kzpwY9cNLnd3aM3aX/Gb7kc86Gl/wC4+6LOmSzy12KUlVk+2o/odeFeNOGEs+45dglG2jJ/ak3+f+DoVLqKouEYrj29xtwym6a3qUo199SOV3I72i9J7my623rQVW3msKD5I8puyWKpPGMmc8JnNZNYZXG7jTc7Fc1NnsbuCGpvCMiZfGXAVrFpVR4JuKkxsnOusFiNhkysxXSI2aKNPq1vl7T9ld3iSjSW3rJrh9ld5Y05PLMW/S6I+LCkWKm2P1eETZpVngAdoVobNK2hWO2I2alSwjF5DMSQTRW3khMZIF0+bIPaKmMdmBRGDJACm0P1ksYEIVNGhCVWpGEFmUnhI+taRa2nRno7Gq0nc1Vxk+bf6Hz3ozaxr6pCdT2ISXxZ3unGrSqXUbShLFOnHHA4cu7ZjPt149TeX6cTpFqnpdxJRe5t8ZHn6NvCrdRU5Yi3xYZyeeLApYJOPU0XP5fSej9DT7GMUqMZp85Pmelq6/dabcUI9bKdjN4jJ8XB92e4+a6NqjUOrqPlyNtXpTGpbVbXqXJPk32M43D+Xy7TL4+HoununW+qWy1a1pxhdU1iso/bj3nzdcz12law3bV4V57oOOMM8xcUuquJwXJPh5Hr45qaeTPyqGSAkMdNM7FItotRrU5PkpJ/mVoYaTbj6pLb0ju9yzmpJ8/EGY/dl7pf4Jr6xqkbhcqsYyfnjj+YsMygnh/A44/Fsem/MlN6v9XwJ6v3vjFkIaZTC+9H44CoZ5NPyaBwIENsl3MmySju2vbnGccBcYLuvqO3VDe+rTyo+JUVoOB5Vpzo06TxthnGFx4jVa3WwpxVOENkduYr2vFgVohdKpQndQnKg4UVhShB8X3skPRpXMt3WQocduOL8AKSPmaLOjTr3ChUeFhvGeYLqlCjcyhTeYoqbUYFaGYOJnSlcEybByZGlVdWmB0ky7AcDqbZ+pHjR70XYGSHWGyxppFqWAIY1IyJAEAYWSygkAzVaCqc0SlbQprgsGjGSYM9Jva9qqlTTMlbT4VpZaOiTajOXHL5WZWeFVpbQt6e2CwaWxVwQTcxkmozbu7ophYpCoWSyUTpKSLyEs2u9MMrZceBW7Rdx0ceAHExcI1Mq50rSPcVOzT7DqOBOrRPbi965ErFPsK3YruO11a7idUiXijXuVw/QPAaGnJvijs9Sh40sckScOJebJVZ20aWMI6BXCOCxnoxmo4ZXdLwZXUxGLZayqpHKFI4sdR9D1RVWk0uxs7kOlNvL2qTXlJM4l5p3WzcjDLTGu1nl78mF+I+hx8mMx09jHpFZS5ucfcbNB6VejarUnSrdTwxCZ89lZTh2srgq0JerKSY/wBRl9x1mc/b73adM51pOlqVeldWc4yVSnOMW2sdj7zydTpD0Th61O3vqzXJVqqS/JI+dQ9LqRadR4fcXW+nZknJFmc3/CaTLmkeru+k077FO0owoUFwUYLCS8DNBPO6XFsz21BU1hI2KPA7zd8vDy8lzvySfI5N9ByTOvJGStS3Jmc5uMYXVcGwv6mnXO6OdjeWk+PmvE+maL03pVqMY3D63HDfH2l5o+b3dk9zaMfU1YPdHKa7UeTHLLjutfD0ZYYck39vuH/qHTq0eFfGe9HI1OOn6nSlT6+nl8nnkfKoXd/S9mvV97yXR1bUYf7qfnFG/exvmOf+ms8V9c0a1pW9rCFW8VeUPZzJcB9enFaZW2tY29h8lhr97DnGm/c0XrpPcOO2pSzHtSmzXvYM/wCmz3t9n6Pa9pThZ0FdwU0lHDTXE6NV5m34nwu26R0ravGtC2nCpF5UotPB2qX7Qa69qvW/uimWZ4ftnLgz/T6umLUr06Md05JHzRftEqOOOuTf/T4mO46SXupyxGU4xf2pc/d3G5ljfFc/aznmPU9ItZjfVadrReadF5k12y/x9ThtmW3W2CL9zO+PhNaMdHT+FtWl4HMTydO29XT6j7ykbrbhaUl/T9R22SjHFtTX9C+RMGtuaLOR8ipBXMBky6L4FPIeLJY1GhBK0yxI56dJU5l1Cgpy3zXqLs7xqNvv9aXCHzNWE8JLCXYcsq64q3mT4jxiNhBSOVrpMdokLPgM2I+JNtdYqYjHkKxKaVsVrgOxG+BrbOiNlbY8mVPBdp1DdggHzIXa9XzdcBgBO7gJAEAKD2g7ArmB39D3R0y9q0/4kJRaMNy691UdSpmUnzZs6L10r2rZTxtuobFn73Yeio6DOUZRdPjHg+B0xksefk5LhXg6lGXdxKXBrmel1TS6ttVklE4lWjPtic8pp1wzljNRuJ0aikuweFWU6rfa2GNBtnV07S5Vq0fVfF8DEw21lydYljbXFWbjGLxJo0apQVLUalNrDSSfwPpmjdGIUYU6lWKUaUOsqN9nA+XareK81a6uIexOo3Hy7DphljvUcZllldszp45CYwNvYGzaxAoGSBWTVrZ3Fnuiszp8V4o4lrXcfVbafmeoTODqmmypTdegswfFpfZOPLjZe0ejiylnWrd8mvbk/N5IpSxxw/7Uc2jduHqyNkLiE+1GccpWssLF2/8Aoj+Ydy+58JFe+L7RtyNMmzD7s15NMK2d8l5xF4BKh8Q/mR96a+hFFdk4P+5CZ8A8yofZN8lny4g2yT4xa9wjjF9iCljk2vJ4AbgTJOsqcusl73km+fa4vzigJkgVPvhB/FfUk6kYwbdJ8F9mf+AJwJjBoVXqq2FOFS1qQeFwaaxwfg08GfsEBwECCAQriKFMIcgAgEhCAEBMkAJCEAiCAIBJkBMgHJCZJkCEIQoASE7AAQPYQaQEg4CkN2DSWkwMkNKKjj1ovKTyny8CxUZ9f1EUpVM7UotPL8y6CoJIxlLO2Le1ZeFyXeDiGUYr4jCsNElBMqlRTNAMZM2LKwztlLsKfQln2TpYComOka71ihbKPYaYUUi3YhksGpjEuVSESwQOeBrTNRlUo5LACwZp0VJciiVpF9hvFUU2YuEamVc92cX2COyj3HUcEDYjPtxrvXJlYR7iqVhHuO04LuB1a7ie1F92xxP9PT+yBaamdzql3E6pIezF96uZR06Eew6NCioJYRbGBaopGscJixlnaaHIfIgcnWOZ0zqZ2aX5s5K5nWqLNnRh96SL9wdmNJqnBf0r5CuDR0ZUMcCl0ePInZixiwyYNToi9UWVNKMNlkYNlsaJfGmkVlXCDNFKln1pcIr8xlGMFmXuQk6uTN/w1Kv6xcksJckMqiMLqeI0anE5ZYu+GTbuyOmZoTZduyjz5R6sTNiSZHLArZJGiS5iNjSK2zUjIMrbGciuTKBJlbYZMrky6QdyIVbmQdVfPQ5AE9DyiQAQCQg+xuOUAaVWdCrCrTk4zhJSi12NH3vofqWm9KNNVxS2QvacVG5odufvLwZ8B5GvTdSvNKvYXdjcToV4cpRfPwfejny4XOal1WesvmPtHSLo9Tq5nTxlc0fN9U09W8pJ8DbP9oFzf49Og4VcYdSlwT9xzbq8tr+WZ321f1I1hMpj/L5cphZfhgt4UOu9eSUT02gVqdxqtGlbwzGL5nBhDRqD3VbmpWf3YIet0jdKi6GmUFawfBz+2xMr9RrPil819C6d9MLaw0WWh6bVU7uusXNSP2I9qz3s+TLkCKlVm2222+LfaXOltiOPCcc1Gr8q8hyJJ4fAmTrtNHCLkKKGTHS7xUh4xbKjm3mi0rjM6OKc32dj/Q5FXS723bzRk0u2PFHsqVs5ptyUcLPHtIotHPLhxyu3THnyx+Hg5OtB4kmvMMa00uZ7x0lPhKKfmslUtPtZ+1bUn/YjPsZfVdP9Rj9x4tXU12jq8kuZ6x6Lp8udrD3Nopn0c0+XKnOPlNmbxZxfe479POq98B1eLuO1Lovay9ivVj54ZTPop9y8/wC6H+R15P0d+KuaryI3pUO80y6L3a9ivRl8V9CifRzUorKhTl5TRP5z6X/p37RXEO8dVoPtMs9H1OnztZv8LTM87a8pe3b1o+cGTvZ5jXt43xXT6yPehlOL7UcV1KkXiW5eaGVxJcpD3Yl4a68YQg24xSb7kWJo5Cu5LtHV9Is5MUvHk6qCcxX7HV/4Gu8Z6ZOgQxxvosdXcGXtE61sRMmdXUPvIZV4P7SLuJqrshRUqkfvIO+PeBYiC70+0OQGILkKaCCQmQZAbJAEAJMkIVKOQ5FCVNiQAQbQK5AwQKIRQgEbhgQZMIZNp8G1wxwYyqTjCUFKShLG6OeDxyEyQIfrJOlGm2tsW5Lgs5eO33EqT3xitsU4x25isZ8X4iBAaUoSrKXVKMMrMIyfLt4vIY9V1snJTVPjhJptd30EIAYxg4Tc5NTSW1KOVL39hFFdXu3rdnGzDzjvBkhNKdw2whLfB7lnCfGPmNOjOnUVNpOTSaUWnnPLkV8idhQ7pVFVdJ05dYm04445XYJz5BUpRkpRk1JcU08MMKk6SkoTcVOO2WO1dwQpBoVJ04yjFrbLmnFP5odVmnmVKlUXatu3PvQVSRIsqQSjGpTblSl7LfPxT8UIDwhCEGk2GA4CQAEwEgE7RgByFEIEwgGPtI7Ki51bGn96pFfmcimszXmd6xj1utadS/5ifw4lHrpUefAplRfcdd0M54A9Gz2Hm7ulwcV0X3A6lo687dR58CicYR5LPmbmW3PLHTnqjJ8l7yPbTXDjLvL6kmzNPJ03+3PSmpNtlLk8lskVuJU0Tcxoy4g24IkSxvH4aISRcpmNNotTycrg745r9+SbitcRkZ6ukyRsrkyxiSQ6nZU2VyZZLCKpSL1XsRsqkxpSKpM1MWbnIGSFbfEhvox7jwvaQUKZGTZIKTITR0FSa7RUw5KGyHAqY2SoOQi5GQBGQqDnDKaaqTUSVKueCMzkwZbJpDN8QpihNGliWS1RKVIsUmWMVaopFsJJPkZ1IdSNRlujVW3Au7LMyngbrC7TTRuGUjN1gymu8bXTRlEyUdZ4h6wDQmgdpSpjKZBamNlFKkHeBbhBUStTLI1FyZTSOKftJPzQsra2n7dvRl500xpSIpEsiy1lnpGm1PasqPuWPkZp9G9Lnyozh+Go/qdPIc+JjpjfpqZ5/tw59EbGXsVq8Pen9Cp9DYP+HfSX4qf+T0akPGSwZvFh+m5zZz7eUl0Nul/DvKMvNNFM+imqxXq9TPyn+p7PfgaNTiZ9nFqc+TwM+jusQ/8AiSl+GSf1M89M1Ol7dlcL/wCtn0uNRNDKa7yezP2171/T5ZJV6ftwqR800Kq819pn1VyT4PD8ymdvbVPbt6MvOCZPas+196XzHzJXU19otjezPf1NI0yp7Vjb+6CXyM9To1pE+Vtt/DNr6k6Z/s9zD7jxav5Y5DLUPA9RPojpkvZnXh5TT+aM8uhlu/Yvqq/FBMdeSHfirhK/RZG+gdCfQ2qv4d7Tf4oNGafRPUI+xOhP+5r5of8AUn0b479q1dwfaWK5h3ozz6OarD/4+78M0/qZ56VqdL2rOv7o5+Q75T6XrjfFdJV4feQyqRfacSVO5p8JUqsfOLQvXVI9rRfcT2nf3LvQVJM4MbqovtFivKi7S+7E9qu3kmTkK/mhlqT7UX3Int11QnNjqS7UWrUKbXcXtE6VsyEyK+pd46u6b+0XtE61oGTKFcU39pDKrH7yLuVnVXZRMlamn2odSQNUxMi5XeHIQwCZCUAICEUWQjIioJCEIIXei11QdbqpdWucscvPuMtacoUpSitzXHHeXxrWkL30q1rRqblLMMNSaaacZL/zlwJb9Na+yxlOGdk5wzxajJrIVVq/zM/ijF/QCqQfOg15VP1RN1L7tVeWH+hU+R6yT5xpP+zHywRzXbRp+5yX1YE6T+3NecP0bDim+VaHvUl9AJvp9tGa8qi/QO6j3Vl/an9SKnnlUpP+9B6iq+UHL8PH5EA/cv8A3WvxU39Mh2w7K1L3vHzQHRqrnTmvOLFeVz4FRYqTl7Mqcvw1Iv6h9HrL/an7otlDUXzSfmBU4J5UUn4cAvwtalHmmvNEygRlUj7NWovKb/UfravbVm/PD+YFlBZqRPRdHWqvSe2bWVTUpfkzz9C5lBOU1Skl3019MHoOh0XUv7i524UYY97f+BfFPuPoLuI9kSuVeT5cF4GPruJOtR5errtdN57cmepHPIbfw5k3ZNxNSssqbyVyo8ORsbFfE1tLhGCVEqdLB0nFMrlTRds9HPdPwF6tm900K6awXadWJQGSwXOKQjaRTWgzgm8qlMplU8R1XtpolVKp1iiVRlUpsswT3F0quXzK5zKXNiSm+83MS8hpVCuVQRvIGbmLFzMmQCeCF0zt4d8yA7QnmekewhCBECmAgD5DkQiZUWJjJlaYyfEGmmnRlNZQk04vDLadyoRwimpV3yySVbJoMkFyHJvbOjJjZK8hTG00tTGUirJMl2aX7vEKkUZZ1NL0erqXr9YqdPONz7Rbqbqa3WPc+8m9951da6OXGjQjUc1VpyXNLkcXcTHOZTcXLG43VX7/ABG3GfcHca2zpfvGUzOphUxs01KoHrDMpceYd42aaVU8Q7zMpDbvEu0aFPHaMqhl3DKQ2jUquQqZmUh1Iov6wKn4lCYdwGhTCprvM24O8DUqncwqZlUsjKTxzIbaet8RutMu/wAQbiaXbX12O0nXMyZGUho21daxuuMimw7xo21qoHfwMin4jqfiVGjeg7kzPuCpYCNGUDPcUqYVMbSxepAlCnNYnThLzimUub7yKT7ys70E9O0+p7dlQf8A9aKZ6DpM+dlFfhk19TRuYylklwxv0vfKeK50+iukzziFaHlU/Uy1Ohti/wCHc14eeGd1S8R0ye1hfpZz8k+3l5dCX/t36/up/wCSip0Mvl/DuaEvPK+h7JMZMz7ODU9TyR4KfRTWIcqVOf4ai+pnloOr0+djVf4cP5M+jbg5J7E/a/6vL7j5jOxv6Pt2lxHzpspcq0H6ykvNH1VPHaRqMvaSfmsk9i/Vanqp9x8rVzUXaOr2qu0+lTsbKr/EtKEvOmip9H9Hq+1YUuP3cr5MzePOfbc9Rhfp88WoVF2lkdSkuaPb1eiGjT5UakPw1X9TJU6E6c/YuLiHvT+hOvIvucTzEdT70OtSidip0Hhx6u+l4bqf+TNLoVdL2Lui/NNF/wCpPo7cV+2RajTZbG+pP7QJ9EdUj7PUz8qn6lE+jWsQ/wDiSl+GSf1J2znmLrjvitiuqT5SQyrw+8jkz0jVKXtWVwv7GzNOldUvbp1Yfii0Pc/a+3L4r0CqxfahtyfaeaVeqvtMsjd1l9pl92HtV6FsCS7Dhq/qLmyxajMe5E9vJ2CHKWpvtQy1NdqL3idK6gcHOjqVPtLY39J9pqZRm41rx3k2Rf2V8DOrum17RZG4g/tIu4mquWY+zKUfwyaH62sv96r75N/Mp6yL+0g70+0vwnyt62o+coy/FCL+gOtl206T/ta+TEz4kyiKs6yPbQj/AGza+eSdbR+1TqJeE0/ojPOtGC4sx1bve8R5EWRtq14TkoUnJr+pYZ9I6P6dLTtJpwmsVqnrz8G+S+B43ozpGakNQuo+ouNKD+0+9+B7b/UH3i7s1GblJW1xYmcGOWoMT04x1p3joKo0Oqhynegd6+8dV7uq6iQjqrvRy/Sm+0Drt9peqe46nXLvFdZd5zVXfeHrWy9F7tsq6K3X8TK6jEczXRnu0SrMqlUbyUuYrmamLNyGTZVJ8QuYjka0mwbFbIxHIaTaNlbGchJNGpE2GQZIQ1pNjhshE8EKm3h+0ORUQ8T2mJldouSZAbJBUHINGyRMXcHI2Gzgm4RsmRs0tyTcV5Jku00syHcVZDkbNLchyVZ8SZGzS5SDnxKchyXaaXbj2Oh3lnW0anR66NOvSb3Rbw3x5niUw7uOS7Or1et6rvoSoOt1jxtSznB5vcUbssO4zjJPC278rckyIpE3GtppZlkTE3Im4bNLVJjKTKUxt6LtNLkxkzPvG3jbOmhMOUZ1MbcXaaXqQdxRvCpl2mmhSaG35M+8m8bNNG5E3FG/IdyGzS/cFTwUbibhsaOsIplG4KkDTQph3GfcHdwAv3ZCplG4KmEaMoKkUKY24bF29hU2UbgqRUXqY24o3E3BF+8bcZ9w24qNCkMmZUx1LxKzppUhlLxMql4jKQTTTuGU8IzbvEO8I1KSJvM28nWBLGtSDvMsame0dT8QmmhTHhMypseDYsN6bU8oLiUwngtVTJmt72XYwbCzegbkTZovV+I6jgrc2hXVZpnTQkkPlYwzH1rJ1jGmV1W2tav8S3oz/FBMy1NH0mp7dhbvyhj5FjmxXLJOsWZ5TxWSp0a0Sp/8Tb+CpJfUy1Oh+ky9iVxDymn9Dq7gbmT28f03ObOfbg1OhNo/YvKsfxQT/Qy1eg81xpX9OX4oNfqeo3+JN7J7WLc9Ryft4yp0M1CPs1KE/KbXzRmn0V1WHKjGX4aif1PebibjPtRuepzfPJ6FqtPnZ1vcs/IonZ3tH26FWPnFo+lKQ29949n/AC1/qb9x8v3V4vDygq4rrtZ9MnGnU9uEJfiimUSsLKp7VpQf/wBaJ7d/bX+ox+4+eK7rd4yuqz7We7loumy4+h015ZX1DDSrCk042lL3rPzL7d/ZefH9PE29rd3s9tKnOb8FwR6bTOjlOg41rxqpNcVTXsrz7ztRShHbFJLuSwHcamGnLLlt8LlU9xHMo3g3GtOa51AdZ4lTYMjRtc6gOsKc8CN8BIu16qMnWso3EXE11TbQqrY6qsoQ2cDTNq/rH3g3PvKdwyZYdqdyF3MVsDNaTtRchMkATS9kbYjCwMHYuAMYXBo2UgcEBsCAb4kBt4zYTq2WIbcjxvbuqerFcX3GnKA8DRtmwHay/CFkkTS7U7WTDLdpNg0u1TAWOINpNGyZJkZoG0ihkOSbQcgo7iZAALo+4O4Qg2aPuCnkqyFSG00szgm8r3A3DZpcpeIVIo3B3DsdV+4m4p3B3DsmlykHfgoUmTcXsdWhTDuM+8m4djq0qYVMzbyKoOydWpVBlMyb+IesHdOrV1mSbzN1gesL2OrSqgyqGTeHrMDsnVr6wnWGXrCdYO0OrXv8Q7zH1get8R2Tq2qog713mHrRutHY6tqqDKojCqweuHZOrd1iD1q7zD1xOuL2Tq39au8nWnP63xJ1w7HR0et4B6053XBVYdzq6KqoKqpnPVXxGVUvdOjodag9au8wKsN1xrunRu61d43W+JgVZBVZeBe6dG9VRus8Tn9cMq+O0dk6N3WeIVUMSrk9I8R3Tq6EZrvLozRylX8R1c+Je8Z6V1VJd4yml2nKVy+8sVx4mpnGbx10uux2h9I8TndfkPWjcJjp0PSPEKufE5/W8AdaPhXVVdMPWRfacrrsdoyr47SGnT3RfaRtHPVyH0gbTTc5IXejF13iTrSpcWzeDeZetJ1pdp1ad6J1hm3+JFMbJGneDd4lG5vtGUibXS9SDuKFNIZTyVFu7JNxXkmSG6t3dhMlWcDZyi6NmyDORdwNwQ4AZyQNj2CtgbAm28JAPngTPDiGMe9jpJdiArUXLkiyNKXgveOmFNDYKo/1Dqiu9ki+A2S7ZL1MfEKpR8RtxM8SbCujH7zFdDun+RbkBdopdCXZJMV0ai+zny4mnJBtGKUZLnFr3C4N+X3sHB80n7hsYcAwbXTg/sIkbanJ+y/cyyow4Bg3StYJ/aQvosPvSLs2xYIbPRaf3pEGx8/yTJCHjfS0meIcikyNmj7iZFIU0bJMgIQ0LAQGQAxWM+QrIsBgCQjQYITBCKDIEDRFDmQKTJtAXJA7SbSAZJkmCYCjnANzDtZNrCA2yZYVBh2MgXcyZY2wmzwGjZcsOQ7GTYwFyybmhtjBsYE3sO9k2B2ADeybmHaTa+4m6fAbw9YTa+4mzwB8JvJ1hNj7ibGh8nwO8m/gDYw7H3D5T4HrCdaTYTq/AfJqJ1hOs8SbCbB8monWeId4NjIoD5XUMqgesFUGHY+4u6yfrQ9YJ1bYeqY3TUWKoHrCvYw7WN1NRZ1jJ1om1g2su6mot60nWlWxk2MdqdYu65oKrFDjIG2Q7U6xp64PXGbigcS9qnVrVZlka5hzImZDvU6x0lcY7Q+krvObukFTkanJUvHHS9JXeFXHic3fInWSRfcqdHTVx4jKusczldbIPXSL7ie26yreIyrLvOSq0huvZe6XjdXrV3jdajldew+ksvdm8bqdag9Yu85npDZOvZe6e26iq+IVURzFX8RlWfeO50dNVfEPWnOjWfeyyNXxL2S4t6qcB1URgVQeNXxNbYuLd1gVUMimWKXiXaaaVPKG3GdSLE0y7TR8hyJniHI2kWJjJbuQqil7T9wzmksLkNtaqbI9vED8Bd+QplNHihhUwgFDxBFZHSSYLTLggZIwYNac9m3BTE8gk0uz5CmIhkgg5CnwBgJBAkBgqCW0qipvJTghNG1lWpvllFWSNAyEHJAZIUfOc8QgIeR9QQEaAFMmFPiKhkEWboyXrLD7ybFjKkVkQB4i8QkAGOAMDImAEwHA5MDQTBMDpEwNG1e0m0twTBeptXgO0fAUh1N1XtJtLdpMDqu1W0mwu2hUR1NqNgygXbUHaOqbUdWHq33F+CYHU2p6vwJ1ZftDt8B1TbP1fgHqzRsIoDqdmfq/AHV+Bp2g2Dqu1Cph6vwL9pFEdDso6onV+Bp2h2onQ7M3VkdM1KBNngOh2ZOqD1Rq2MOxjobZerD1Zp6sKpl6G2Tqw9Vk2dX4BUF3E6HZj6nwJ1Bt2eAerHROzD1HgFUDcqZOrL0OzIqPgFUTZs8BlTL0Tsxqh4DdQu42dX4BVMdInZh6nwJ1K7jd1ROqHRezD1HgTqPA3dV4BVIdE7MKt89gytzcqYer8C9E7ue7fjyJ6P4HQVLwD1XgX20ubmej+AHbPuOp1PgHqPAe2ndyXbPuIrZ9x1vR13BVv4D209xyVavuJ6M+47Ho67g+jLuHtp7jjejeBPRWdj0VdwfR13D2z3HF9FJ6Kzs+jruJ6Ou4e2e643ozJ6M+47Xo67iejruHtxPdcVWzJ6MztdQu4no+ewe2e44ytvAdWzOv6Ou4PULuHRPccj0d45EVu12HY6ldwOoXcXoe45SoyLI0WdHqUN1S7izBO7nqkx40mblS8Aqi/usvVm5VkUGWKLNHVNfZZFT8C6ZuSpRY6iy1Um3wWSzZGCy+L7hpYpUG+PJd429R9n4izcpsCpyDUg72yZyMqTHVJiNfBOwZDqkyyNE0zbFayx4rJaqaQ2wsYyyLFDYD2Bwa052lS4EwxwpBnZNjCoj4CiaOxVEOAk7S6NhgOCEGjYYINwFbRNG0A5AcgORFRsVsDkK2A8eKIKnwIRp89fMnMjfEmTyvpikTBEyAEiBwCBCECAAohCiEwEgSpghA4Km0wHBEEoGA4IECYCkEgEwFRb444ERfP2I45Fk2zbpS1jACya5CCgBwQJFTCCkFIbBUBIPMmA4KiYDgiCAMB2hXMbsCbJsJtLMkxxBsiiFJDIIXZcBSCuIRoDaTaMkHA0uy7QqJYlwJjBQu0OwcKGmdkUB1FBQyCbKqfgNsQyGSBsigh1BDKIyXE1pnavYu4KiWqAyghpOyjYHq/A0qmNsQ0lyZerD1Zp2pB4dxZGbkzKmxlS8DQnHuJuRdM9lKpeBFSZdv8Abxo7E6sKpobeDcwuw2IOwKbG4d5AFFBwiZiTgERpAwgtR8QYWeYVGkTCwDD70Bxn2LI2mjYQMLuBtl2rBMJc3km11Tep2jqEXxSZWppckgObb4sL1XdVHteAOMF2lW5gcslOsO9i7GK5R7IoRsANLN67l8A9YyrAUm+XEpozm2RN940aU5dmPMvhbLnJk3E0pg5N8OZqhF49bD8AqMYckNkzaukdKMl6vq+QkrfHPiXRfEuWGibXTB1UV2DKmiyo0mJvLtE2IO1COpx4Mm/wATUSnQ2SlVCdYWM6XZRNxR1hN5pmyrshyUdY8E6w0z1q/cNvRl60DqDada170TejJ1getB1at4dy7zJ1uQqqNp1a9yJlGV1SdaQ6tDkK5FDqiuqTa6XtiuSKesEcyL1XuQjkUuplCOZGpi0qSwQzqfAga6vFkIQ8r3oQhAIFADyAYhEEKBCEKCQgewIgQBKgkAECEIQIIyFQSqI8ZNLHNCIIQzlnmQUZAQIAhkyCmKFBTBFCVkQgJkoKGyKFMBkyAIAyIDtJkqHQclabDkKcfsK0x08hTp8CC5DnPIIIwFEZYRURcRkmDdgZMIZJDcEJkIQ6mMpCKDY6hjmNmjbmTdIZRRYoodjqSOWOossjtRYpIdjqo6uQyptl25BUkWZM3BWqXAnVFu5AyjUycssKr6vIOrRa2DJWPmE6tE6pFiZAm1TpiuLRcwcyNTJTh9xFwLScO4LKq4kwy5QTLFRRi10ktZlBssUcF/U+Ieqa7jO3SYq8vHEVxi+aRd1bFcHkSpVDpQ8RXSj3svcGDq13s0yo6td7D1UfEt6tLsDhAVdVHuY0aMful+31RBtbKCpxXYhsRXJA4LtI5JIbTQ7kgOoVOeRSLpb1getKABdNCrcS+NVOPMwdpapYFakNWqFDqC1ZlLmIli7f4h6xsz7g7zUSxfvZN7KFMO/PaajNi3eTf4lLfcwbvEbTS7eHrChyBvG00v6wG8p3h3F2ulvWE3sp3A34G06r94esKNxNw2dV/WEdQo3Az4jZ1aOsyBzKN3iDcTZ1XOfiK5lW4G4L1WOYN4mRdwNLVMhTnxIDTzKCQh5XsTBMEIIqJhIQCByQgiAyJMhClNghCAEJCFECQgT6HACEKgk7CEAZByQgVAohAghIQIgyIQJRCQhQeJCEKgpEIQCbgohAC0/EnEhCqnEKIQB0ngeMH2shAh8JeJMkIAck4kIAUmx4wZCCCxQGSIQIZDJkIRRTYctEIQMpPuJv8AEhACqniHrcEIaiVOtD1rRCFYoqsw9ZkhDUrjknWDqpkhCuSORMkIRYPFjRiQhi12xi6MR0vAhDm7DxRNxCFCtsGSELEqZAyEKhXw7Crdh8yEKaN1gkp8SEI0Xe2BtshAFywNshCLImSZeSEJtUyyOeEQhVrPObZW2yENRipkDkQhqJQcvEmckIEFNl0aUpLJCC1ZNq5xcXgTJCFSpuDkhAJkVshADlkyQgQNzJu8SEAmQZZCBUywZIQA5A5EIELkhCAf/9k=",
+}
+
 def get_family_image_bytes(family):
-    b64=FAMILY_IMAGES_B64.get(family)
-    if not b64: return None
-    try: return io.BytesIO(base64.b64decode(b64))
+    b64 = FAMILY_IMAGES_B64.get(family)
+    if not b64:
+        return None
+    try:
+        return io.BytesIO(base64.b64decode(b64))
     except Exception as e:
-        print("B64 DECODE ERROR",family,e); return None
-PRODUCT_IMAGES = {}
+        print("B64 DECODE ERROR", family, e)
+        return None
+
+# صور يدوية لمنتجات معينة - الأقوى
+# لو عايز صورة خاصة لمنتج معين، حط الـ ID بتاعه هنا واللينك
+# مثال: "123": "https://i.postimg.cc/xxxx/product.jpg"
+# تعرف الـ ID منين؟ من لوحة الأدمن -> فحص الرصيد أو من Logs
+PRODUCT_IMAGES = {
+    # "PRODUCT_ID_HERE": "IMAGE_URL_HERE",
+}
 
 def get_product_image(info):
-    pid=str(info.get("id","")); fam=info.get("family"); name=(info.get("name") or "").lower()
-    if "wispr" in name or "flow" in name: return "https://logo.clearbit.com/wisprflow.ai"
-    if "chatgpt" in name or "openai" in name: return "https://logo.clearbit.com/openai.com"
-    if "claude" in name: return "https://logo.clearbit.com/anthropic.com"
-    if "gemini" in name or "google" in name: return "https://logo.clearbit.com/google.com"
-    if pid in PRODUCT_IMAGES and PRODUCT_IMAGES[pid]: return PRODUCT_IMAGES[pid]
-    if info.get("image") and str(info.get("image")).startswith("http"): return info["image"]
-    if fam and fam in FAMILY_IMAGES: return FAMILY_IMAGES[fam]
-    return ""
+    pid = str(info.get("id", ""))
+    fam = info.get("family")
+    if fam and fam in FAMILY_IMAGES_B64:
+        return f"B64:{fam}"
+    if pid in PRODUCT_IMAGES and PRODUCT_IMAGES[pid]:
+        return PRODUCT_IMAGES[pid]
+    if info.get("image") and str(info.get("image")).startswith("http"):
+        return info["image"]
+    if fam and fam in FAMILY_IMAGES:
+        return FAMILY_IMAGES[fam]
+    return "https://logo.clearbit.com/openai.com"
 
-def user_lang(chat_id): return USER_LANGUAGES.get(chat_id,"ar")
-def safe_html(v): return html.escape(str(v),quote=False)
-def is_allowed_product(name,description=""):
-    text=f"{name} {description}".lower()
-    return not any(w in text for w in BANNED_KEYWORDS)
+def user_lang(chat_id):
+    return USER_LANGUAGES.get(chat_id, "ar")
+
+def safe_html(value):
+    return html.escape(str(value), quote=False)
+
+def is_allowed_product(name, description=""):
+    text = f"{name} {description}".lower()
+    return not any(word in text for word in BANNED_KEYWORDS)
+
 def get_product_family(name):
-    n=str(name).lower()
-    rules=[(("test","api test"),"tests"),(("chatgpt","gpt","openai"),"chatgpt"),(("claude",),"claude"),(("gemini","google","gmail"),"google"),(("capcut",),"capcut"),(("canva",),"canva"),(("zoom",),"zoom"),(("elevenlabs",),"elevenlabs"),(("gamma",),"gamma"),(("lovable",),"lovable"),(("microsoft",),"microsoft"),(("miro",),"miro"),(("notion",),"notion"),(("quizlet",),"quizlet"),(("railway",),"railway"),(("wordwall",),"wordwall"),(("api",),"api_services"),(("vpn","hma","surfshark","expressvpn"),"vpn")]
-    for words,family in rules:
-        if any(w in n for w in words): return family
+    n = str(name).lower()
+    rules = [
+        (("test", "api test"), "tests"),
+        (("chatgpt", "gpt", "openai"), "chatgpt"),
+        (("claude",), "claude"),
+        (("gemini", "google", "gmail"), "google"),
+        (("capcut",), "capcut"), (("canva",), "canva"),
+        (("zoom",), "zoom"), (("elevenlabs",), "elevenlabs"),
+        (("gamma",), "gamma"), (("lovable",), "lovable"),
+        (("microsoft",), "microsoft"), (("miro",), "miro"),
+        (("notion",), "notion"), (("quizlet",), "quizlet"),
+        (("railway",), "railway"), (("wordwall",), "wordwall"),
+        (("api",), "api_services"),
+        (("vpn", "hma", "surfshark", "expressvpn"), "vpn")
+    ]
+    for words, family in rules:
+        if any(word in n for word in words):
+            return family
     return None
 
 def load_orders():
-    if not os.path.exists(ORDERS_FILE): return {}
+    if not os.path.exists(ORDERS_FILE):
+        return {}
     try:
-        with open(ORDERS_FILE,"r",encoding="utf-8") as f:
-            d=json.load(f); return d if isinstance(d,dict) else {}
-    except Exception as e: print("ORDERS READ",e); return {}
+        with open(ORDERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        print("ORDERS FILE READ ERROR:", str(exc))
+        return {}
+
 def save_orders(data):
+    temp = ORDERS_FILE + ".tmp"
     try:
-        tmp=ORDERS_FILE+".tmp"
-        with open(tmp,"w",encoding="utf-8") as f: json.dump(data,f,ensure_ascii=False,indent=2)
-        os.replace(tmp,ORDERS_FILE)
-    except Exception as e: print("ORDERS SAVE",e)
+        with open(temp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(temp, ORDERS_FILE)
+    except Exception as exc:
+        print("ORDERS FILE SAVE ERROR:", str(exc))
+
 def load_subscribers():
-    if not os.path.exists(SUBSCRIBERS_FILE): return []
+    if not os.path.exists(SUBSCRIBERS_FILE):
+        return []
     try:
-        with open(SUBSCRIBERS_FILE,"r",encoding="utf-8") as f:
-            d=json.load(f); return d if isinstance(d,list) else []
-    except Exception: return []
-def save_subscribers(s):
+        with open(SUBSCRIBERS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, list) else []
+    except Exception:
+        return []
+
+def save_subscribers(subs):
     try:
-        with open(SUBSCRIBERS_FILE,"w",encoding="utf-8") as f: json.dump(list(set(s)),f,ensure_ascii=False)
-    except Exception as e: print(e)
-def add_subscriber(cid):
-    s=load_subscribers()
-    if cid not in s: s.append(cid); save_subscribers(s)
+        with open(SUBSCRIBERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(set(subs)), f, ensure_ascii=False)
+    except Exception as e:
+        print("SUBSCRIBERS SAVE ERROR", repr(e))
+
+def add_subscriber(chat_id):
+    subs = load_subscribers()
+    if chat_id not in subs:
+        subs.append(chat_id)
+        save_subscribers(subs)
+
 def load_snapshot():
-    if not os.path.exists(SNAPSHOT_FILE): return {}
+    if not os.path.exists(SNAPSHOT_FILE):
+        return {}
     try:
-        with open(SNAPSHOT_FILE,"r",encoding="utf-8") as f:
-            d=json.load(f); return d if isinstance(d,dict) else {}
-    except Exception: return {}
-def save_snapshot(s):
-    try:
-        with open(SNAPSHOT_FILE,"w",encoding="utf-8") as f: json.dump(s,f,ensure_ascii=False,indent=2)
-    except Exception as e: print(e)
-def load_notify_requests():
-    if not os.path.exists(NOTIFY_FILE): return {}
-    try:
-        with open(NOTIFY_FILE,"r",encoding="utf-8") as f:
-            d=json.load(f); return d if isinstance(d,dict) else {}
-    except Exception: return {}
-def save_notify_requests(d):
-    try:
-        with open(NOTIFY_FILE,"w",encoding="utf-8") as f: json.dump(d,f,ensure_ascii=False,indent=2)
-    except Exception as e: print(e)
-def add_notify_request(pid,cid):
-    d=load_notify_requests(); lst=d.get(str(pid),[])
-    if cid not in lst: lst.append(cid); d[str(pid)]=lst; save_notify_requests(d); return True
-    return False
+        with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
 
-# ===== المحفظة - ملف مستقل، لا يمس الشغل القديم =====
-def load_wallets():
-    if not os.path.exists(WALLETS_FILE): return {}
+def save_snapshot(snap):
     try:
-        with open(WALLETS_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f); return d if isinstance(d, dict) else {}
-    except Exception: return {}
-def save_wallets(d):
-    try:
-        tmp = WALLETS_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, WALLETS_FILE)
-    except Exception as e: print("WALLETS SAVE", e)
-def get_wallet_balance(chat_id):
-    w = load_wallets()
-    try: return round(float(w.get(str(chat_id), {}).get("balance", 0)), 2)
-    except Exception: return 0.0
-def add_wallet_balance(chat_id, amount, reason="deposit"):
-    w = load_wallets(); k = str(chat_id)
-    cur = w.get(k, {"balance": 0.0, "history": []})
-    try: bal = float(cur.get("balance", 0))
-    except Exception: bal = 0.0
-    bal = round(bal + float(amount), 2)
-    cur["balance"] = bal
-    hist = cur.get("history", [])
-    hist.append({"type": reason, "amount": round(float(amount), 2), "time": time.strftime("%Y-%m-%d %H:%M:%S")})
-    cur["history"] = hist[-50:]
-    w[k] = cur; save_wallets(w); return bal
-def deduct_wallet_balance(chat_id, amount):
-    w = load_wallets(); k = str(chat_id)
-    cur = w.get(k, {"balance": 0.0, "history": []})
-    try: bal = float(cur.get("balance", 0))
-    except Exception: bal = 0.0
-    if bal + 1e-9 < float(amount): return None
-    bal = round(bal - float(amount), 2)
-    cur["balance"] = bal
-    hist = cur.get("history", [])
-    hist.append({"type": "purchase", "amount": -round(float(amount), 2), "time": time.strftime("%Y-%m-%d %H:%M:%S")})
-    cur["history"] = hist[-50:]
-    w[k] = cur; save_wallets(w); return bal
-def wallet_cashback_for(amount):
-    # كل 25 دولار شحن = 1 دولار كاش باك
-    try: return int(float(amount) // 25)
-    except Exception: return 0
-
-def get_quantity_markup(key, info, qty):
-    total = round(info["price"] * qty, 2)
-    mk = InlineKeyboardMarkup()
-    mk.row(
-        InlineKeyboardButton("➖", callback_data=f"qty_dec_{key}"),
-        InlineKeyboardButton(f"الكمية: {qty}", callback_data="qty_noop"),
-        InlineKeyboardButton("➕", callback_data=f"qty_inc_{key}"),
-    )
-    mk.row(InlineKeyboardButton(f"💰 الدفع من المحفظة - ${total}", callback_data=f"pay_wallet_{key}"))
-    mk.row(InlineKeyboardButton(f"🪙 الدفع عبر Binance - ${total}", callback_data=f"pay_{key}"))
-    mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-    return mk
-
-def get_wallet_markup():
-    mk = InlineKeyboardMarkup()
-    mk.row(InlineKeyboardButton("💳 شحن 5$", callback_data="wallet_dep_5"), InlineKeyboardButton("💳 شحن 10$", callback_data="wallet_dep_10"))
-    mk.row(InlineKeyboardButton("💳 شحن 25$ + 1$ هدية", callback_data="wallet_dep_25"), InlineKeyboardButton("💳 شحن 50$ + 2$ هدية", callback_data="wallet_dep_50"))
-    mk.row(InlineKeyboardButton("💳 شحن 100$ + 4$ هدية", callback_data="wallet_dep_100"), InlineKeyboardButton("✏️ مبلغ آخر", callback_data="wallet_dep_custom"))
-    mk.row(InlineKeyboardButton("📜 سجل المحفظة", callback_data="wallet_history"))
-    mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
-    return mk
-
-def load_image_ids():
-    if not os.path.exists(IMAGE_IDS_FILE): return {}
-    try:
-        with open(IMAGE_IDS_FILE,"r",encoding="utf-8") as f:
-            d=json.load(f); return d if isinstance(d,dict) else {}
-    except Exception: return {}
-def save_image_ids(d):
-    try:
-        with open(IMAGE_IDS_FILE,"w",encoding="utf-8") as f: json.dump(d,f,ensure_ascii=False,indent=2)
-    except Exception as e: print(e)
-def get_stored_image_id(fam=None,product_key=None):
-    d=load_image_ids()
-    if product_key and f"product:{product_key}" in d: return d[f"product:{product_key}"]
-    if fam and f"family:{fam}" in d: return d[f"family:{fam}"]
-    return None
+        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("SNAPSHOT SAVE ERROR", repr(e))
 
 def check_and_notify_changes():
-    try: products=fetch_supplier_products(force_refresh=True)
-    except Exception as e: print("NOTIFY CHECK",e); return
-    if not products: return
-    old=load_snapshot()
+    """بس للي طلب تنبيه: لو منتج كان خلصان ورجعت كميته، نبه اللي طلبوه بس"""
+    try:
+        products = fetch_supplier_products(force_refresh=True)
+    except Exception as e:
+        print("NOTIFY CHECK FETCH ERROR", repr(e))
+        return
+    if not products:
+        return
+    old = load_snapshot()
     if not old:
-        save_snapshot({k:{"name":v["name"],"price":v["price"],"stock":v["stock"]} for k,v in products.items()}); return
-    reqs=load_notify_requests()
-    if not reqs:
-        save_snapshot({k:{"name":v["name"],"price":v["price"],"stock":v["stock"]} for k,v in products.items()}); return
-    for key,info in products.items():
-        prev=old.get(key)
-        if not prev: continue
-        if int(prev.get("stock",0))==0 and int(info["stock"])>0:
-            wanters=reqs.get(str(key),[])
+        snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+        save_snapshot(snap)
+        return
+    notify_reqs = load_notify_requests()
+    if not notify_reqs:
+        snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+        save_snapshot(snap)
+        return
+    for key, info in products.items():
+        prev = old.get(key)
+        if not prev:
+            continue
+        # كان خلصان وبقى متوفر؟ نبه اللي طلبوه بس
+        if int(prev.get("stock", 0)) == 0 and int(info["stock"]) > 0:
+            wanters = notify_reqs.get(str(key), [])
             if wanters:
-                mk=InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 شراء - ${info['price']}",callback_data="buy_"+key))
-                for cid in wanters:
-                    try: bot.send_message(cid,f"🔔 المنتج متوفر الآن\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية المتوفرة: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>",reply_markup=mk,parse_mode="HTML")
-                    except Exception as e: print(e)
-                reqs.pop(str(key),None); save_notify_requests(reqs)
-    save_snapshot({k:{"name":v["name"],"price":v["price"],"stock":v["stock"]} for k,v in products.items()})
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 شراء - ${info['price']}", callback_data="buy_" + key))
+                for chat_id in wanters:
+                    try:
+                        bot.send_message(chat_id, f"🔔 <b>المنتج متوفر الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\n", reply_markup=markup, parse_mode="HTML")
+                    except Exception as e:
+                        print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
+                # امسح الطلبات بعد ما نبهناهم
+                notify_reqs.pop(str(key), None)
+                save_notify_requests(notify_reqs)
+    snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
+    save_snapshot(snap)
+
 def start_notify_watcher():
     def loop():
         time.sleep(30)
         while True:
-            try: check_and_notify_changes()
-            except Exception as e: print("WATCHER",e)
+            try:
+                check_and_notify_changes()
+            except Exception as e:
+                print("WATCHER ERROR", repr(e))
             time.sleep(600)
-    threading.Thread(target=loop,daemon=True).start()
+    import threading as _th
+    t = _th.Thread(target=loop, daemon=True)
+    t.start()
 
-def send_photo_smart(chat_id,fam,info,caption,markup):
-    fid=get_stored_image_id(fam=fam,product_key=str(info.get("id","")) if info else None)
+# ========== حل الصور النهائي: file_id ==========
+def load_image_ids():
+    if not os.path.exists(IMAGE_IDS_FILE):
+        return {}
+    try:
+        with open(IMAGE_IDS_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+def save_image_ids(d):
+    try:
+        with open(IMAGE_IDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("IMAGE IDS SAVE ERROR", repr(e))
+def get_stored_image_id(fam=None, product_key=None):
+    d = load_image_ids()
+    if product_key and f"product:{product_key}" in d:
+        return d[f"product:{product_key}"]
+    if fam and f"family:{fam}" in d:
+        return d[f"family:{fam}"]
+    return None
+def send_photo_smart(chat_id, fam, info, caption, markup):
+    fid = get_stored_image_id(fam=fam, product_key=str(info.get("id", "")) if info else None)
     if fid:
-        try: bot.send_photo(chat_id,fid,caption=caption,reply_markup=markup,parse_mode="HTML"); return True
-        except Exception as e: print("FILE_ID",e)
+        try:
+            bot.send_photo(chat_id, fid, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FILE_ID SEND ERROR", repr(e))
     if fam and fam in FAMILY_IMAGES_B64:
         try:
-            b=get_family_image_bytes(fam)
-            if b: b.name=f"{fam}.jpg"; bot.send_photo(chat_id,b,caption=caption,reply_markup=markup,parse_mode="HTML"); return True
-        except Exception as e: print("B64",e)
-    url=FAMILY_IMAGES.get(fam) if fam else None
+            b = get_family_image_bytes(fam)
+            if b:
+                b.name = f"{fam}.jpg"
+                bot.send_photo(chat_id, b, caption=caption, reply_markup=markup, parse_mode="HTML")
+                return True
+        except Exception as e:
+            print("B64 SEND ERROR", repr(e))
+    url = FAMILY_IMAGES.get(fam) if fam else None
     if url:
-        try: bot.send_photo(chat_id,url,caption=caption,reply_markup=markup,parse_mode="HTML"); return True
-        except Exception as e: print("URL",e)
-    bot.send_message(chat_id,caption,reply_markup=markup,parse_mode="HTML"); return False
+        try:
+            bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("URL SEND ERROR", repr(e))
+    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+    return False
 
-def supplier_headers(): return {"X-Reseller-Key": RESELLER_KEY}
+
+def load_notify_requests():
+    if not os.path.exists(NOTIFY_FILE):
+        return {}
+    try:
+        with open(NOTIFY_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+def save_notify_requests(d):
+    try:
+        with open(NOTIFY_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("NOTIFY SAVE ERROR", repr(e))
+def add_notify_request(product_id, chat_id):
+    d = load_notify_requests()
+    lst = d.get(str(product_id), [])
+    if chat_id not in lst:
+        lst.append(chat_id)
+        d[str(product_id)] = lst
+        save_notify_requests(d)
+        return True
+    return False
+
+def supplier_headers():
+    return {"X-Reseller-Key": RESELLER_KEY}
+
 def extract_image_url(item):
-    for key in ["image_url","image","photo","thumbnail","cover","img","picture","poster","banner"]:
-        v=item.get(key)
-        if isinstance(v,str) and v.strip().startswith("http"): return v.strip()
-        if isinstance(v,dict):
-            for sub in ["url","src","link","href"]:
-                if isinstance(v.get(sub),str) and v.get(sub,"").startswith("http"): return v[sub].strip()
-    for key in ["images","photos","gallery"]:
-        v=item.get(key)
-        if isinstance(v,list) and v:
-            first=v[0]
-            if isinstance(first,str) and first.startswith("http"): return first.strip()
-            if isinstance(first,dict):
-                for sub in ["url","src"]:
-                    if isinstance(first.get(sub),str) and first.get(sub,"").startswith("http"): return first[sub].strip()
+    """FIX 1: جرب كل أسماء الصور المحتملة من المورد"""
+    # 1. حقول مباشرة
+    for key in ["image_url", "image", "photo", "thumbnail", "cover", "img", "picture", "poster", "banner"]:
+        v = item.get(key)
+        if isinstance(v, str) and v.strip().startswith("http"):
+            return v.strip()
+        if isinstance(v, dict):
+            # لو الصورة جاية dict زي {url: ...}
+            for sub in ["url", "src", "link", "href"]:
+                if isinstance(v.get(sub), str) and v.get(sub, "").startswith("http"):
+                    return v[sub].strip()
+    # 2. لو فيه list images
+    for key in ["images", "photos", "gallery"]:
+        v = item.get(key)
+        if isinstance(v, list) and v:
+            first = v[0]
+            if isinstance(first, str) and first.startswith("http"):
+                return first.strip()
+            if isinstance(first, dict):
+                for sub in ["url", "src"]:
+                    if isinstance(first.get(sub), str) and first.get(sub, "").startswith("http"):
+                        return first[sub].strip()
+    # 3. دور في أي حقل فيه http وينتهي بصورة
     for v in item.values():
-        if isinstance(v,str) and v.startswith("http") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg",".jpeg",".png",".webp"]): return v.strip()
+        if isinstance(v, str) and v.startswith("http") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+            return v.strip()
+    # 4. لو اللينك نسبي مش كامل، كمله
+    for v in item.values():
+        if isinstance(v, str) and v.startswith("/") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+            # جرب تكمله بدومين المورد
+            base = VENTEBOT_API_URL.replace("/api/reseller", "")
+            return base.rstrip("/") + v.strip()
     return ""
 
-# ===== وصف المورد: مفيش إيموجي خالص - الإيموجي يتبدل بشرطة - =====
-def _clean_desc_line(s):
-    import re as _re
-    # 1. شيل إيموجي تليجرام المخصص
-    s = _re.sub(r'<tg-emoji[^>]*>.*?</tg-emoji>', '', s, flags=_re.DOTALL)
-    s = _re.sub(r'<tg-emoji[^>]*/?>', '', s)
-    s = s.replace('<tg-emoji>', '').replace('</tg-emoji>', '')
-    # 2. شيل أي تاج HTML
-    s = _re.sub(r'<[^>]+>', '', s)
-    s = _re.sub(r'emoji-id="[^"]*"', '', s)
-    s = _re.sub(r'emoji-id=\S+', '', s)
-    # 3. أي إيموجي أو رمز في أول السطر أو في نصه يتبدل بشرطة -
-    # ⏳ ✅ ⚠ 🔹 • 🛡 🚫 وكل الإيموجي
-    s = _re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF\u2700-\u27BF\uFE0F\u200D]+', ' - ', s)
-    for ch in ['✅','✔','✓','⚠','🚨','⏳','👤','🛡','📩','📦','🔔','💰','🏷','📝','🔑','🔹','🔸','•','●','▪','▫','➤','▶','»','«','★','☆','⚡','🔥','💎','📌','📋','🚫']:
-        s = s.replace(ch, ' - ')
-    s = _re.sub(r'\s+', ' ', s)
-    # نظف الشرطات الزيادة في الأول والآخر، وسيب شرطة واحدة في الأول لو السطر كان فيه إيموجي
-    s = s.strip()
-    s = _re.sub(r'^(-\s*)+', '', s)  # هنضيف الشرطة بنفسنا بعدين بشكل موحد
-    s = s.strip(' :;•. ')
-    s = _re.sub(r'\s+', ' ', s)
-    return s.strip()
-
-def get_product_system(info):
-    text=f"{info.get('name','')} {info.get('description','')}".lower()
-    duration=""
-    if "12 month" in text or "12 شهر" in text or "سنة" in text or "year" in text or "سنوي" in text: duration="12 Months"
-    elif "6 month" in text or "6 شهور" in text or "6 أشهر" in text: duration="6 Months"
-    elif "3 month" in text or "3 شهور" in text or "3 أشهر" in text: duration="3 Months"
-    elif "month" in text or "شهر" in text or "30 يوم" in text: duration="1 Month"
-    elif "week" in text or "أسبوع" in text: duration="1 Week"
-    elif "day" in text or "يوم" in text: duration="1 Day"
-    elif "lifetime" in text or "مدى الحياة" in text: duration="Lifetime"
-    kind=""
-    if "private" in text or "خاص" in text or "شخصي" in text: kind="Private"
-    elif "shared" in text or "مشترك" in text: kind="Shared"
-    parts=[p for p in [duration,kind] if p]
-    return " - ".join(parts) if parts else "Subscription"
-
-def format_supplier_description(info):
-    """وصف المورد كما هو، لكن من غير أي إيموجي.
-    أي إيموجي يتبدل بشرطة - . لا يغير السعر ولا المدة."""
-    raw=(info.get("description") or "").strip()
-    name=(info.get("name") or "").strip()
-    lines=[]
-    for l in raw.splitlines():
-        s=_clean_desc_line(l)
-        if not s: continue
-        low=s.lower()
-        if "http" in low or "telegram" in low or "whatsapp" in low or "t.me" in low: continue
-        if len(s) < 3: continue
-        lines.append(s)
-    # شيل التكرار + اسم المنتج لو اتكرر + عناوين مقطوعة لوحدها
-    seen=set(); uniq=[]
-    for l in lines:
-        k=l.lower()
-        if k in seen: continue
-        if k == name.lower(): continue
-        if k in ["first 1 hour","first 72 hours","warranty policy","important","features","fraud prevention"]: continue
-        seen.add(k); uniq.append(l)
-    lines=uniq[:16]
-    if len(lines) >= 3:
-        # كل سطر يبدأ بشرطة - ، من غير أي إيموجي ومن غير ترقيم
-        out=[f"- {l}" for l in lines]
-        return "\n".join(out)
-    # لو المورد لم يرسل وصفا مفصلا، ابن وصفا مختصرا بشرطة - فقط
-    system=get_product_system(info)
-    duration=system.split(" - ")[0] if system else "Subscription"
-    nl=name.lower()
-    if "gmail" in nl: acct="Gmail Account"
-    elif "shared" in nl or "مشترك" in nl: acct="Shared Account"
-    elif "private" in nl or "خاص" in nl: acct="Private Account"
-    else: acct="Gmail Account"
-    base=name
-    return (
-        f"{base}\n\n"
-        f"- Duration: {duration}\n"
-        f"- Account Type: {acct}\n"
-        f"- Warranty: 3 Days (72 Hours)\n"
-        f"- Delivery: Email + Password + 2FA\n"
-        f"- Pre-activated {base} subscription\n"
-        f"- Full access to {base} features\n"
-        f"- Ready to use account\n"
-        f"- Password and 2FA can be changed\n\n"
-        f"- WARRANTY POLICY\n"
-        f"- First 1 Hour: Warranty covers incorrect passwords and invalid 2FA codes\n"
-        f"- First 72 Hours: Free replacement if account is deleted or deactivated\n\n"
-        f"- IMPORTANT - AFTER PURCHASE\n"
-        f"- Change your password immediately\n"
-        f"- Update your 2FA authentication\n"
-        f"- Change the email to your personal email if available\n"
-        f"- Secure your account as soon as you receive it\n\n"
-        f"- FRAUD PREVENTION\n"
-        f"- False claims regarding incorrect passwords or 2FA after changing account credentials will not be accepted\n"
-        f"- Fraudulent buyers may be permanently banned from our store"
-    )
-
 def fetch_supplier_products(force_refresh=False):
-    now=time.time()
-    if not force_refresh and _PRODUCTS_CACHE["data"] and (now-_PRODUCTS_CACHE["time"]<CACHE_TTL): return _PRODUCTS_CACHE["data"]
+    # استخدم الكاش عشان البوت ميبقاش بطيء
+    now = time.time()
+    if not force_refresh and _PRODUCTS_CACHE["data"] and (now - _PRODUCTS_CACHE["time"] < CACHE_TTL):
+        return _PRODUCTS_CACHE["data"]
     if not RESELLER_KEY:
-        print("CONFIG ERROR: RESELLER_KEY empty"); return _PRODUCTS_CACHE["data"] or {}
+        print("CONFIG ERROR: RESELLER_KEY is empty")
+        return _PRODUCTS_CACHE["data"] or {}
     try:
-        r=requests.get(f"{VENTEBOT_API_URL}/products",headers=supplier_headers(),timeout=20)
-        if r.status_code!=200:
-            print("SUPPLIER ERROR",r.status_code,r.text[:1000]); return _PRODUCTS_CACHE["data"] or {}
-        payload=r.json()
-        if isinstance(payload,list): items=payload
-        elif isinstance(payload,dict):
-            items=payload.get("products") or payload.get("data") or payload.get("items") or []
-            if isinstance(items,dict): items=items.get("products") or items.get("items") or []
-        else: items=[]
-        result={}
+        response = requests.get(
+            f"{VENTEBOT_API_URL}/products",
+            headers=supplier_headers(), timeout=20
+        )
+        if response.status_code != 200:
+            print("SUPPLIER PRODUCTS ERROR:", response.status_code, response.text[:1000])
+            return _PRODUCTS_CACHE["data"] or {}
+        payload = response.json()
+        if isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, dict):
+            items = payload.get("products") or payload.get("data") or payload.get("items") or []
+            if isinstance(items, dict):
+                items = items.get("products") or items.get("items") or []
+        else:
+            items = []
+        result = {}
         for item in items:
-            if not isinstance(item,dict): continue
-            name=item.get("name") or item.get("title") or "منتج رقمي"
-            desc=item.get("description") or item.get("desc") or ""
-            if not is_allowed_product(name,desc): continue
-            pid=str(item.get("id") or item.get("code") or "").strip()
-            if not pid: continue
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("title") or "منتج رقمي"
+            desc = item.get("description") or item.get("desc") or ""
+            if not is_allowed_product(name, desc):
+                continue
+            product_id = str(item.get("id") or item.get("code") or "").strip()
+            if not product_id:
+                continue
             try:
-                cost=float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
-                fam_tmp=get_product_family(str(name).strip())
-                if fam_tmp=="tests": price=round(cost,2)
-                else: price=round(cost+0.80,2)
-                _nl=str(name).lower()
-                _is_gemini= (("gemini" in _nl or "جيميناي" in _nl or "جيميني" in _nl) and ("plus" in _nl or "بلص" in _nl or "بلس" in _nl) and ("6" in _nl) and ("month" in _nl or "شهر" in _nl or "اشهر" in _nl or "أشهر" in _nl))
-                if _is_gemini and fam_tmp!="tests": price=round(cost+0.5,2)
-            except (TypeError,ValueError): price=0.0
-            result[pid]={"id":pid,"name":str(name).strip(),"price":price,"stock":int(item.get("stock") or item.get("quantity") or 0),"description":str(desc or "اشتراك رقمي."),"image":extract_image_url(item),"family":get_product_family(name)}
-        _PRODUCTS_CACHE["data"]=result; _PRODUCTS_CACHE["time"]=now; return result
-    except Exception as e:
-        print("FETCH EXCEPTION",repr(e)); return _PRODUCTS_CACHE["data"] or {}
+                cost = float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
+                family_tmp = get_product_family(str(name).strip())
+                # صنف التيست: بدون مكسب، بنفس سعر التاجر (مجاناً تقريباً)
+                if family_tmp == "tests":
+                    price = round(cost, 2)
+                else:
+                    # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
+                    price = round(cost + 0.80, 2)
+            except (TypeError, ValueError):
+                price = 0.0
+            result[product_id] = {
+                "id": product_id,
+                "name": str(name).strip(),
+                "price": price,
+                "stock": int(item.get("stock") or item.get("quantity") or 0),
+                "description": str(desc or "اشتراك رقمي."),
+                "image": extract_image_url(item),
+                "family": get_product_family(name)
+            }
+        _PRODUCTS_CACHE["data"] = result
+        _PRODUCTS_CACHE["time"] = now
+        return result
+    except Exception as exc:
+        print("FETCH SUPPLIER PRODUCTS EXCEPTION:", repr(exc))
+        return _PRODUCTS_CACHE["data"] or {}
 
 def api_get(path):
-    if not RESELLER_KEY: return None
+    if not RESELLER_KEY:
+        return None
     try:
-        res=requests.get(f"{VENTEBOT_API_URL}{path}",headers=supplier_headers(),timeout=15)
-        return res.json() if res.status_code==200 else None
-    except Exception as e: print("SUPPLIER GET",path,repr(e)); return None
-def api_get_my_wallet(): return api_get("/me")
-def api_get_wallet_transactions(): return api_get("/wallet/transactions")
-def api_get_deposit_methods(): return api_get("/wallet/deposit-methods")
-def log_response_structure(v,depth=0):
-    if depth>6: return "..."
-    if isinstance(v,dict): return {str(k):log_response_structure(x,depth+1) for k,x in v.items()}
-    if isinstance(v,list): return [log_response_structure(v[0],depth+1)] if v else []
-    return type(v).__name__
+        res = requests.get(
+            f"{VENTEBOT_API_URL}{path}",
+            headers=supplier_headers(), timeout=15
+        )
+        return res.json() if res.status_code == 200 else None
+    except Exception as exc:
+        print("SUPPLIER GET ERROR:", path, repr(exc))
+        return None
 
-DELIVERY_KEYS=["account_data","credentials","credential","delivery","login","account","key","code","license","serial","username","email","password","content","details","product_data","delivery_data","info","data","account_info","access","activation","pin","token"]
-IGNORE_KEYS={"id","product_id","order_id","status","price","quantity","created_at","updated_at","idempotency_key","request_status","user_id","reseller_id"}
+def api_get_my_wallet():
+    return api_get("/me")
+
+def api_get_wallet_transactions():
+    return api_get("/wallet/transactions")
+
+def api_get_deposit_methods():
+    return api_get("/wallet/deposit-methods")
+
+def log_response_structure(value, depth=0):
+    if depth > 6:
+        return "..."
+    if isinstance(value, dict):
+        return {str(k): log_response_structure(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [log_response_structure(value[0], depth + 1)] if value else []
+    return type(value).__name__
+
+# =========================================================
+# FIX 2: استخراج بيانات التسليم - نسخة مرنة تفهم أي شكل للمورد
+# =========================================================
+DELIVERY_KEYS = [
+    "account_data", "credentials", "credential", "delivery",
+    "login", "account", "key", "code", "license", "serial",
+    "username", "email", "password", "content", "details",
+    "product_data", "delivery_data", "info", "data",
+    "account_info", "access", "activation", "pin", "token"
+]
+# مفاتيح نتجاهلها عشان منبعتش بيانات فاضية أو بيانات الطلب نفسه
+IGNORE_KEYS = {"id", "product_id", "order_id", "status", "price", "quantity", "created_at", "updated_at", "idempotency_key", "request_status", "user_id", "reseller_id"}
+
 def _format_value(v):
-    if isinstance(v,dict):
-        parts=[]
-        for kk,vv in v.items():
-            if str(kk).lower() in IGNORE_KEYS: continue
-            if vv is None or vv=="": continue
+    if isinstance(v, dict):
+        parts = []
+        for kk, vv in v.items():
+            if str(kk).lower() in IGNORE_KEYS:
+                continue
+            if vv is None or vv == "":
+                continue
             parts.append(f"{kk}: {vv}")
         return "\n".join(parts) if parts else None
-    if isinstance(v,list):
-        parts=[_format_value(x) for x in v]; parts=[p for p in parts if p]; return "\n".join(parts) if parts else None
-    if isinstance(v,str):
-        v=v.strip(); return v if len(v)>=2 else None
-    if isinstance(v,(int,float)): return str(v)
+    if isinstance(v, list):
+        parts = [_format_value(x) for x in v]
+        parts = [p for p in parts if p]
+        return "\n".join(parts) if parts else None
+    if isinstance(v, str):
+        v = v.strip()
+        return v if len(v) >= 2 else None
+    if isinstance(v, (int, float)):
+        return str(v)
     return None
-def _find_credentials(obj,depth=0):
-    if depth>5: return None
-    if isinstance(obj,dict):
+
+def _find_credentials(obj, depth=0):
+    if depth > 5:
+        return None
+    if isinstance(obj, dict):
+        # 1. دور على مفاتيح التسليم المباشرة
         for k in DELIVERY_KEYS:
-            if k in obj and obj[k] not in (None,"",{},[]):
-                f=_format_value(obj[k])
-                if f and len(f)>=3 and f.lower() not in ("completed","success","paid"): return f
-        for k,v in obj.items():
-            if str(k).lower() in IGNORE_KEYS: continue
-            if str(k).lower() in ("name","title","description","desc"): continue
-            r=_find_credentials(v,depth+1)
-            if r: return r
+            if k in obj and obj[k] not in (None, "", {}, []):
+                formatted = _format_value(obj[k])
+                # تأكد انها مش مجرد كلمة "completed" أو رقم الطلب
+                if formatted and len(formatted) >= 3 and formatted.lower() not in ("completed", "success", "paid"):
+                    return formatted
+        # 2. لو مفيش، دور بعمق في كل القيم ماعدا اللي بنتجاهلها
+        for k, v in obj.items():
+            if str(k).lower() in IGNORE_KEYS:
+                continue
+            # تجاهل حقول الوصف والسعر
+            if str(k).lower() in ("name", "title", "description", "desc"):
+                continue
+            r = _find_credentials(v, depth + 1)
+            if r:
+                return r
         return None
-    if isinstance(obj,list):
+    if isinstance(obj, list):
         for v in obj:
-            r=_find_credentials(v,depth+1)
-            if r: return r
+            r = _find_credentials(v, depth + 1)
+            if r:
+                return r
         return None
     return None
+
 def extract_delivery_data(response_data):
-    if not isinstance(response_data,dict): return None
-    order=response_data.get("order")
-    if not isinstance(order,dict): order=response_data
-    items=order.get("items") or order.get("data") or []
-    if isinstance(items,dict): items=[items]
-    creds=[]
-    if isinstance(items,list):
-        for it in items:
-            if not isinstance(it,dict): continue
-            f=_find_credentials(it)
-            if f and f not in creds: creds.append(f)
-    if not creds:
-        f=_find_credentials(order)
-        if f: creds.append(f)
-    if not creds:
-        f=_find_credentials(response_data)
-        if f: creds.append(f)
-    if not creds: return None
-    if len(creds)==1: return creds[0]
-    return "\n\n".join(f"بيانات المنتج {i}:\n{v}" for i,v in enumerate(creds,start=1))
+    """تستخرج بيانات التسليم من أي شكل يرجعه VenteBot"""
+    if not isinstance(response_data, dict):
+        return None
+    order = response_data.get("order")
+    if not isinstance(order, dict):
+        order = response_data
+    # لا ترفض الطلب لو الحالة مختلفة، حاول تستخرج البيانات على أي حال
+    # لكن لو الحالة pending وواضح ان مفيش items، ارجع None
+    items = order.get("items") or order.get("data") or []
+    if isinstance(items, dict):
+        items = [items]
+    credentials = []
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            # حاول تلاقي بيانات في الـ item نفسه
+            found = _find_credentials(item)
+            if found and found not in credentials:
+                credentials.append(found)
+    # لو ملقيتش في items، دور في الـ order كله
+    if not credentials:
+        found = _find_credentials(order)
+        if found:
+            credentials.append(found)
+    # لو لسه ملقيتش، دور في response كله
+    if not credentials:
+        found = _find_credentials(response_data)
+        if found:
+            credentials.append(found)
+    if not credentials:
+        return None
+    if len(credentials) == 1:
+        return credentials[0]
+    return "\n\n".join(f"بيانات المنتج {i}:\n{v}" for i, v in enumerate(credentials, start=1))
 
 def supplier_order_status(order_id):
-    r=requests.get(f"{VENTEBOT_API_URL}/orders/{order_id}",headers=supplier_headers(),timeout=20)
-    try: d=r.json()
-    except Exception: d={}
-    return r.status_code,d
-def lookup_supplier_order(key):
-    r=requests.get(f"{VENTEBOT_API_URL}/orders/lookup",headers=supplier_headers(),params={"idempotency_key":key,"limit":20,"offset":0},timeout=20)
-    try: d=r.json()
-    except Exception: d={}
-    return r.status_code,d
-def purchase_order_from_supplier(product_id,payment_reference,quantity=1):
-    if not RESELLER_KEY: return {"success":False,"error":"RESELLER_KEY غير مضبوط."}
-    pv=int(product_id) if str(product_id).isdigit() else product_id
-    key=f"pixora_{payment_reference}_{product_id}"[:120]
-    headers={"X-Reseller-Key":RESELLER_KEY,"Content-Type":"application/json","Accept":"application/json"}
-    try: q=int(quantity)
-    except Exception: q=1
-    if q<1: q=1
-    payload={"product_id":pv,"quantity":q,"idempotency_key":key}
-    data={}; order=None; order_id=None
+    response = requests.get(
+        f"{VENTEBOT_API_URL}/orders/{order_id}",
+        headers=supplier_headers(),
+        timeout=20
+    )
     try:
-        resp=requests.post(f"{VENTEBOT_API_URL}/orders",json=payload,headers=headers,timeout=30)
-        print("SUPPLIER CREATE STATUS:",resp.status_code)
-        try: data=resp.json()
-        except Exception: data={}
-        print("SUPPLIER CREATE STRUCTURE:",json.dumps(log_response_structure(data),ensure_ascii=False))
-        try: print("SUPPLIER CREATE RAW PREVIEW:",str(data)[:2000])
-        except Exception: pass
-        if isinstance(data,dict):
-            order=data.get("order")
-            if isinstance(order,dict): order_id=order.get("id")
-            elif isinstance(data.get("data"),dict): order=data.get("data"); order_id=order.get("id")
-    except requests.RequestException as e: print("SUPPLIER CREATE EXC",repr(e))
-    if not isinstance(order,dict) or not order_id:
+        data = response.json()
+    except Exception:
+        data = {}
+    return response.status_code, data
+
+def lookup_supplier_order(idempotency_key):
+    response = requests.get(
+        f"{VENTEBOT_API_URL}/orders/lookup",
+        headers=supplier_headers(),
+        params={"idempotency_key": idempotency_key, "limit": 20, "offset": 0},
+        timeout=20
+    )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    return response.status_code, data
+
+def purchase_order_from_supplier(product_id, payment_reference):
+    if not RESELLER_KEY:
+        return {"success": False, "error": "RESELLER_KEY غير مضبوط."}
+    product_value = int(product_id) if str(product_id).isdigit() else product_id
+    idempotency_key = f"pixora_{payment_reference}_{product_id}"[:120]
+    headers = {
+        "X-Reseller-Key": RESELLER_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    payload = {
+        "product_id": product_value,
+        "quantity": 1,
+        "idempotency_key": idempotency_key
+    }
+    data = {}
+    order = None
+    order_id = None
+    try:
+        response = requests.post(
+            f"{VENTEBOT_API_URL}/orders",
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        print("SUPPLIER CREATE STATUS:", response.status_code)
         try:
-            ls,ld=lookup_supplier_order(key); print("LOOKUP",ls)
-            results=ld.get("results",[]) if isinstance(ld,dict) else []
-            for res in results if isinstance(results,list) else []:
-                if not isinstance(res,dict): continue
-                if res.get("idempotency_key")!=key: continue
-                rs=str(res.get("request_status","")).lower()
-                cand=res.get("order")
-                if isinstance(cand,dict): order=cand; order_id=cand.get("id")
-                if rs=="failed_no_charge": return {"success":False,"error":"المورد أكد أن الطلب فشل دون خصم رصيد (failed_no_charge).","idempotency_key":key}
+            data = response.json()
+        except Exception:
+            data = {}
+        print("SUPPLIER CREATE STRUCTURE:", json.dumps(log_response_structure(data), ensure_ascii=False))
+        # اطبع أول 2000 حرف من الرد الحقيقي للتشخيص (بدون كلمات سر لو كانت واضحة)
+        try:
+            print("SUPPLIER CREATE RAW PREVIEW:", str(data)[:2000])
+        except Exception:
+            pass
+        if isinstance(data, dict):
+            order = data.get("order")
+            if isinstance(order, dict):
+                order_id = order.get("id")
+            elif isinstance(data.get("data"), dict):
+                order = data.get("data")
+                order_id = order.get("id")
+    except requests.RequestException as exc:
+        print("SUPPLIER CREATE REQUEST EXCEPTION:", repr(exc))
+
+    if not isinstance(order, dict) or not order_id:
+        try:
+            lookup_status, lookup_data = lookup_supplier_order(idempotency_key)
+            print("SUPPLIER LOOKUP STATUS:", lookup_status)
+            print("SUPPLIER LOOKUP STRUCTURE:", json.dumps(log_response_structure(lookup_data), ensure_ascii=False))
+            results = lookup_data.get("results", []) if isinstance(lookup_data, dict) else []
+            for result in results if isinstance(results, list) else []:
+                if not isinstance(result, dict):
+                    continue
+                if result.get("idempotency_key") != idempotency_key:
+                    continue
+                request_status = str(result.get("request_status", "")).lower()
+                candidate = result.get("order")
+                if isinstance(candidate, dict):
+                    order = candidate
+                    order_id = candidate.get("id")
+                if request_status == "failed_no_charge":
+                    return {"success": False, "error": "المورد أكد أن الطلب فشل دون خصم رصيد (failed_no_charge).", "idempotency_key": idempotency_key}
                 break
-        except requests.RequestException as e: print("LOOKUP EXC",repr(e))
-    status=str(order.get("status","")).upper() if isinstance(order,dict) else ""
-    if status not in ("COMPLETED","DELIVERED","SUCCESS","DONE","FULFILLED","PAID","READY") and order_id:
-        for _ in range(10):
+        except requests.RequestException as exc:
+            print("SUPPLIER LOOKUP EXCEPTION:", repr(exc))
+
+    status = str(order.get("status", "")).upper() if isinstance(order, dict) else ""
+    # Poll فقط لو الطلب موجود ولسه مش مكتمل
+    if status not in ("COMPLETED", "DELIVERED", "SUCCESS", "DONE", "FULFILLED", "PAID", "READY") and order_id:
+        for attempt in range(10):
             time.sleep(5)
             try:
-                hs,pd=supplier_order_status(order_id); print("POLL",hs)
-                cand=None
-                if isinstance(pd,dict): cand=pd.get("order") or pd.get("data")
-                if isinstance(cand,dict): order=cand; status=str(order.get("status","")).upper()
-                print("STATE",status or "UNKNOWN")
-                if status in ("COMPLETED","DELIVERED","SUCCESS","DONE","FULFILLED","PAID","READY"): break
-                if extract_delivery_data({"order":order}): break
-            except requests.RequestException as e: print("POLL EXC",repr(e))
-    if order_id and not extract_delivery_data({"order":order}):
+                poll_http_status, poll_data = supplier_order_status(order_id)
+                print("SUPPLIER ORDER POLL HTTP:", poll_http_status)
+                candidate = None
+                if isinstance(poll_data, dict):
+                    candidate = poll_data.get("order") or poll_data.get("data")
+                if isinstance(candidate, dict):
+                    order = candidate
+                    status = str(order.get("status", "")).upper()
+                print("SUPPLIER ORDER STATE:", status or "UNKNOWN")
+                if status in ("COMPLETED", "DELIVERED", "SUCCESS", "DONE", "FULFILLED", "PAID", "READY"):
+                    break
+                # لو لقينا بيانات تسليم حتى لو الحالة لسه pending، اعتبره جاهز
+                if extract_delivery_data({"order": order}):
+                    break
+            except requests.RequestException as exc:
+                print("SUPPLIER ORDER POLL EXCEPTION:", repr(exc))
+    # FIX: لو الطلب مكتمل بس البيانات مش في رد الـ create، اعمل جلب أخير للطلب كامل
+    if order_id and not extract_delivery_data({"order": order}):
         try:
-            _,fd=supplier_order_status(order_id); fo=None
-            if isinstance(fd,dict): fo=fd.get("order") or fd.get("data")
-            if isinstance(fo,dict):
-                merged=dict(order); merged.update(fo)
-                if fo.get("items"): merged["items"]=fo["items"]
-                order=merged; status=str(order.get("status","")).upper(); print("FINAL FETCH",status)
-        except Exception as e: print("FINAL FETCH EXC",repr(e))
-    delivery_preview=extract_delivery_data({"order":order}) if isinstance(order,dict) else None
-    if (status in ("COMPLETED","DELIVERED","SUCCESS","DONE","FULFILLED","PAID","READY") or delivery_preview) and isinstance(order,dict):
-        return {"success":True,"data":{"success":True,"order":order},"idempotency_key":key,"order_id":order.get("id")}
-    return {"success":False,"error":f"المورد لم يؤكد حالة COMPLETED. لم تتم إعادة الشراء لتجنب الخصم المكرر. الحالة الحالية: {status or 'غير معروفة'}.","idempotency_key":key,"order_id":order_id}
+            _, final_data = supplier_order_status(order_id)
+            final_order = None
+            if isinstance(final_data, dict):
+                final_order = final_data.get("order") or final_data.get("data")
+            if isinstance(final_order, dict):
+                # ادمج البيانات الجديدة
+                merged = dict(order)
+                merged.update(final_order)
+                # لو items موجودة في الجديد خدها
+                if final_order.get("items"):
+                    merged["items"] = final_order["items"]
+                order = merged
+                status = str(order.get("status", "")).upper()
+                print("SUPPLIER FINAL FETCH DONE, STATUS:", status)
+        except Exception as exc:
+            print("SUPPLIER FINAL FETCH EXCEPTION:", repr(exc))
 
-def verify_binance_transaction(order_id,expected_amount):
-    if not BINANCE_API_KEY or not BINANCE_SECRET_KEY: return {"success":False,"error":"مفاتيح Binance API غير مضبوطة على Render."}
+    # اعتبر الطلب ناجح لو الحالة مكتملة أو لو لقينا بيانات تسليم
+    delivery_preview = extract_delivery_data({"order": order}) if isinstance(order, dict) else None
+    if (status in ("COMPLETED", "DELIVERED", "SUCCESS", "DONE", "FULFILLED", "PAID", "READY") or delivery_preview) and isinstance(order, dict):
+        return {"success": True, "data": {"success": True, "order": order}, "idempotency_key": idempotency_key, "order_id": order.get("id")}
+    return {
+        "success": False,
+        "error": (f"المورد لم يؤكد حالة COMPLETED. لم تتم إعادة الشراء لتجنب الخصم المكرر. الحالة الحالية: {status or 'غير معروفة'}."),
+        "idempotency_key": idempotency_key,
+        "order_id": order_id
+    }
+
+def verify_binance_transaction(order_id, expected_amount):
+    if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
+        return {"success": False, "error": "مفاتيح Binance API غير مضبوطة على Render."}
     try:
-        ts=int(time.time()*1000); qs=urlencode({"timestamp":ts,"limit":50}); sig=hmac.new(BINANCE_SECRET_KEY.encode(),qs.encode(),hashlib.sha256).hexdigest()
-        url=f"https://api.binance.com/sapi/v1/pay/transactions?{qs}&signature={sig}"
-        resp=requests.get(url,headers={"X-MBX-APIKEY":BINANCE_API_KEY},timeout=15)
-        if resp.status_code!=200: return {"success":False,"error":f"Binance HTTP {resp.status_code}: {resp.text[:500]}"}
-        txs=resp.json().get("data",[])
-        for tx in txs:
-            if str(tx.get("orderId"))==str(order_id) or str(tx.get("transactionId"))==str(order_id):
-                actual=float(tx.get("amount",0))
-                if actual>=float(expected_amount): return {"success":True}
-                return {"success":False,"error":f"المبلغ المستلم ${actual} أقل من السعر ${expected_amount}."}
-        return {"success":False,"error":"رقم العملية غير موجود ضمن آخر المعاملات."}
-    except Exception as e: return {"success":False,"error":str(e)}
+        timestamp = int(time.time() * 1000)
+        query_string = urlencode({"timestamp": timestamp, "limit": 50})
+        signature = hmac.new(BINANCE_SECRET_KEY.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+        url = f"https://api.binance.com/sapi/v1/pay/transactions?{query_string}&signature={signature}"
+        response = requests.get(url, headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=15)
+        if response.status_code != 200:
+            return {"success": False, "error": f"Binance HTTP {response.status_code}: {response.text[:500]}"}
+        transactions = response.json().get("data", [])
+        for tx in transactions:
+            if (str(tx.get("orderId")) == str(order_id) or str(tx.get("transactionId")) == str(order_id)):
+                actual = float(tx.get("amount", 0))
+                if actual >= float(expected_amount):
+                    return {"success": True}
+                return {"success": False, "error": f"المبلغ المستلم ${actual} أقل من السعر ${expected_amount}."}
+        return {"success": False, "error": "رقم العملية غير موجود ضمن آخر المعاملات."}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
 def notify_admin(text):
-    if not bot: return
-    try: bot.send_message(ADMIN_ID,text,parse_mode="HTML")
-    except Exception as e: print("ADMIN NOTIF",repr(e))
+    if not bot:
+        return
+    try:
+        bot.send_message(ADMIN_ID, text, parse_mode="HTML")
+    except Exception as exc:
+        print("ADMIN NOTIFICATION ERROR:", repr(exc))
 
-def get_main_menu_markup(chat_id,is_admin=False):
-    t=LANG_TEXTS.get(user_lang(chat_id),LANG_TEXTS["ar"]); mk=InlineKeyboardMarkup(); products=fetch_supplier_products()
-    if not products: mk.add(InlineKeyboardButton(t["no_products"],callback_data="main_menu")); return mk
-    fams=set(); singles=[]
-    for k,info in products.items():
-        if info["family"]: fams.add(info["family"])
-        else: singles.append((k,info))
-    others=sorted([x for x in fams if x!="tests"],key=lambda x: family_sort_key(x))
-    for i in range(0,len(others),3):
-        chunk=others[i:i+3]; btns=[]
+def get_main_menu_markup(chat_id, is_admin=False):
+    t = LANG_TEXTS.get(user_lang(chat_id), LANG_TEXTS["ar"])
+    markup = InlineKeyboardMarkup()
+    products = fetch_supplier_products()
+    if not products:
+        markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
+        return markup
+
+    families_set = set()
+    singles = []
+    for key, info in products.items():
+        if info["family"]:
+            families_set.add(info["family"])
+        else:
+            singles.append((key, info))
+
+    # ===== 1. العائلات: كل صف فيه 3 عائلات - زي ما كان =====
+    # Test دايماً آخر صنف تحت لوحده
+    others = sorted([x for x in families_set if x != "tests"], key=lambda x: FAMILY_NAMES.get(x, x).lower())
+    for i in range(0, len(others), 3):
+        chunk = others[i:i+3]
+        buttons = []
         for fam in chunk:
-            full=FAMILY_NAMES.get(fam,f"📁 {fam.upper()}")
-            has=any(v["family"]==fam and v["stock"]>0 for v in products.values())
-            dot="🟩" if has else "🟥"
-            btns.append(InlineKeyboardButton(f"{dot} {full}",callback_data="fam_"+fam))
-        mk.row(*btns)
-    if "tests" in fams: mk.row(InlineKeyboardButton(FAMILY_NAMES.get("tests","🧪 Test"),callback_data="fam_tests"))
-    singles_sorted=sorted(singles,key=lambda x: x[1]["name"].lower())
-    for i in range(0,len(singles_sorted),2):
-        chunk=singles_sorted[i:i+2]; btns=[]
-        for k,info in chunk:
-            ic=get_product_icon(info)
-            if info["stock"]>0: btns.append(InlineKeyboardButton(f"🟩 {ic} {info['name']} · ${info['price']}",callback_data="buy_"+k))
-            else: btns.append(InlineKeyboardButton(f"🟥 {ic} {info['name']} · غير متوفر",callback_data="buy_"+k))
-        mk.row(*btns)
-    mk.row(InlineKeyboardButton("💰 محفظتي",callback_data="wallet_home"),InlineKeyboardButton(t["orders"],callback_data="my_orders"))
-    mk.row(InlineKeyboardButton(t["search"],callback_data="search_product"),InlineKeyboardButton(t["deposit"],callback_data="payment_methods"))
-    mk.row(InlineKeyboardButton(t["support"],url=SUPPORT_WHATSAPP))
-    mk.row(InlineKeyboardButton(t["api"],callback_data="show_apis"),InlineKeyboardButton(t["lang"],callback_data="menu_lang"))
-    if is_admin: mk.row(InlineKeyboardButton(t["admin"],callback_data="admin_panel"))
-    return mk
-def get_admin_markup():
-    mk=InlineKeyboardMarkup()
-    mk.row(InlineKeyboardButton("💰 فحص الرصيد",callback_data="adm_balance"),InlineKeyboardButton("💳 طرق الإيداع",callback_data="adm_deposits"))
-    mk.row(InlineKeyboardButton("📊 سجل المعاملات",callback_data="adm_transactions"),InlineKeyboardButton("🔙 القائمة الرئيسية",callback_data="main_menu"))
-    return mk
+            full_name = FAMILY_NAMES.get(fam, f"📁 {fam.upper()}")
+            buttons.append(InlineKeyboardButton(full_name, callback_data="fam_" + fam))
+        markup.row(*buttons)
+    # Test في صف لوحده في الآخر
+    if "tests" in families_set:
+        markup.row(InlineKeyboardButton(FAMILY_NAMES.get("tests", "🧪 Test"), callback_data="fam_tests"))
 
-def send_product_card(chat_id,info,markup,reply_to_msg_id=None):
-    # وصف المورد منظم بنفس قالب صورة المورد
-    desc_text=format_supplier_description(info)
-    msg=(f"🏷 <b>{safe_html(info['name'])}</b>\n"
-         f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
-         f"تفاصيل المنتج:\n{safe_html(desc_text)}")
-    if send_photo_smart(chat_id,info.get("family"),info,msg,markup): return True
-    image=get_product_image(info)
-    if image and image.startswith("http"):
-        try: bot.send_photo(chat_id,image,caption=msg,reply_markup=markup,parse_mode="HTML"); return True
+    # ===== 2. المنتجات اللي من غير عائلة: كل صف فيه منتجين =====
+    singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
+    for i in range(0, len(singles_sorted), 2):
+        chunk = singles_sorted[i:i+2]
+        buttons = []
+        for key, info in chunk:
+            if info["stock"] > 0:
+                label = f"🟢 {info['name']} · ${info['price']}"
+                cb = "buy_" + key
+            else:
+                label = f"🔴 {info['name']} ({t['sold_out']})"
+                cb = "sold_out_" + key
+            buttons.append(InlineKeyboardButton(label, callback_data=cb))
+        markup.row(*buttons)
+
+    # ===== أزرار الخدمات زي ما هي =====
+    markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
+    markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
+    markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
+    if is_admin:
+        markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
+    return markup
+
+def get_admin_markup():
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton("💰 فحص الرصيد", callback_data="adm_balance"), InlineKeyboardButton("💳 طرق الإيداع", callback_data="adm_deposits"))
+    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+    return markup
+
+
+def send_photo_with_button(chat_id, fam_or_info, caption, button_text, callback_data, is_family=False):
+    """كل منتج / عائلة = رسالة بصورة + زرار - ده شكل البوتات الشيك"""
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data=callback_data))
+    # جرب الصورة المدمجة الأول
+    img_bytes = None
+    url = None
+    if is_family:
+        img_bytes = get_family_image_bytes(fam_or_info)
+        url = FAMILY_IMAGES.get(fam_or_info)
+    else:
+        # منتج: شوف عائلته
+        fam = fam_or_info.get("family") if isinstance(fam_or_info, dict) else None
+        if fam:
+            img_bytes = get_family_image_bytes(fam)
+            url = FAMILY_IMAGES.get(fam)
+        # لو المنتج ليه صورة من المورد
+        if fam_or_info.get("image") and str(fam_or_info.get("image")).startswith("http"):
+            url = fam_or_info["image"]
+            img_bytes = None
+    if img_bytes:
+        try:
+            img_bytes.name = "product.jpg"
+            bot.send_photo(chat_id, img_bytes, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
         except Exception as e:
-            print("IMAGE SEND",repr(e))
-            try: bot.send_photo(chat_id,image,caption=msg,reply_markup=markup); return True
-            except Exception as e2: print("IMAGE RETRY",repr(e2))
-    bot.send_message(chat_id,msg,reply_markup=markup,parse_mode="HTML"); return False
+            print("PHOTO+BTN B64 ERROR", repr(e))
+    if url:
+        try:
+            bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("PHOTO+BTN URL ERROR", repr(e))
+    bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+    return False
+
+def send_main_menu_with_images(chat_id, is_admin=False):
+    """القايمة الرئيسية الجديدة: كل عائلة بصورتها"""
+    products = fetch_supplier_products()
+    if not products:
+        bot.send_message(chat_id, "لا توجد منتجات حالياً")
+        return
+    families_set = set()
+    singles = []
+    for key, info in products.items():
+        if info["family"]:
+            families_set.add(info["family"])
+        else:
+            singles.append((key, info))
+    # Test آخر واحد
+    families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
+    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - دوس عليه عشان تشوف منتجاته", parse_mode="HTML")
+    for fam in families_sorted:
+        name = FAMILY_NAMES.get(fam, fam)
+        count = sum(1 for _, v in products.items() if v["family"] == fam)
+        caption = f"{name}\n📦 {count} منتج - دوس عشان تشوفهم 👇"
+        send_photo_with_button(chat_id, fam, caption, f"📂 افتح {name}", "fam_" + fam, is_family=True)
+    # المنتجات اللي من غير عائلة
+    singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
+    for key, info in singles_sorted:
+        if info["stock"] > 0:
+            caption = f"🏷 <b>{safe_html(info['name'])}</b>\n💰 <b>${info['price']}</b> | 🟢 متوفر"
+            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري - ${info['price']}", "buy_" + key, is_family=False)
+    # أزرار الخدمات في الآخر
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
+    markup.row(InlineKeyboardButton("💰 شحن", callback_data="payment_methods"), InlineKeyboardButton("💬 دعم", url=SUPPORT_WHATSAPP))
+    if is_admin:
+        markup.row(InlineKeyboardButton("🛠 لوحة الأدمن", callback_data="admin_panel"))
+    bot.send_message(chat_id, "⚙️ <b>خدمات:</b>", reply_markup=markup, parse_mode="HTML")
+
+def send_family_products_with_images(chat_id, fam, products):
+    """جوه العائلة: المنتجات تحت بعض - كل منتج رسالة لوحده باسمه الكامل"""
+    found = [(k, v) for k, v in products.items() if v["family"] == fam]
+    # ترتيب أبجدي، وكل منتج تحت اللي قبله - مفيش اتنين جنب بعض
+    found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
+    fname = FAMILY_NAMES.get(fam, fam)
+    bot.send_message(chat_id, f"📁 <b>{safe_html(fname)}</b>\n👇 منتجات القسم - كل منتج تحت التاني:", parse_mode="HTML")
+    for key, info in found_sorted:
+        # الاسم كامل من غير تقطيع
+        full_name = info['name']
+        if info["stock"] > 0:
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>\n\n📝 {safe_html(info['description'])}"
+            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري {full_name} - ${info['price']}", "buy_" + key, is_family=False)
+        else:
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفد"
+            # حتى اللي خلصان يتبعت لوحده تحت اللي قبله عشان يبان كامل
+            bot.send_message(chat_id, caption, parse_mode="HTML")
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+    bot.send_message(chat_id, "—", reply_markup=markup)
 
 def send_home(chat_id):
-    bot.send_message(chat_id,LANG_TEXTS[user_lang(chat_id)]["welcome"],reply_markup=get_main_menu_markup(chat_id,chat_id==ADMIN_ID))
+    # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
+    bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+
+
+
+def get_product_system(info):
+    """يطلع نظام المنتج من الاسم والوصف عشان يبان من بره"""
+    text = f"{info.get('name','')} {info.get('description','')}".lower()
+    # المدة
+    duration = ""
+    if "سنة" in text or "year" in text or "سنوي" in text or "12 شهر" in text or "12month" in text:
+        duration = "سنة"
+    elif "6 شهور" in text or "6 month" in text:
+        duration = "6 شهور"
+    elif "3 شهور" in text or "3 month" in text:
+        duration = "3 شهور"
+    elif "شهر" in text or "month" in text or "30 يوم" in text:
+        duration = "شهر"
+    elif "أسبوع" in text or "week" in text:
+        duration = "أسبوع"
+    elif "يوم" in text or "day" in text:
+        duration = "يوم"
+    elif "مدى الحياة" in text or "lifetime" in text:
+        duration = "مدى الحياة"
+    # النوع: خاص / مشترك
+    kind = ""
+    if "خاص" in text or "private" in text or "شخصي" in text:
+        kind = "خاص"
+    elif "مشترك" in text or "shared" in text:
+        kind = "مشترك"
+    # اجمعهم
+    parts = [p for p in [duration, kind] if p]
+    if parts:
+        return " - ".join(parts)
+    return "اشتراك"
+
+def send_family_header(chat_id, fam, markup):
+    fid = get_stored_image_id(fam=fam)
+    if fid:
+        try:
+            bot.send_photo(chat_id, fid, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY FILE_ID ERROR", repr(e))
+    img_bytes = get_family_image_bytes(fam)
+    if img_bytes:
+        try:
+            img_bytes.name = f"{fam}.jpg"
+            bot.send_photo(chat_id, img_bytes, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY B64 SEND ERROR", fam, repr(e))
+    # 2. صورة العائلة من النت
+    url = FAMILY_IMAGES.get(fam)
+    if url:
+        try:
+            bot.send_photo(chat_id, url, caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as e:
+            print("FAMILY URL SEND ERROR", fam, repr(e))
+    # 3. لو فشلت الصورة، ابعت نص
+    bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+    return False
+
+
+def build_product_card_markup(key, qty, info):
+    total = round(info["price"] * qty, 2)
+    m = InlineKeyboardMarkup()
+    m.row(
+        InlineKeyboardButton("➖", callback_data=f"qty_dec_{key}"),
+        InlineKeyboardButton(f"الكمية: {qty}", callback_data="qty_noop"),
+        InlineKeyboardButton("➕", callback_data=f"qty_inc_{key}")
+    )
+    if info.get("family") == "tests" and info["price"] <= 0:
+        m.add(InlineKeyboardButton("🧪 تجربة مجانية", callback_data=f"pay_{key}"))
+    else:
+        m.add(InlineKeyboardButton(f"🪙 إتمام الدفع - ${total}", callback_data=f"pay_{key}"))
+    m.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+    return m, total
+
+def build_product_card_text(info, qty):
+    total = round(info["price"] * qty, 2)
+    return (f"🏷 <b>{safe_html(info['name'])}</b>\n"
+            f"💰 سعر الوحدة: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n"
+            f"📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\n"
+            f"📝 <b>الوصف:</b>\n{safe_html(info['description'])}")
+
+def edit_product_card(chat_id, msg_id, key, info, qty, is_photo=True):
+    text = build_product_card_text(info, qty)
+    markup, _ = build_product_card_markup(key, qty, info)
+    try:
+        if is_photo:
+            bot.edit_message_caption(text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+        else:
+            bot.edit_message_text(text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+        return True
+    except Exception as e:
+        if "message is not modified" in str(e).lower():
+            return True
+        print("EDIT CARD ERROR", repr(e))
+        return False
+
+def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
+    qty = USER_QTY.get(chat_id, 1)
+    msg = build_product_card_text(info, qty)
+    if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
+        return True
+    image = get_product_image(info)
+    print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
+    if image and image.startswith("http"):
+        try:
+            bot.send_photo(chat_id, image, caption=msg, reply_markup=markup, parse_mode="HTML")
+            return True
+        except Exception as exc:
+            print("IMAGE SEND ERROR:", repr(exc), "URL:", image[:500])
+            # جرب تاني بدون parse_mode لو المشكلة في الوصف
+            try:
+                bot.send_photo(chat_id, image, caption=msg, reply_markup=markup)
+                return True
+            except Exception as exc2:
+                print("IMAGE SEND RETRY ERROR:", repr(exc2))
+    else:
+        print(f"NO IMAGE URL FOR PRODUCT: {info.get('name')} - supplier did not send image")
+    bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
+    return False
 
 if bot:
-    try: bot.set_my_commands([BotCommand("start","تشغيل المتجر 🚀"),BotCommand("products","تصفح المنتجات 🛍"),BotCommand("my_orders","مشترياتي 📜"),BotCommand("language","اللغة / Language 🌐")])
-    except Exception as e: print("COMMANDS",repr(e))
-    @bot.message_handler(commands=["start","products"])
+    try:
+        bot.set_my_commands([
+            BotCommand("start", "تشغيل المتجر 🚀"),
+            BotCommand("products", "تصفح المنتجات 🛍"),
+            BotCommand("my_orders", "مشترياتي 📜"),
+            BotCommand("language", "اللغة / Language 🌐")
+        ])
+    except Exception as exc:
+        print("BOT COMMANDS ERROR:", repr(exc))
+
+    @bot.message_handler(commands=["start", "products"])
     def send_welcome(message):
-        cid=message.chat.id; add_subscriber(cid); USER_WAITING_FOR_SEARCH.pop(cid,None); USER_SELECTED_PRODUCT.pop(cid,None)
+        chat_id = message.chat.id
+        add_subscriber(chat_id)
+        USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+        USER_SELECTED_PRODUCT.pop(chat_id, None)
         try:
-            m=bot.send_message(cid,"🔄",reply_markup=ReplyKeyboardRemove()); bot.delete_message(cid,m.message_id)
-        except Exception: pass
-        send_home(cid)
+            msg = bot.send_message(chat_id, "🔄", reply_markup=ReplyKeyboardRemove())
+            bot.delete_message(chat_id, msg.message_id)
+        except Exception:
+            pass
+        send_home(chat_id)
+
     @bot.message_handler(commands=["my_orders"])
     def cmd_my_orders(message):
-        cid=message.chat.id; orders=load_orders().get(str(cid),[])
-        if not orders: body="📜 لا توجد طلبات سابقة."
+        chat_id = message.chat.id
+        orders = load_orders().get(str(chat_id), [])
+        if not orders:
+            body = "📜 لا توجد طلبات سابقة."
         else:
-            rows=[]
-            for o in orders[-30:]: rows.append(f"📦 <b>{safe_html(o.get('product','منتج'))}</b>\n🔑 <code>{safe_html(o.get('item',''))}</code>\n🕒 {safe_html(o.get('time',''))}\n──────────────")
-            body="📜 سجل مشترياتي السابقة:\n\n"+"\n".join(rows)
-        bot.send_message(cid,body,reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")),parse_mode="HTML")
+            rows = []
+            for order in orders[-30:]:
+                rows.append(f"📦 <b>{safe_html(order.get('product', 'منتج'))}</b>\n🔑 <code>{safe_html(order.get('item', ''))}</code>\n🕒 {safe_html(order.get('time', ''))}\n──────────────")
+            body = "📜 سجل مشترياتي السابقة:\n\n" + "\n".join(rows)
+        bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+
     @bot.message_handler(commands=["language"])
     def cmd_language(message):
-        mk=InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية",callback_data="lang_ar"),InlineKeyboardButton("🇬🇧 English",callback_data="lang_en"),InlineKeyboardButton("🇫🇷 Français",callback_data="lang_fr"))
-        bot.send_message(message.chat.id,"🌐 اختر اللغة:",reply_markup=mk)
+        markup = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"),
+            InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
+            InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr")
+        )
+        bot.send_message(message.chat.id, "🌐 اختر اللغة:", reply_markup=markup)
+
     @bot.message_handler(commands=["setimage"])
     def cmd_setimage(message):
-        if message.chat.id!=ADMIN_ID: return
-        mk=InlineKeyboardMarkup()
-        for fam,name in sorted(FAMILY_NAMES.items(),key=lambda x: family_sort_key(x[0])): mk.add(InlineKeyboardButton(f"🖼 {name}",callback_data="setimg_"+fam))
-        bot.send_message(message.chat.id,"🖼 <b>اختر العائلة اللي عايز تغير صورتها، وبعدين ابعت الصورة:</b>",reply_markup=mk,parse_mode="HTML")
-    @bot.message_handler(commands=["chatgpt_desc"])
-    def cmd_chatgpt_desc(message):
-        if message.chat.id!=ADMIN_ID: return
-        products=fetch_supplier_products(force_refresh=True); text="📋 وصف ChatGPT الخام من المورد:\n\n"
-        for k,info in products.items():
-            if info.get("family")!="chatgpt": continue
-            text+=f"— {info['name']}\nID: {k}\nالوصف: {info['description']}\n\n"
-            if len(text)>3500: bot.send_message(message.chat.id,text); text=""
-        if text.strip(): bot.send_message(message.chat.id,text)
+        if message.chat.id != ADMIN_ID:
+            return
+        markup = InlineKeyboardMarkup()
+        for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: (1 if x[0]=="tests" else 0, x[1].lower())):
+            markup.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
+        bot.send_message(message.chat.id, "🖼 <b>اختر العائلة اللي عايز تغير صورتها، وبعدين ابعت الصورة:</b>", reply_markup=markup, parse_mode="HTML")
+
     @bot.message_handler(content_types=["photo"])
     def handle_admin_photo(message):
-        cid=message.chat.id
-        if cid!=ADMIN_ID or cid not in ADMIN_WAITING_IMAGE: return
-        fam=ADMIN_WAITING_IMAGE.pop(cid)
+        chat_id = message.chat.id
+        # لو مش أدمن ومش مستني صورة، تجاهل
+        if chat_id != ADMIN_ID or chat_id not in ADMIN_WAITING_IMAGE:
+            return
+        fam = ADMIN_WAITING_IMAGE.pop(chat_id)
         try:
-            fid=message.photo[-1].file_id; d=load_image_ids(); d[f"family:{fam}"]=fid; save_image_ids(d)
-            bot.send_message(cid,f"✅ تم حفظ صورة <b>{FAMILY_NAMES.get(fam,fam)}</b> بنجاح!",parse_mode="HTML")
-        except Exception as e: bot.send_message(cid,f"❌ خطأ: {e}")
+            fid = message.photo[-1].file_id  # أكبر جودة
+            d = load_image_ids()
+            d[f"family:{fam}"] = fid
+            save_image_ids(d)
+            bot.send_message(chat_id, f"✅ تم حفظ صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> بنجاح!\nدلوقتي أي منتج في العائلة دي هيظهر بالصورة دي.", parse_mode="HTML")
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ خطأ: {e}")
+
     @bot.callback_query_handler(func=lambda call: True)
     def handle_query(call):
-        try: _handle_query_inner(call)
-        except Exception as e:
-            print("CALLBACK ERROR",repr(e))
-            try: bot.send_message(call.message.chat.id,"حدث خطأ مؤقت. يرجى المحاولة مرة أخرى.")
-            except Exception: pass
-        return
-    def _handle_query_inner(call):
-        cid=call.message.chat.id
-        try: add_subscriber(cid)
-        except Exception: pass
-        msg_id=call.message.message_id; data=call.data or ""; is_admin=cid==ADMIN_ID; products=fetch_supplier_products()
+        chat_id = call.message.chat.id
+        try:
+            add_subscriber(chat_id)
+        except Exception:
+            pass
+        msg_id = call.message.message_id
+        data = call.data or ""
+        is_admin = chat_id == ADMIN_ID
+        products = fetch_supplier_products()
         if data.startswith("lang_"):
-            lang=data.replace("lang_","")
-            if lang not in LANG_TEXTS: lang="ar"
-            USER_LANGUAGES[cid]=lang; bot.answer_callback_query(call.id,"✅")
-            try: bot.edit_message_text(LANG_TEXTS[lang]["welcome"],cid,msg_id,reply_markup=get_main_menu_markup(cid,is_admin))
-            except Exception: send_home(cid)
+            lang = data.replace("lang_", "")
+            if lang not in LANG_TEXTS:
+                lang = "ar"
+            USER_LANGUAGES[chat_id] = lang
+            bot.answer_callback_query(call.id, "✅")
+            try:
+                bot.edit_message_text(LANG_TEXTS[lang]["welcome"], chat_id, msg_id, reply_markup=get_main_menu_markup(chat_id, is_admin))
+            except Exception:
+                send_home(chat_id)
         elif data.startswith("setimg_"):
-            if not is_admin: return
-            fam=data[7:]; ADMIN_WAITING_IMAGE[cid]=fam; bot.answer_callback_query(call.id); bot.send_message(cid,f"📸 ابعت دلوقتي صورة <b>{FAMILY_NAMES.get(fam,fam)}</b> (ابعتها كصورة مش كملف):",parse_mode="HTML"); return
+            if not is_admin:
+                return
+            fam = data[7:]
+            ADMIN_WAITING_IMAGE[chat_id] = fam
+            bot.answer_callback_query(call.id)
+            bot.send_message(chat_id, f"📸 ابعت دلوقتي صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> (ابعتها كصورة مش كملف):", parse_mode="HTML")
+            return
         elif data.startswith("fam_"):
-            fam=data[4:]; bot.answer_callback_query(call.id)
-            try: bot.delete_message(cid,msg_id)
-            except Exception: pass
-            mk=InlineKeyboardMarkup(); found=[(k,v) for k,v in products.items() if v["family"]==fam]; found_sorted=sorted(found,key=lambda x: x[1]["name"].lower())
-            for k,info in found_sorted:
-                system=get_product_system(info); ic=get_product_icon(info)
-                if info["stock"]>0: mk.add(InlineKeyboardButton(f"🟩 {ic} {info['name']} | {system} | ${info['price']} 🟩",callback_data="buy_"+k))
-                else: mk.add(InlineKeyboardButton(f"🟥 {ic} {info['name']} | {system} | غير متوفر 🟥",callback_data="buy_"+k))
-            mk.add(InlineKeyboardButton("🔙 القائمة الرئيسية",callback_data="main_menu"))
-            fid=get_stored_image_id(fam=fam); sent=False; caption=f"📁 <b>{safe_html(FAMILY_NAMES.get(fam,fam))}</b>"
+            fam = data[4:]
+            bot.answer_callback_query(call.id)
+            # بدون حذف: القديم يبقى، والجديد ينزل تحت
+            # جوه العائلة: كل منتج زرار واحد في سطر كامل - من غير ترقيم، من غير زرار شراء تحته
+            markup = InlineKeyboardMarkup()
+            found = [(k, v) for k, v in products.items() if v["family"] == fam]
+            found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
+            for key, info in found_sorted:
+                system = get_product_system(info)
+                if info["stock"] > 0:
+                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                else:
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
+            markup.add(InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+            fid = get_stored_image_id(fam=fam)
+            sent = False
+            caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>"
             if fid:
-                try: bot.send_photo(cid,fid,caption=caption,reply_markup=mk,parse_mode="HTML"); sent=True
-                except Exception as e: print("FAMILY PHOTO",repr(e))
+                try:
+                    bot.send_photo(chat_id, fid, caption=caption, reply_markup=markup, parse_mode="HTML")
+                    sent = True
+                except Exception as e:
+                    print("FAMILY PHOTO ERROR", repr(e))
             if not sent and fam in FAMILY_IMAGES_B64:
                 try:
-                    b=get_family_image_bytes(fam)
-                    if b: b.name=f"{fam}.jpg"; bot.send_photo(cid,b,caption=caption,reply_markup=mk,parse_mode="HTML"); sent=True
-                except Exception as e: print("FAMILY B64",repr(e))
-            if not sent: bot.send_message(cid,caption,reply_markup=mk,parse_mode="HTML")
-        elif data=="menu_lang":
-            bot.answer_callback_query(call.id); mk=InlineKeyboardMarkup().add(InlineKeyboardButton("🇸🇦 العربية",callback_data="lang_ar"),InlineKeyboardButton("🇬🇧 English",callback_data="lang_en"),InlineKeyboardButton("🇫🇷 Français",callback_data="lang_fr"),InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")); bot.edit_message_text("🌐 اختر اللغة:",cid,msg_id,reply_markup=mk)
-        elif data=="show_apis":
-            bot.answer_callback_query(call.id); mk=InlineKeyboardMarkup()
-            for k,info in products.items():
-                if "api" in info["name"].lower() and info["stock"]>0: mk.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}",callback_data="buy_"+k))
-            mk.add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")); bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>",cid,msg_id,reply_markup=mk,parse_mode="HTML")
-        elif data=="admin_panel" and is_admin:
-            bot.answer_callback_query(call.id); bot.edit_message_text("🛠 <b>لوحة تحكم الإدارة:</b>",cid,msg_id,reply_markup=get_admin_markup(),parse_mode="HTML")
-        elif data in ("adm_balance","adm_deposits","adm_transactions") and is_admin:
+                    b = get_family_image_bytes(fam)
+                    if b:
+                        b.name = f"{fam}.jpg"
+                        bot.send_photo(chat_id, b, caption=caption, reply_markup=markup, parse_mode="HTML")
+                        sent = True
+                except Exception as e:
+                    print("FAMILY B64 ERROR", repr(e))
+            if not sent:
+                bot.send_message(chat_id, caption, reply_markup=markup, parse_mode="HTML")
+        elif data == "menu_lang":
             bot.answer_callback_query(call.id)
-            if data=="adm_balance": res=api_get_my_wallet(); title="💰 الرصيد"
-            elif data=="adm_deposits": res=api_get_deposit_methods(); title="💳 طرق الإيداع"
-            else: res=api_get_wallet_transactions(); title="📊 سجل المعاملات"
-            body=safe_html(json.dumps(res,ensure_ascii=False,indent=2)[:3000]) if res else "تعذر جلب البيانات."
-            bot.send_message(cid,f"{title}\n<pre>{body}</pre>",reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع",callback_data="admin_panel")),parse_mode="HTML")
-        elif data=="search_product":
-            bot.answer_callback_query(call.id); USER_WAITING_FOR_SEARCH[cid]=True; bot.edit_message_text("🔍 أرسل اسم المنتج للبحث:",cid,msg_id,reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء",callback_data="main_menu")))
-        elif data=="payment_methods":
-            bot.answer_callback_query(call.id); pay_info=f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"; bot.edit_message_text(pay_info,cid,msg_id,reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")),parse_mode="HTML")
+            markup = InlineKeyboardMarkup().add(
+                InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"),
+                InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
+                InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"),
+                InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")
+            )
+            bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup)
+        elif data == "show_apis":
+            bot.answer_callback_query(call.id)
+            markup = InlineKeyboardMarkup()
+            for key, info in products.items():
+                if "api" in info["name"].lower() and info["stock"] > 0:
+                    markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
+            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+        elif data == "admin_panel" and is_admin:
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text("🛠 <b>لوحة تحكم الإدارة:</b>", chat_id, msg_id, reply_markup=get_admin_markup(), parse_mode="HTML")
+        elif data in ("adm_balance", "adm_deposits", "adm_transactions") and is_admin:
+            bot.answer_callback_query(call.id)
+            if data == "adm_balance":
+                result = api_get_my_wallet()
+                title = "💰 الرصيد"
+            elif data == "adm_deposits":
+                result = api_get_deposit_methods()
+                title = "💳 طرق الإيداع"
+            else:
+                result = api_get_wallet_transactions()
+                title = "📊 سجل المعاملات"
+            body = safe_html(json.dumps(result, ensure_ascii=False, indent=2)[:3000]) if result else "تعذر جلب البيانات."
+            bot.send_message(chat_id, f"{title}\n<pre>{body}</pre>", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+        elif data == "search_product":
+            bot.answer_callback_query(call.id)
+            USER_WAITING_FOR_SEARCH[chat_id] = True
+            bot.edit_message_text("🔍 أرسل اسم المنتج للبحث:", chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 إلغاء", callback_data="main_menu")))
+        elif data == "payment_methods":
+            bot.answer_callback_query(call.id)
+            pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
+            bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            _k=data[len("sold_out_"):]; _info=products.get(_k); bot.answer_callback_query(call.id)
-            if _info and _info["stock"]<=0:
-                _m=InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند توفر المنتج",callback_data="notify_"+_k)); _m.add(InlineKeyboardButton("🔙 رجوع",callback_data="main_menu"))
-                try: bot.delete_message(cid,msg_id)
-                except Exception: pass
-                send_product_card(cid,_info,_m)
-            else: bot.send_message(cid,"❌ المنتج غير متوفر حالياً.")
+            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر.", show_alert=True)
         elif data.startswith("buy_"):
-            k=data[4:]; info=products.get(k); bot.answer_callback_query(call.id)
-            if not info: bot.send_message(cid,"تعذر العثور على المنتج. يرجى تحديث القائمة والمحاولة مرة أخرى."); return
-            if info["stock"]<=0:
-                ms=InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند توفر المنتج",callback_data="notify_"+k)); ms.add(InlineKeyboardButton("🔙 رجوع",callback_data="main_menu"))
-                try: bot.delete_message(cid,msg_id)
-                except Exception: pass
-                send_product_card(cid,info,ms); return
-            if info["price"]<=0 and info.get("family")!="tests":
-                bot.send_message(cid,"⚠ هذا المنتج غير مفعّل. يرجى التواصل مع الدعم."); notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(k)})"); return
-            USER_SELECTED_PRODUCT[cid]=k
-            USER_SELECTED_QUANTITY[cid]=1
-            if info.get("family")=="tests" and info["price"]<=0: mk=InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية",callback_data="pay_"+k))
-            else: mk=get_quantity_markup(k, info, 1)
-            mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu"))
-            try: bot.delete_message(cid,msg_id)
-            except Exception: pass
-            send_product_card(cid,info,mk)
-
+            key = data[4:]
+            info = products.get(key)
+            bot.answer_callback_query(call.id)
+            if not info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            if info["stock"] <= 0:
+                # المنتج خلصان: ابعت صفحته كاملة + زرار "نبهني لما يرجع" تحت الوصف
+                markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند التوفر", callback_data="notify_" + key))
+                markup_sold.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+                send_product_card(chat_id, info, markup_sold)
+                return
+            # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
+            if info["price"] <= 0 and info.get("family") != "tests":
+                bot.send_message(chat_id, "⚠ هذا المنتج غير مفعّل. تواصل مع الإدارة.")
+                notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(key)})")
+                return
+            USER_SELECTED_PRODUCT[chat_id] = key
+            USER_QTY[chat_id] = 1
+            markup, _ = build_product_card_markup(key, 1, info)
+            send_product_card(chat_id, info, markup)
+        elif data.startswith("notify_"):
+            key = data[7:]
+            info = products.get(key)
+            bot.answer_callback_query(call.id)
+            if not info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            added = add_notify_request(key, chat_id)
+            if added:
+                bot.send_message(chat_id, f"✅ تم التسجيل. سيصلك إشعار عند توفر <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
+            else:
+                bot.send_message(chat_id, "ℹ️ أنت مسجّل مسبقاً لهذا التنبيه.", parse_mode="HTML")
+            return
         elif data == "qty_noop":
-            bot.answer_callback_query(call.id); return
+            bot.answer_callback_query(call.id)
+            return
         elif data.startswith("qty_inc_") or data.startswith("qty_dec_"):
             is_inc = data.startswith("qty_inc_")
-            k = data[8:] if is_inc else data[8:]
-            # qty_inc_ length 8, qty_dec_ length 8 - both 8
-            info = products.get(k); bot.answer_callback_query(call.id)
-            if not info: return
-            cur = int(USER_SELECTED_QUANTITY.get(cid, 1))
-            if is_inc:
-                if cur >= max(1, int(info["stock"])):
-                    bot.send_message(cid, f"⚠ الكمية المتوفرة {info['stock']} فقط.")
-                    return
-                cur += 1
-            else:
-                if cur <= 1: return
-                cur -= 1
-            USER_SELECTED_QUANTITY[cid] = cur
-            USER_SELECTED_PRODUCT[cid] = k
-            try: bot.delete_message(cid, msg_id)
-            except Exception: pass
-            # اعرض الكارت من جديد بالكمية الجديدة - من غير ما نغير السعر الأساسي
-            mk2 = get_quantity_markup(k, info, cur)
-            # رسالة الكمية فوق الكارت
-            bot.send_message(cid, f"📦 <b>{safe_html(info['name'])}</b>\nالكمية: <b>{cur}</b> | الإجمالي: <b>${round(info['price']*cur,2)}</b>", reply_markup=mk2, parse_mode="HTML")
-            return
-        elif data == "wallet_home":
+            key = data[len("qty_inc_"):] if is_inc else data[len("qty_dec_"):]
+            info = products.get(key)
             bot.answer_callback_query(call.id)
-            bal = get_wallet_balance(cid)
-            try: bot.delete_message(cid, msg_id)
-            except Exception: pass
-            bot.send_message(cid, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${bal}</b>\n\n- اشحن محفظتك مرة واحدة واشتري منها على طول\n- كل 25$ شحن تاخد 1$ كاش باك\n- لو حصل مشكلة في التسليم، الفلوس بترجع لمحفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
-            return
-        elif data == "wallet_history":
-            bot.answer_callback_query(call.id)
-            w = load_wallets().get(str(cid), {"balance": 0.0, "history": []})
-            hist = w.get("history", [])[-15:]
-            if not hist: body = "📜 لا توجد حركات في المحفظة بعد."
-            else:
-                rows = []
-                for h in reversed(hist):
-                    sign = "+" if h.get("amount", 0) >= 0 else ""
-                    rows.append(f"{sign}${h.get('amount')} - {h.get('type')} - {h.get('time')}")
-                body = "📜 سجل المحفظة:\n" + "\n".join(rows)
-            bot.send_message(cid, body, reply_markup=get_wallet_markup(), parse_mode="HTML")
-            return
-        elif data.startswith("wallet_dep_"):
-            bot.answer_callback_query(call.id)
-            if data == "wallet_dep_custom":
-                USER_WAITING_WALLET_CUSTOM.add(cid)
-                bot.send_message(cid, "✏️ اكتب المبلغ اللي عايز تشحنه بالدولار (مثال: 30):", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")))
+            if not info:
                 return
-            try: amt = float(data.replace("wallet_dep_", ""))
-            except Exception: amt = 0
-            if amt <= 0: return
-            USER_WAITING_WALLET_DEPOSIT[cid] = amt
-            bonus = wallet_cashback_for(amt)
-            extra = f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد اللي هيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا."
-            try: bot.delete_message(cid, msg_id)
-            except Exception: pass
-            bot.send_message(cid, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
-            return
-        elif data.startswith("pay_wallet_"):
-            k = data[len("pay_wallet_"):]; info = products.get(k); bot.answer_callback_query(call.id)
-            if not info: bot.send_message(cid, "تعذر تحديد المنتج."); return
-            qty = int(USER_SELECTED_QUANTITY.get(cid, 1))
-            if qty < 1: qty = 1
-            if qty > int(info["stock"]):
-                bot.send_message(cid, f"⚠ الكمية المتوفرة {info['stock']} فقط. قلل الكمية وحاول تاني."); return
-            total = round(info["price"] * qty, 2)
-            bal = get_wallet_balance(cid)
-            if bal + 1e-9 < total:
-                bot.send_message(cid, f"⚠ رصيدك <b>${bal}</b> مش كفاية. الإجمالي <b>${total}</b>. اشحن محفظتك الأول.", reply_markup=get_wallet_markup(), parse_mode="HTML"); return
-            if cid in USER_PROCESSING: bot.send_message(cid, "⏳ طلبك قيد المعالجة."); return
-            USER_PROCESSING.add(cid)
+            cur = USER_QTY.get(chat_id, 1)
+            new_q = min(cur + 1, max(1, info["stock"])) if is_inc else max(1, cur - 1)
+            USER_QTY[chat_id] = new_q
             try:
-                new_bal = deduct_wallet_balance(cid, total)
-                bot.send_message(cid, f"⏳ جاري إرسال الطلب للمورد... تم خصم <b>${total}</b> من محفظتك. رصيدك الجديد: <b>${new_bal}</b>")
-                ref = f"wallet_{cid}_{int(time.time())}"
-                result = purchase_order_from_supplier(k, ref, quantity=qty)
-                if not result["success"]:
-                    # رجع الفلوس للمحفظة
-                    add_wallet_balance(cid, total, reason="refund_failed_delivery")
-                    notify_admin(f"🚨 <b>دفع من المحفظة لكن طلب المورد فشل - تم الاسترجاع</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}\nالكمية: {qty}\nالمبلغ: ${total} - تم إرجاعه للمحفظة")
-                    bot.send_message(cid, "✅ تم إرجاع المبلغ لمحفظتك لأن المورد لم يؤكد الطلب. لا تدفع مرة تانية.", reply_markup=get_main_menu_markup(cid, is_admin)); return
-                delivery = extract_delivery_data(result["data"])
-                if not delivery:
-                    add_wallet_balance(cid, total, reason="refund_no_delivery")
-                    notify_admin(f"⚠ <b>دفع من المحفظة لكن بدون بيانات تسليم - تم الاسترجاع</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}")
-                    bot.send_message(cid, "✅ تم إرجاع المبلغ لمحفظتك لأن بيانات التسليم لم تصل. تم إشعار الإدارة."); return
-                orders = load_orders(); orders.setdefault(str(cid), []).append({"product": info["name"], "item": delivery, "reference": ref, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S"), "quantity": qty}); save_orders(orders)
-                oid = str(result.get("order_id") or ref or "—")
-                dm = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{qty}</b>\n💰 الإجمالي: <b>${total}</b> (من المحفظة)\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>")
-                bot.send_message(cid, dm, parse_mode="HTML", reply_markup=get_main_menu_markup(cid, cid == ADMIN_ID))
-                USER_SELECTED_PRODUCT.pop(cid, None); USER_SELECTED_QUANTITY.pop(cid, None)
+                if call.message.photo:
+                    edit_product_card(chat_id, msg_id, key, info, new_q, is_photo=True)
+                else:
+                    edit_product_card(chat_id, msg_id, key, info, new_q, is_photo=False)
             except Exception as e:
-                print("WALLET PAY ERROR", repr(e)); bot.send_message(cid, "حدث خطأ أثناء معالجة الطلب من المحفظة. تم إشعار الإدارة.")
-            finally: USER_PROCESSING.discard(cid)
-            return
-        elif data.startswith("notify_"):
-            k=data[7:]; info=products.get(k); bot.answer_callback_query(call.id)
-            if not info: bot.send_message(cid,"تعذر العثور على المنتج. يرجى تحديث القائمة والمحاولة مرة أخرى."); return
-            added=add_notify_request(k,cid)
-            if added: bot.send_message(cid,f"✅ تم تسجيل طلب التنبيه بنجاح.\nسيتم إشعارك عند توفر المنتج: <b>{safe_html(info['name'])}</b>.",parse_mode="HTML")
-            else: bot.send_message(cid,"ℹ طلب التنبيه مسجّل مسبقاً لهذا المنتج.",parse_mode="HTML")
+                print("QTY EDIT ERROR", repr(e))
             return
         elif data.startswith("pay_"):
-            k=data[4:]; info=products.get(k); bot.answer_callback_query(call.id)
-            if not info: bot.send_message(cid,"تعذر تحديد المنتج. يرجى المحاولة مرة أخرى."); return
-            if info.get("family")=="tests" and info["price"]<=0:
-                bot.send_message(cid,"🧪 جارٍ التجهيز..."); result=purchase_order_from_supplier(k,f"free_test_{cid}_{int(time.time())}")
-                if not result["success"]: bot.send_message(cid,f"❌ فشل طلب التجربة: {safe_html(result.get('error',''))}"); return
-                delivery=extract_delivery_data(result["data"])
-                if not delivery: bot.send_message(cid,"⚠ لم تصل بيانات التسليم. تم إشعار الإدارة."); notify_admin(f"⚠ طلب تيست مجاني بدون بيانات: {safe_html(info['name'])} - زبون {cid}"); return
-                orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":delivery,"reference":"FREE_TEST","status":"delivered","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders)
-                bot.send_message(cid,f"🎉 <b>تجربة مجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>",parse_mode="HTML",reply_markup=get_main_menu_markup(cid,is_admin)); USER_SELECTED_PRODUCT.pop(cid,None); return
-            if info["price"]<=0: bot.send_message(cid,"تعذر تحديد المنتج. يرجى المحاولة مرة أخرى."); return
-            USER_SELECTED_PRODUCT[cid]=k; _q=int(USER_SELECTED_QUANTITY.get(cid,1)); _tot=round(info["price"]*_q,2); pay_msg=(f"🪙 إتمام الدفع\n\n📦 المنتج: <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{_q}</b>\n💰 المبلغ: <b>${_tot} USDT</b>\n\nقم بالتحويل إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
-            pm=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu"))
-            try: bot.delete_message(cid,msg_id)
-            except Exception: pass
-            try: bot.send_message(cid,pay_msg,reply_markup=pm,parse_mode="HTML")
-            except Exception as e: print("PAY MSG",repr(e)); bot.send_message(cid,pay_msg,reply_markup=pm)
-        elif data=="my_orders":
-            bot.answer_callback_query(call.id); orders=load_orders().get(str(cid),[])
-            if not orders: body="📜 لا توجد طلبات."
-            else: body="📜 سجل مشترياتي:\n"+"\n".join(f"📦 {safe_html(o.get('product','منتج'))}\n🔑 <code>{safe_html(o.get('item',''))}</code>" for o in orders[-30:])
-            try: bot.edit_message_text(body,cid,msg_id,reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")),parse_mode="HTML")
-            except Exception:
-                try: bot.delete_message(cid,msg_id)
-                except Exception: pass
-                bot.send_message(cid,body,reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu")),parse_mode="HTML")
-        elif data=="main_menu":
-            bot.answer_callback_query(call.id); USER_SELECTED_PRODUCT.pop(cid,None); USER_WAITING_FOR_SEARCH.pop(cid,None)
-            try: bot.delete_message(cid,msg_id)
-            except Exception: pass
-            send_home(cid)
-    @bot.message_handler(content_types=["text","photo"])
-    def handle_incoming(message):
-        cid=message.chat.id
-        if message.text and message.text.startswith("/"): return
-        # شحن محفظة: مبلغ مخصص
-        if cid in USER_WAITING_WALLET_CUSTOM:
-            USER_WAITING_WALLET_CUSTOM.discard(cid)
-            try: amt=float((message.text or "").strip().replace("$",""))
-            except Exception: amt=0
-            if amt < 1:
-                bot.send_message(cid, "❌ اكتب مبلغ صحيح، 1$ على الأقل."); return
-            USER_WAITING_WALLET_DEPOSIT[cid]=amt
-            bonus=wallet_cashback_for(amt)
-            extra=f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            bot.send_message(cid, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا.", parse_mode="HTML")
-            return
-        # شحن محفظة: استقبال رقم العملية
-        if cid in USER_WAITING_WALLET_DEPOSIT:
-            amt=USER_WAITING_WALLET_DEPOSIT.get(cid,0)
-            ref=(message.text or "").strip()
-            if not re.match(r"^[A-Za-z0-9_-]{8,}$", ref):
-                bot.send_message(cid, "❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل."); return
-            USER_WAITING_WALLET_DEPOSIT.pop(cid,None)
-            bot.send_message(cid, "⏳ جاري فحص عملية الدفع عبر Binance...")
-            pay=verify_binance_transaction(ref, amt)
-            if not pay["success"]:
-                bot.send_message(cid, f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}", parse_mode="HTML"); return
-            bonus=wallet_cashback_for(amt)
-            new_bal=add_wallet_balance(cid, amt, reason="deposit")
-            if bonus: new_bal=add_wallet_balance(cid, bonus, reason="cashback")
-            bot.send_message(cid, f"✅ <b>تم شحن المحفظة!</b>\n\n💰 شحنت: <b>${amt}</b>\n🎁 كاش باك: <b>${bonus}</b>\n💰 رصيدك الجديد: <b>${new_bal}</b>", parse_mode="HTML", reply_markup=get_main_menu_markup(cid, cid==ADMIN_ID))
-            return
-        _txt=(message.text or "").strip(); _is_pay=cid in USER_SELECTED_PRODUCT and cid not in USER_PROCESSING; _looks=bool(re.match(r"^[A-Za-z0-9_-]{8,}$",_txt))
-        if USER_WAITING_FOR_SEARCH.get(cid) or (not _is_pay and not _looks and len(_txt)>=2):
-            USER_WAITING_FOR_SEARCH.pop(cid,None); query=_txt.lower()
-            if not query or len(query)<2: bot.send_message(cid,"أرسل كلمة للبحث، حرفين على الأقل."); return
-            products=fetch_supplier_products()
-            def _norm(s): return re.sub(r"[^a-z0-9\u0600-\u06FF]","",(s or "").lower())
-            def _score(name,q):
-                n=_norm(name); qq=_norm(q)
-                if not n or not qq: return 0
-                if qq in n: return 100
-                it=iter(n)
-                if all(ch in it for ch in qq): return 85
-                common=len(set(n)&set(qq)); return int(common/max(len(set(qq)),1)*70)
-            scored=[]
-            for k,info in products.items():
-                best=max(_score(info["name"],query),_score(info.get("description",""),query))
-                if best>=50: scored.append((best,k,info))
-            scored.sort(key=lambda x: (-x[0],x[2]["name"].lower())); mk=InlineKeyboardMarkup(); found=len(scored)
-            for _,k,info in scored:
-                system=get_product_system(info); ic=get_product_icon(info)
-                if info["stock"]>0: mk.add(InlineKeyboardButton(f"🟩 {ic} {info['name']} | {system} | ${info['price']} 🟩",callback_data="buy_"+k))
-                else: mk.add(InlineKeyboardButton(f"🟥 {ic} {info['name']} | {system} | غير متوفر 🟥",callback_data="buy_"+k))
-            mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية",callback_data="main_menu"))
-            if found: bot.send_message(cid,f"🔍 نتائج البحث عن: <b>{safe_html(_txt)}</b>\nعدد النتائج: <b>{found}</b>",reply_markup=mk,parse_mode="HTML")
-            else: bot.send_message(cid,f"❌ لا توجد نتائج لـ: <b>{safe_html(_txt)}</b>",reply_markup=mk,parse_mode="HTML")
-            return
-        if cid not in USER_SELECTED_PRODUCT: bot.send_message(cid,"⚠ يرجى اختيار المنتج أولاً من القائمة.",reply_markup=get_main_menu_markup(cid,cid==ADMIN_ID)); return
-        if cid in USER_PROCESSING: bot.send_message(cid,"⏳ طلبك قيد المعالجة، انتظر قليلاً."); return
-        ref=(message.text or "").strip()
-        if not re.match(r"^[A-Za-z0-9_-]{8,}$",ref): bot.send_message(cid,"❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل (حروف وأرقام)."); return
-        USER_PROCESSING.add(cid)
-        try:
-            pk=USER_SELECTED_PRODUCT.get(cid); products=fetch_supplier_products(); info=products.get(pk)
-            if not info: bot.send_message(cid,"تعذر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع."); return
-            bot.send_message(cid,"⏳ جاري فحص عملية الدفع عبر Binance...")
-            _q2=int(USER_SELECTED_QUANTITY.get(cid,1)); _tot2=round(info["price"]*_q2,2); pay=verify_binance_transaction(ref, _tot2)
-            if not pay["success"]: bot.send_message(cid,f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}",parse_mode="HTML"); return
-            bot.send_message(cid,"✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورد...")
-            result=purchase_order_from_supplier(pk,ref,quantity=_q2)
-            if not result["success"]:
-                notify_admin(f"🚨 <b>دفع مؤكد لكن طلب المورد فشل</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(ref)}</code>\nالخطأ: <code>{safe_html(result.get('error','غير معروف')[:700])}</code>")
-                bot.send_message(cid,"✅ تم تأكيد الدفع، لكن المورد لم يؤكد إتمام الطلب. تم إشعار الإدارة، لا ترسل دفعة ثانية."); USER_SELECTED_PRODUCT.pop(cid,None); return
-            delivery=extract_delivery_data(result["data"])
-            if not delivery:
-                notify_admin(f"⚠ <b>الدفع وطلب المورد تم قبولهما، لكن لم أستطع استخراج بيانات التسليم.</b>\nالزبون: <code>{cid}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(ref)}</code>\nOrder ID المورد: <code>{result.get('order_id')}</code>")
-                bot.send_message(cid,"✅ تم تأكيد الدفع وإرسال الطلب للمورد، لكن بيانات المنتج لم تصلنا بصيغة مفهومة. تم إشعار الإدارة لمتابعة التسليم. لا تدفع مرة أخرى.")
-                orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":"قيد المتابعة مع المورد - لم تصل بيانات التسليم بعد","reference":ref,"status":"pending_delivery","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders); USER_SELECTED_PRODUCT.pop(cid,None); return
-            orders=load_orders(); orders.setdefault(str(cid),[]).append({"product":info["name"],"item":delivery,"reference":ref,"status":"delivered","time":time.strftime("%Y-%m-%d %H:%M:%S")}); save_orders(orders)
-            oid=str(result.get('order_id') or ref or "—")
-            dm=(f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{_q2}</b>\n💰 الإجمالي: <b>${_tot2}</b>\n🔢 مرجع الدفع: <code>{safe_html(ref)}</code>\n📅 التاريخ: <b>{algiers_now_str()}</b> (توقيت الجزائر)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ برقم الطلب للرجوع إليه عند وجود أي مشكلة.")
-            bot.send_message(cid,dm,parse_mode="HTML",reply_markup=get_main_menu_markup(cid,cid==ADMIN_ID)); USER_SELECTED_PRODUCT.pop(cid,None); USER_SELECTED_QUANTITY.pop(cid,None)
-        except Exception as e:
-            print("PAYMENT HANDLER",repr(e)); notify_admin(f"🚨 خطأ غير متوقع أثناء معالجة طلب:\nالزبون: <code>{cid}</code>\n<code>{safe_html(str(e)[:700])}</code>"); bot.send_message(cid,"حدث خطأ أثناء معالجة الطلب. تم إشعار الإدارة. لا تعاود الدفع قبل التواصل مع الدعم.")
-        finally: USER_PROCESSING.discard(cid)
+            key = data[4:]
+            info = products.get(key)
+            bot.answer_callback_query(call.id)
+            if not info:
+                bot.send_message(chat_id, "تعذر تحديد المنتج.")
+                return
+            # ===== منتج تيست مجاني: تسليم فوري من غير دفع =====
+            if info.get("family") == "tests" and info["price"] <= 0:
+                bot.send_message(chat_id, "🧪 جارٍ التجهيز...")
+                # اطلب من المورد مباشرة بدون Binance
+                result = purchase_order_from_supplier(key, f"free_test_{chat_id}_{int(time.time())}")
+                if not result["success"]:
+                    bot.send_message(chat_id, f"❌ فشل طلب التجربة: {safe_html(result.get('error',''))}")
+                    return
+                delivery = extract_delivery_data(result["data"])
+                if not delivery:
+                    bot.send_message(chat_id, "⚠ لم تصل بيانات التسليم. تم إشعار الإدارة.")
+                    notify_admin(f"⚠ طلب تيست مجاني بدون بيانات: {safe_html(info['name'])} - زبون {chat_id}")
+                    return
+                orders = load_orders()
+                orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": "FREE_TEST", "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+                save_orders(orders)
+                bot.send_message(chat_id, f"🎉 <b>تجربة مجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                USER_SELECTED_PRODUCT.pop(chat_id, None)
+                return
+            if info["price"] <= 0:
+                bot.send_message(chat_id, "تعذر تحديد المنتج.")
+                return
+            USER_SELECTED_PRODUCT[chat_id] = key
+            qty = USER_QTY.get(chat_id, 1)
+            total = round(info["price"] * qty, 2)
+            pay_msg = (f"🪙 قم بتحويل (${total} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
+            # بدون حذف: رسالة الدفع تنزل تحت كرسالة جديدة، والقديم يبقى
+            bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+        elif data == "my_orders":
+            bot.answer_callback_query(call.id)
+            orders = load_orders().get(str(chat_id), [])
+            if not orders:
+                body = "📜 لا توجد طلبات."
+            else:
+                body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
+            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+        elif data == "main_menu":
+            bot.answer_callback_query(call.id)
+            USER_SELECTED_PRODUCT.pop(chat_id, None)
+            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+            send_home(chat_id)
 
-app=Flask(__name__)
+    @bot.message_handler(content_types=["text", "photo"])
+    def handle_incoming(message):
+        chat_id = message.chat.id
+        if message.text and message.text.startswith("/"):
+            return
+        if USER_WAITING_FOR_SEARCH.get(chat_id):
+            USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+            query = (message.text or "").strip().lower()
+            if not query:
+                bot.send_message(chat_id, "أرسل كلمة للبحث.")
+                return
+            products = fetch_supplier_products()
+            markup = InlineKeyboardMarkup()
+            found = 0
+            for key, info in products.items():
+                if query in info["name"].lower() or query in info["description"].lower():
+                    found += 1
+                    if info["stock"] > 0:
+                        markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
+            markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج لـ: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
+            return
+        if chat_id not in USER_SELECTED_PRODUCT:
+            bot.send_message(chat_id, "⚠ يرجى اختيار المنتج أولاً من القائمة.", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+            return
+        if chat_id in USER_PROCESSING:
+            bot.send_message(chat_id, "⏳ طلبك قيد المعالجة، انتظر قليلاً.")
+            return
+        reference = (message.text or "").strip()
+        # FIX: اقبل حروف وأرقام لأن Order ID بتاع Binance مش أرقام بس
+        if not re.match(r"^[A-Za-z0-9_-]{8,}$", reference):
+            bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل (حروف وأرقام).")
+            return
+        USER_PROCESSING.add(chat_id)
+        try:
+            product_key = USER_SELECTED_PRODUCT.get(chat_id)
+            products = fetch_supplier_products()
+            info = products.get(product_key)
+            if not info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع.")
+                return
+            bot.send_message(chat_id, "⏳ جاري فحص عملية الدفع عبر Binance...")
+            qty_check = USER_QTY.get(chat_id, 1)
+            total_check = round(info["price"] * qty_check, 2)
+            payment = verify_binance_transaction(reference, total_check)
+            if not payment["success"]:
+                bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(payment['error'])}", parse_mode="HTML")
+                return
+            bot.send_message(chat_id, "✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورد...")
+            result = purchase_order_from_supplier(product_key, reference)
+            if not result["success"]:
+                notify_admin(f"🚨 <b>دفع مؤكد لكن طلب المورد فشل</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nالخطأ: <code>{safe_html(result.get('error', 'غير معروف')[:700])}</code>")
+                bot.send_message(chat_id, "✅ تم تأكيد الدفع، لكن المورد لم يؤكد إتمام الطلب. تم إشعار الإدارة، لا ترسل دفعة ثانية.")
+                USER_SELECTED_PRODUCT.pop(chat_id, None)
+                return
+            delivery = extract_delivery_data(result["data"])
+            if not delivery:
+                notify_admin(f"⚠ <b>الدفع وطلب المورد تم قبولهما، لكن لم أستطع استخراج بيانات التسليم.</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nOrder ID المورد: <code>{result.get('order_id')}</code>\nراجع سجل Render وابحث عن SUPPLIER CREATE RAW PREVIEW.")
+                bot.send_message(chat_id, "✅ تم تأكيد الدفع وإرسال الطلب للمورد، لكن بيانات المنتج لم تصلنا بصيغة مفهومة. تم إشعار الإدارة لمتابعة التسليم. لا تدفع مرة أخرى.")
+                orders = load_orders()
+                orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": "قيد المتابعة مع المورد - لم تصل بيانات التسليم بعد", "reference": reference, "status": "pending_delivery", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+                save_orders(orders)
+                USER_SELECTED_PRODUCT.pop(chat_id, None)
+                return
+            orders = load_orders()
+            orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+            save_orders(orders)
+            delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ بهذه الرسالة للرجوع إليها.")
+            bot.send_message(chat_id, delivery_message, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+            USER_SELECTED_PRODUCT.pop(chat_id, None)
+        except Exception as exc:
+            print("PAYMENT/DELIVERY HANDLER ERROR:", repr(exc))
+            notify_admin(f"🚨 خطأ غير متوقع أثناء معالجة طلب:\nالزبون: <code>{chat_id}</code>\n<code>{safe_html(str(exc)[:700])}</code>")
+            bot.send_message(chat_id, "حدث خطأ أثناء معالجة الطلب. تم إشعار الإدارة. لا تعاود الدفع قبل التواصل مع الدعم.")
+        finally:
+            USER_PROCESSING.discard(chat_id)
+
+app = Flask(__name__)
+
 @app.route("/")
-def health_check(): return "Pixora Store Active!",200
+def health_check():
+    return "Pixora Store Active!", 200
+
 @app.route("/health")
-def health(): return {"status":"ok"},200
+def health():
+    return {"status": "ok"}, 200
+
 def keep_alive():
     while True:
-        time.sleep(300); url=os.environ.get("RENDER_EXTERNAL_URL","").strip()
+        time.sleep(300)
+        url = os.environ.get("RENDER_EXTERNAL_URL", "").strip()
         if url:
-            try: requests.get(url,timeout=10)
-            except Exception: pass
-if __name__=="__main__":
-    if not BOT_TOKEN: raise RuntimeError("BOT_TOKEN غير موجود في Environment Variables على Render.")
+            try:
+                requests.get(url, timeout=10)
+            except Exception:
+                pass
+
+if __name__ == "__main__":
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN غير موجود في Environment Variables على Render.")
     if bot:
-        try: bot.remove_webhook()
-        except Exception as e: print("REMOVE WEBHOOK",repr(e))
-    threading.Thread(target=keep_alive,daemon=True).start()
-    try: start_notify_watcher()
-    except Exception as e: print("WATCHER START",repr(e))
-    threading.Thread(target=lambda: app.run(host="0.0.0.0",port=int(os.environ.get("PORT","10000")),use_reloader=False),daemon=True).start()
+        try:
+            bot.remove_webhook()
+        except Exception as exc:
+            print("REMOVE WEBHOOK ERROR:", repr(exc))
+    threading.Thread(target=keep_alive, daemon=True).start()
+    try:
+        start_notify_watcher()
+    except Exception as e:
+        print("WATCHER START ERROR", repr(e))
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "10000")), use_reloader=False), daemon=True).start()
     while True:
-        try: bot.infinity_polling(skip_pending=True,timeout=60,long_polling_timeout=60)
-        except Exception as e: print("BOT POLLING",repr(e)); time.sleep(5)
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as exc:
+            print("BOT POLLING ERROR:", repr(exc))
+            time.sleep(5)
