@@ -243,7 +243,19 @@ def extract_image_url(item):
         if isinstance(v,str) and v.startswith("http") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg",".jpeg",".png",".webp"]): return v.strip()
     return ""
 
-# ===== وصف المورد بنفس قالب الصورة =====
+# ===== وصف المورد: من غير رموز - ترقيم فقط =====
+def _clean_desc_line(s):
+    # شيل كل الإيموجي والرموز، وسيب الحروف والأرقام وعلامات بسيطة
+    import re as _re
+    # شيل الإيموجي
+    s = _re.sub(r'[\U00010000-\U0010ffff\u2600-\u27BF\u2700-\u27BF\uFE0F\u200D]+', '', s)
+    # شيل الرموز المزعجة اللي كانت بتخلي الوصف مرعب
+    for ch in ['✅','✔','✓','⚠','🚨','⏳','👤','🛡','📩','📦','🔔','💰','🏷','📝','🔑','•','●','▪','▫','➤','▶','»','«','★','☆','⚡','🔥','💎','📌','📋']:
+        s = s.replace(ch, '')
+    s = s.strip(' -:;•. ')
+    s = _re.sub(r'\s+', ' ', s)
+    return s.strip()
+
 def get_product_system(info):
     text=f"{info.get('name','')} {info.get('description','')}".lower()
     duration=""
@@ -261,65 +273,75 @@ def get_product_system(info):
     return " - ".join(parts) if parts else "Subscription"
 
 def format_supplier_description(info):
-    """وصف المورد كما هو، منظم بنفس قالب صورة المورد.
-    لا يغير السعر ولا المدة ولا أي بيانات، فقط ينظم العرض."""
+    """وصف المورد كما هو، لكن من غير رموز - ترقيم فقط.
+    لا يغير السعر ولا المدة، فقط ينظم العرض."""
     raw=(info.get("description") or "").strip()
     name=(info.get("name") or "").strip()
-    # نظف سطور الوصف الخام من لينكات ودعاية
+    # نظف كل سطر من الرموز
     lines=[]
     for l in raw.splitlines():
-        s=l.strip()
+        s=_clean_desc_line(l)
         if not s: continue
         low=s.lower()
         if "http" in low or "telegram" in low or "whatsapp" in low or "t.me" in low: continue
+        if len(s) < 3: continue
         lines.append(s)
-    # لو الوصف الخام فيه تفاصيل كافية، اعرضه منظم
-    if len(lines)>=2:
-        # أعد ترتيب بسيط: ضع سطور Duration / Account / Warranty / Delivery في الأعلى إن وجدت
-        top=[]; rest=[]
+    # لو الوصف الخام طويل ومفيد، نظمه بترقيم
+    # قسمه لأقسام: معلومات أساسية / مميزات / ضمان / مهم
+    if len(lines) >= 3:
+        # خد أول 12 سطر بس عشان الوصف ميبقاش مرعب
+        # شيل التكرار
+        seen=set(); uniq=[]
+        for l in lines:
+            k=l.lower()
+            if k in seen: continue
+            seen.add(k); uniq.append(l)
+        lines=uniq[:14]
+        # حاول تستخرج Duration / Account / Warranty / Delivery لو موجودين في الوصف
+        header=[]; body=[]
         for l in lines:
             ll=l.lower()
-            if any(k in ll for k in ["duration","مدة","account type","نوع الحساب","warranty","ضمان","delivery","التسليم","account"]):
-                top.append(l)
+            if any(k in ll for k in ["duration","مدة","account type","نوع الحساب","warranty","ضمان","delivery","التسليم"]):
+                header.append(l)
             else:
-                rest.append(l)
-        ordered=top+rest
-        return "\n".join(ordered)
-    # لو المورد لم يرسل وصفا مفصلا، ابنِ وصفا بنفس قالب المورد من اسم المنتج
+                body.append(l)
+        out=[]
+        if header:
+            for i, h in enumerate(header[:4], 1):
+                out.append(f"{i}. {h}")
+            out.append("")
+        if body:
+            out.append("Features:")
+            for i, b in enumerate(body[:6], 1):
+                out.append(f"{i}. {b}")
+        return "\n".join(out)
+    # لو المورد لم يرسل وصفا مفصلا، ابن وصفا مختصرا بترقيم فقط
     system=get_product_system(info)
     duration=system.split(" - ")[0] if system else "Subscription"
-    # نوع الحساب من الاسم
     nl=name.lower()
     if "gmail" in nl: acct="Gmail Account"
     elif "shared" in nl or "مشترك" in nl: acct="Shared Account"
     elif "private" in nl or "خاص" in nl: acct="Private Account"
     else: acct="Gmail Account"
-    # اسم المنتج بدون مدة لتوليد سطر المميزات
     base=name
     return (
-        f"{base}\n"
-        f"⏳ Duration: {duration}\n"
-        f"👤 Account Type: {acct}\n"
-        f"🛡 Warranty: 3 Days (72 Hours)\n"
-        f"📩 Delivery: Email + Password + 2FA\n\n"
-        f"✅ Pre-activated subscription.\n"
-        f"✅ Full access to {base} features.\n"
-        f"✅ Ready-to-use account.\n"
-        f"✅ Password and 2FA can be changed.\n\n"
-        f"⚠ WARRANTY POLICY\n"
-        f"• First 1 Hour:\n"
-        f"Warranty covers incorrect passwords and invalid 2FA codes.\n"
-        f"• First 72 Hours:\n"
-        f"Free 1:1 replacement if the account is deleted or deactivated.\n\n"
-        f"🚨 IMPORTANT - AFTER PURCHASE\n"
-        f"• Change your password immediately.\n"
-        f"• Update your 2FA authentication.\n"
-        f"• Change the email to your personal email if available.\n"
-        f"• Secure your account as soon as you receive it.\n\n"
-        f"⚠ FRAUD PREVENTION\n"
-        f"False claims regarding incorrect passwords or 2FA after changing account credentials will not be accepted.\n"
-        f"Fraudulent buyers may be permanently banned from our store.\n\n"
-        f"📦 Your delivery will be available in My orders."
+        f"{base}\n\n"
+        f"1. Duration: {duration}\n"
+        f"2. Account Type: {acct}\n"
+        f"3. Warranty: 3 Days\n"
+        f"4. Delivery: Email + Password + 2FA\n\n"
+        f"Features:\n"
+        f"1. Pre-activated subscription\n"
+        f"2. Full access to {base} features\n"
+        f"3. Ready to use account\n"
+        f"4. Password and 2FA can be changed\n\n"
+        f"Warranty Policy:\n"
+        f"1. First 1 Hour: Warranty covers incorrect password and invalid 2FA codes\n"
+        f"2. First 72 Hours: Free replacement if account is deleted or deactivated\n\n"
+        f"Important after purchase:\n"
+        f"1. Change your password immediately\n"
+        f"2. Update your 2FA authentication\n"
+        f"3. Change the email to your personal email if available"
     )
 
 def fetch_supplier_products(force_refresh=False):
@@ -562,7 +584,7 @@ def send_product_card(chat_id,info,markup,reply_to_msg_id=None):
     desc_text=format_supplier_description(info)
     msg=(f"🏷 <b>{safe_html(info['name'])}</b>\n"
          f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
-         f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(desc_text)}")
+         f"تفاصيل المنتج:\n{safe_html(desc_text)}")
     if send_photo_smart(chat_id,info.get("family"),info,msg,markup): return True
     image=get_product_image(info)
     if image and image.startswith("http"):
