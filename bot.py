@@ -52,18 +52,18 @@ USER_PROCESSING = set()
 USER_WAITING_WALLET_CUSTOM = set()
 USER_WAITING_WALLET_DEPOSIT = {}
 
-# ===== Cache للمنتجات عشان البوت ميبقاش بطيء =====
+# ===== Cache للمنتجات من أجل البوت ميبقاش بطيء =====
 _PRODUCTS_CACHE = {"data": {}, "time": 0}
 CACHE_TTL = 60  # ثانية
 
 LANG_TEXTS = {
     "ar": {
-        "welcome": "🔥 أهلاً بك في متجر Pixora Store الرقمي!\n\nاختر القسم أو المنتج المطلوب:",
-        "search": "🔍 بحث عن منتج", "orders": "📜 مشترياتي",
+        "welcome": "🔥 مرحبًا بك في متجر Pixora للمنتجات الرقمية!\n\nاختر القسم أو المنتج الذي تريده:",
+        "search": "🔍 البحث عن منتج", "orders": "📜 مشترياتي",
         "deposit": "💳 شحن الرصيد / الدفع", "support": "🛠 الدعم الفني",
         "api": "🔑 خدمات API", "lang": "🌐 اللغة / Language",
-        "admin": "🛠 لوحة تحكم الإدارة", "no_products": "⚠ لا توجد منتجات متاحة حالياً...",
-        "sold_out": "نفد"
+        "admin": "🛠 لوحة تحكم الإدارة", "no_products": "⚠ لا توجد منتجات متاحة حاليًا...",
+        "sold_out": "نفذ"
     },
     "en": {
         "welcome": "🔥 Welcome to Pixora Store Digital!\n\nChoose a category or product:",
@@ -111,9 +111,9 @@ FAMILY_NAMES = {
 }
 
 # =========================================================
-# حل الصور: صور ثابتة من عندنا مش من المورد
-# لأن المورد مش بيبعت صور، هنعتمد على صور العائلة
-# لو عايز تغير صورة أي عائلة، غير اللينك اللي جنبها
+# حل الصور: صور ثابتة من عندنا مش من المورّد
+# لأن المورّد مش بيبعت صور، سنعتمد على صور العائلة
+# لو تريد تغير صورة أي عائلة، غير اللينك اللي جنبها
 # =========================================================
 FAMILY_IMAGES = {
     "chatgpt": "https://logo.clearbit.com/openai.com",
@@ -155,9 +155,9 @@ def get_family_image_bytes(family):
         return None
 
 # صور يدوية لمنتجات معينة - الأقوى
-# لو عايز صورة خاصة لمنتج معين، حط الـ ID بتاعه هنا واللينك
+# لو تريد صورة خاصة لمنتج معين، حط اإلى ID الخاص بـه سنا واللينك
 # مثال: "123": "https://i.postimg.cc/xxxx/product.jpg"
-# تعرف الـ ID منين؟ من لوحة الأدمن -> فحص الرصيد أو من Logs
+# تعرف اإلى ID منين؟ من لوحة الأدمن -> فحص الرصيد أو من Logs
 PRODUCT_IMAGES = {
     # "PRODUCT_ID_HERE": "IMAGE_URL_HERE",
 }
@@ -267,7 +267,7 @@ def save_snapshot(snap):
         print("SNAPSHOT SAVE ERROR", repr(e))
 
 def check_and_notify_changes():
-    """بس للي طلب تنبيه: لو منتج كان خلصان ورجعت كميته، نبه اللي طلبوه بس"""
+    """تنبيه عند التوفر فقط: إذا عاد منتج نافذ إلى المخزون، نبّه من طلبوا التنبيه فقط"""
     try:
         products = fetch_supplier_products(force_refresh=True)
     except Exception as e:
@@ -299,7 +299,7 @@ def check_and_notify_changes():
                         bot.send_message(chat_id, f"🔔 <b>المنتج متوفر الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\n", reply_markup=markup, parse_mode="HTML")
                     except Exception as e:
                         print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
-                # امسح الطلبات بعد ما نبهناهم
+                # امسح الطلبات بعد ما نبسناهم
                 notify_reqs.pop(str(key), None)
                 save_notify_requests(notify_reqs)
     snap = {k: {"name": v["name"], "price": v["price"], "stock": v["stock"]} for k, v in products.items()}
@@ -398,7 +398,7 @@ def supplier_headers():
     return {"X-Reseller-Key": RESELLER_KEY}
 
 def extract_image_url(item):
-    """FIX 1: جرب كل أسماء الصور المحتملة من المورد"""
+    """FIX 1: جرّب كل أسماء الصور المحتملة من المورّد"""
     # 1. حقول مباشرة
     for key in ["image_url", "image", "photo", "thumbnail", "cover", "img", "picture", "poster", "banner"]:
         v = item.get(key)
@@ -420,20 +420,20 @@ def extract_image_url(item):
                 for sub in ["url", "src"]:
                     if isinstance(first.get(sub), str) and first.get(sub, "").startswith("http"):
                         return first[sub].strip()
-    # 3. دور في أي حقل فيه http وينتهي بصورة
+    # 3. ابحث في أي حقل يحتوي على http وينتهي بصورة
     for v in item.values():
         if isinstance(v, str) and v.startswith("http") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
             return v.strip()
     # 4. لو اللينك نسبي مش كامل، كمله
     for v in item.values():
         if isinstance(v, str) and v.startswith("/") and any(v.lower().split("?")[0].endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-            # جرب تكمله بدومين المورد
+            # جرب تكمله بدومين المورّد
             base = VENTEBOT_API_URL.replace("/api/reseller", "")
             return base.rstrip("/") + v.strip()
     return ""
 
 def fetch_supplier_products(force_refresh=False):
-    # استخدم الكاش عشان البوت ميبقاش بطيء
+    # استخدم الكاش من أجل البوت ميبقاش بطيء
     now = time.time()
     if not force_refresh and _PRODUCTS_CACHE["data"] and (now - _PRODUCTS_CACHE["time"] < CACHE_TTL):
         return _PRODUCTS_CACHE["data"]
@@ -536,7 +536,7 @@ DELIVERY_KEYS = [
     "product_data", "delivery_data", "info", "data",
     "account_info", "access", "activation", "pin", "token"
 ]
-# مفاتيح نتجاهلها عشان منبعتش بيانات فاضية أو بيانات الطلب نفسه
+# مفاتيح نتجاهلها من أجل منبعتش بيانات فاضية أو بيانات الطلب نفسه
 IGNORE_KEYS = {"id", "product_id", "order_id", "status", "price", "quantity", "created_at", "updated_at", "idempotency_key", "request_status", "user_id", "reseller_id"}
 
 def _format_value(v):
@@ -607,11 +607,11 @@ def extract_delivery_data(response_data):
         for item in items:
             if not isinstance(item, dict):
                 continue
-            # حاول تلاقي بيانات في الـ item نفسه
+            # حاول تلاقي بيانات في اإلى item نفسه
             found = _find_credentials(item)
             if found and found not in credentials:
                 credentials.append(found)
-    # لو ملقيتش في items، دور في الـ order كله
+    # لو ملقيتش في items، دور في اإلى order كله
     if not credentials:
         found = _find_credentials(order)
         if found:
@@ -683,7 +683,7 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
         except Exception:
             data = {}
         print("SUPPLIER CREATE STRUCTURE:", json.dumps(log_response_structure(data), ensure_ascii=False))
-        # اطبع أول 2000 حرف من الرد الحقيقي للتشخيص (بدون كلمات سر لو كانت واضحة)
+        # اطبع أول 2000 حرف من الرد الحقيقي للتشخيص (دون كلمات سر إن وُجدت)
         try:
             print("SUPPLIER CREATE RAW PREVIEW:", str(data)[:2000])
         except Exception:
@@ -715,7 +715,7 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
                     order = candidate
                     order_id = candidate.get("id")
                 if request_status == "failed_no_charge":
-                    return {"success": False, "error": "المورد أكد أن الطلب فشل دون خصم رصيد (failed_no_charge).", "idempotency_key": idempotency_key}
+                    return {"success": False, "error": "المورّد أكد أن الطلب فشل دون خصم رصيد (failed_no_charge).", "idempotency_key": idempotency_key}
                 break
         except requests.RequestException as exc:
             print("SUPPLIER LOOKUP EXCEPTION:", repr(exc))
@@ -742,7 +742,7 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
                     break
             except requests.RequestException as exc:
                 print("SUPPLIER ORDER POLL EXCEPTION:", repr(exc))
-    # FIX: لو الطلب مكتمل بس البيانات مش في رد الـ create، اعمل جلب أخير للطلب كامل
+    # FIX: لو الطلب مكتمل بس البيانات مش في رد اإلى create، اعمل جلب أخير للطلب كامل
     if order_id and not extract_delivery_data({"order": order}):
         try:
             _, final_data = supplier_order_status(order_id)
@@ -768,7 +768,7 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
         return {"success": True, "data": {"success": True, "order": order}, "idempotency_key": idempotency_key, "order_id": order.get("id")}
     return {
         "success": False,
-        "error": (f"المورد لم يؤكد حالة COMPLETED. لم تتم إعادة الشراء لتجنب الخصم المكرر. الحالة الحالية: {status or 'غير معروفة'}."),
+        "error": (f"المورّد لم يؤكد حالة COMPLETED. لم تتم إعادة الشراء لتجنب الخصم المكرر. الحالة الحالية: {status or 'غير معروفة'}."),
         "idempotency_key": idempotency_key,
         "order_id": order_id
     }
@@ -849,11 +849,11 @@ def wallet_cashback_for(amount):
     except Exception: return 0
 def get_wallet_markup():
     mk = InlineKeyboardMarkup()
-    mk.row(InlineKeyboardButton("\u0001F4B3 شحن 5$", callback_data="wallet_dep_5"), InlineKeyboardButton("\u0001F4B3 شحن 10$", callback_data="wallet_dep_10"))
-    mk.row(InlineKeyboardButton("\u0001F4B3 شحن 25$ + 1$ هدية", callback_data="wallet_dep_25"), InlineKeyboardButton("\u0001F4B3 شحن 50$ + 2$ هدية", callback_data="wallet_dep_50"))
-    mk.row(InlineKeyboardButton("\u0001F4B3 شحن 100$ + 4$ هدية", callback_data="wallet_dep_100"), InlineKeyboardButton("\u270F\uFE0F مبلغ آخر", callback_data="wallet_dep_custom"))
-    mk.row(InlineKeyboardButton("\u0001F4DC سجل المحفظة", callback_data="wallet_history"))
-    mk.row(InlineKeyboardButton("\u0001F3E0 القائمة الرئيسية", callback_data="main_menu"))
+    mk.row(InlineKeyboardButton("💳 شحن 5$", callback_data="wallet_dep_5"), InlineKeyboardButton("💳 شحن 10$", callback_data="wallet_dep_10"))
+    mk.row(InlineKeyboardButton("💳 شحن 25$ + 1$ هدية", callback_data="wallet_dep_25"), InlineKeyboardButton("💳 شحن 50$ + 2$ هدية", callback_data="wallet_dep_50"))
+    mk.row(InlineKeyboardButton("💳 شحن 100$ + 4$ هدية", callback_data="wallet_dep_100"), InlineKeyboardButton("✏️ مبلغ آخر", callback_data="wallet_dep_custom"))
+    mk.row(InlineKeyboardButton("📜 سجل المحفظة", callback_data="wallet_history"))
+    mk.row(InlineKeyboardButton("🏠 القائمة القائمة الرئيسية", callback_data="main_menu"))
     return mk
 
 def get_main_menu_markup(chat_id, is_admin=False):
@@ -914,7 +914,7 @@ def get_main_menu_markup(chat_id, is_admin=False):
 def get_admin_markup():
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("💰 فحص الرصيد", callback_data="adm_balance"), InlineKeyboardButton("💳 طرق الإيداع", callback_data="adm_deposits"))
-    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+    markup.row(InlineKeyboardButton("📊 سجل المعاملات", callback_data="adm_transactions"), InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
     return markup
 
 
@@ -933,7 +933,7 @@ def send_photo_with_button(chat_id, fam_or_info, caption, button_text, callback_
         if fam:
             img_bytes = get_family_image_bytes(fam)
             url = FAMILY_IMAGES.get(fam)
-        # لو المنتج ليه صورة من المورد
+        # لو المنتج لماذا صورة من المورّد
         if fam_or_info.get("image") and str(fam_or_info.get("image")).startswith("http"):
             url = fam_or_info["image"]
             img_bytes = None
@@ -954,10 +954,10 @@ def send_photo_with_button(chat_id, fam_or_info, caption, button_text, callback_
     return False
 
 def send_main_menu_with_images(chat_id, is_admin=False):
-    """القايمة الرئيسية الجديدة: كل عائلة بصورتها"""
+    """القايمة القائمة الرئيسية الجديدة: كل عائلة بصورتها"""
     products = fetch_supplier_products()
     if not products:
-        bot.send_message(chat_id, "لا توجد منتجات حالياً")
+        bot.send_message(chat_id, "لا توجد منتجات متاحة حاليًا")
         return
     families_set = set()
     singles = []
@@ -968,18 +968,18 @@ def send_main_menu_with_images(chat_id, is_admin=False):
             singles.append((key, info))
     # Test آخر واحد
     families_sorted = sorted(families_set, key=lambda x: (1 if x == "tests" else 0, FAMILY_NAMES.get(x, x).lower()))
-    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - دوس عليه عشان تشوف منتجاته", parse_mode="HTML")
+    bot.send_message(chat_id, "🛍 <b>اختر القسم:</b>\nكل قسم بصورته - اضغط علماذا لعرض منتجاته", parse_mode="HTML")
     for fam in families_sorted:
         name = FAMILY_NAMES.get(fam, fam)
         count = sum(1 for _, v in products.items() if v["family"] == fam)
-        caption = f"{name}\n📦 {count} منتج - دوس عشان تشوفهم 👇"
+        caption = f"{name}\n📦 {count} منتج - اضغط لعرضها 👇"
         send_photo_with_button(chat_id, fam, caption, f"📂 افتح {name}", "fam_" + fam, is_family=True)
     # المنتجات اللي من غير عائلة
     singles_sorted = sorted(singles, key=lambda x: x[1]["name"].lower())
     for key, info in singles_sorted:
         if info["stock"] > 0:
             caption = f"🏷 <b>{safe_html(info['name'])}</b>\n💰 <b>${info['price']}</b> | 🟢 متوفر"
-            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري - ${info['price']}", "buy_" + key, is_family=False)
+            send_photo_with_button(chat_id, info, caption, f"🛒 شراء - ${info['price']}", "buy_" + key, is_family=False)
     # أزرار الخدمات في الآخر
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
@@ -994,18 +994,18 @@ def send_family_products_with_images(chat_id, fam, products):
     # ترتيب أبجدي، وكل منتج تحت اللي قبله - مفيش اتنين جنب بعض
     found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
     fname = FAMILY_NAMES.get(fam, fam)
-    bot.send_message(chat_id, f"📁 <b>{safe_html(fname)}</b>\n👇 منتجات القسم - كل منتج تحت التاني:", parse_mode="HTML")
+    bot.send_message(chat_id, f"📁 <b>{safe_html(fname)}</b>\n👇 منتجات القسم - كل منتج أسفل الآخر:", parse_mode="HTML")
     for key, info in found_sorted:
         # الاسم كامل من غير تقطيع
         full_name = info['name']
         if info["stock"] > 0:
             caption = f"🏷 <b>{safe_html(full_name)}</b>\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>\n\n📝 {safe_html(info['description'])}"
-            send_photo_with_button(chat_id, info, caption, f"🛒 اشتري {full_name} - ${info['price']}", "buy_" + key, is_family=False)
+            send_photo_with_button(chat_id, info, caption, f"🛒 شراء {full_name} - ${info['price']}", "buy_" + key, is_family=False)
         else:
-            caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفد"
-            # حتى اللي خلصان يتبعت لوحده تحت اللي قبله عشان يبان كامل
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفذ"
+            # حتى اللي خلصان يتبعت لوحده تحت اللي قبله من أجل يبان كامل
             bot.send_message(chat_id, caption, parse_mode="HTML")
-    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+    markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
     bot.send_message(chat_id, "—", reply_markup=markup)
 
 def send_home(chat_id):
@@ -1015,7 +1015,7 @@ def send_home(chat_id):
 
 
 def get_product_system(info):
-    """يطلع نظام المنتج من الاسم والوصف عشان يبان من بره"""
+    """يطلع نظام المنتج من الاسم والوصف من أجل يبان من بره"""
     text = f"{info.get('name','')} {info.get('description','')}".lower()
     # المدة
     duration = ""
@@ -1087,7 +1087,7 @@ def build_product_card_markup(key, qty, info):
     else:
         m.add(InlineKeyboardButton(f"💰 الدفع من المحفظة - ${total}", callback_data=f"pay_wallet_{key}"))
         m.add(InlineKeyboardButton(f"🪙 إتمام الدفع - ${total}", callback_data=f"pay_{key}"))
-    m.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+    m.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
     return m, total
 
 def build_product_card_text(info, qty):
@@ -1125,7 +1125,7 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
             return True
         except Exception as exc:
             print("IMAGE SEND ERROR:", repr(exc), "URL:", image[:500])
-            # جرب تاني بدون parse_mode لو المشكلة في الوصف
+            # حاول مرة أخرى بدون parse_mode لو المشكلة في الوصف
             try:
                 bot.send_photo(chat_id, image, caption=msg, reply_markup=markup)
                 return True
@@ -1171,7 +1171,7 @@ if bot:
             for order in orders[-30:]:
                 rows.append(f"📦 <b>{safe_html(order.get('product', 'منتج'))}</b>\n🔑 <code>{safe_html(order.get('item', ''))}</code>\n🕒 {safe_html(order.get('time', ''))}\n──────────────")
             body = "📜 سجل مشترياتي السابقة:\n\n" + "\n".join(rows)
-        bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+        bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
     @bot.message_handler(commands=["language"])
     def cmd_language(message):
@@ -1189,7 +1189,7 @@ if bot:
         markup = InlineKeyboardMarkup()
         for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: (1 if x[0]=="tests" else 0, x[1].lower())):
             markup.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
-        bot.send_message(message.chat.id, "🖼 <b>اختر العائلة اللي عايز تغير صورتها، وبعدين ابعت الصورة:</b>", reply_markup=markup, parse_mode="HTML")
+        bot.send_message(message.chat.id, "🖼 <b>اختر القسم الذي تريد تغيير صورته، ثم أرسل الصورة:</b>", reply_markup=markup, parse_mode="HTML")
 
     @bot.message_handler(content_types=["photo"])
     def handle_admin_photo(message):
@@ -1203,7 +1203,7 @@ if bot:
             d = load_image_ids()
             d[f"family:{fam}"] = fid
             save_image_ids(d)
-            bot.send_message(chat_id, f"✅ تم حفظ صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> بنجاح!\nدلوقتي أي منتج في العائلة دي هيظهر بالصورة دي.", parse_mode="HTML")
+            bot.send_message(chat_id, f"✅ تم حفظ صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> بنجاح!\nالآن سيظهر أي منتج في هذا القسم بهذه الصورة.", parse_mode="HTML")
         except Exception as e:
             bot.send_message(chat_id, f"❌ خطأ: {e}")
 
@@ -1234,12 +1234,12 @@ if bot:
             fam = data[7:]
             ADMIN_WAITING_IMAGE[chat_id] = fam
             bot.answer_callback_query(call.id)
-            bot.send_message(chat_id, f"📸 ابعت دلوقتي صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> (ابعتها كصورة مش كملف):", parse_mode="HTML")
+            bot.send_message(chat_id, f"📸 أرسل الآن صورة <b>{FAMILY_NAMES.get(fam, fam)}</b> (أرسلها كصورة وليس كملف):", parse_mode="HTML")
             return
         elif data.startswith("fam_"):
             fam = data[4:]
             bot.answer_callback_query(call.id)
-            # بدون حذف: القديم يبقى، والجديد ينزل تحت
+            # بدون حذف: القديم يبقى، والجديد يانخفض تحت
             # جوه العائلة: كل منتج زرار واحد في سطر كامل - من غير ترقيم، من غير زرار شراء تحته
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
@@ -1250,7 +1250,7 @@ if bot:
                     markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
                     markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
-            markup.add(InlineKeyboardButton("🔙 الرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
             fid = get_stored_image_id(fam=fam)
             sent = False
             caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>"
@@ -1277,7 +1277,7 @@ if bot:
                 InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar"),
                 InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
                 InlineKeyboardButton("🇫🇷 Français", callback_data="lang_fr"),
-                InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")
+                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
             )
             bot.edit_message_text("🌐 اختر اللغة:", chat_id, msg_id, reply_markup=markup)
         elif data == "show_apis":
@@ -1286,7 +1286,7 @@ if bot:
             for key, info in products.items():
                 if "api" in info["name"].lower() and info["stock"] > 0:
                     markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
-            markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
         elif data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
@@ -1302,8 +1302,8 @@ if bot:
             else:
                 result = api_get_wallet_transactions()
                 title = "📊 سجل المعاملات"
-            body = safe_html(json.dumps(result, ensure_ascii=False, indent=2)[:3000]) if result else "تعذر جلب البيانات."
-            bot.send_message(chat_id, f"{title}\n<pre>{body}</pre>", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 رجوع", callback_data="admin_panel")), parse_mode="HTML")
+            body = safe_html(json.dumps(result, ensure_ascii=False, indent=2)[:3000]) if result else "تعذّر جلب البيانات."
+            bot.send_message(chat_id, f"{title}\n<pre>{body}</pre>", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 عودة", callback_data="admin_panel")), parse_mode="HTML")
         elif data == "search_product":
             bot.answer_callback_query(call.id)
             USER_WAITING_FOR_SEARCH[chat_id] = True
@@ -1311,7 +1311,7 @@ if bot:
         elif data == "payment_methods":
             bot.answer_callback_query(call.id)
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
-            bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
             bot.answer_callback_query(call.id, "❌ المنتج غير متوفر.", show_alert=True)
         elif data.startswith("buy_"):
@@ -1322,9 +1322,9 @@ if bot:
                 bot.send_message(chat_id, "تعذر العثور على المنتج.")
                 return
             if info["stock"] <= 0:
-                # المنتج خلصان: ابعت صفحته كاملة + زرار "نبهني لما يرجع" تحت الوصف
+                # المنتج خلصان: ابعت صفحته كاملة + زرار "نبسني لما يرجع" تحت الوصف
                 markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند التوفر", callback_data="notify_" + key))
-                markup_sold.add(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"))
+                markup_sold.add(InlineKeyboardButton("🔙 عودة", callback_data="main_menu"))
                 send_product_card(chat_id, info, markup_sold)
                 return
             # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
@@ -1380,7 +1380,7 @@ if bot:
             # ===== منتج تيست مجاني: تسليم فوري من غير دفع =====
             if info.get("family") == "tests" and info["price"] <= 0:
                 bot.send_message(chat_id, "🧪 جارٍ التجهيز...")
-                # اطلب من المورد مباشرة بدون Binance
+                # اطلب من المورّد مباشرة بدون Binance
                 result = purchase_order_from_supplier(key, f"free_test_{chat_id}_{int(time.time())}")
                 if not result["success"]:
                     bot.send_message(chat_id, f"❌ فشل طلب التجربة: {safe_html(result.get('error',''))}")
@@ -1388,12 +1388,12 @@ if bot:
                 delivery = extract_delivery_data(result["data"])
                 if not delivery:
                     bot.send_message(chat_id, "⚠ لم تصل بيانات التسليم. تم إشعار الإدارة.")
-                    notify_admin(f"⚠ طلب تيست مجاني بدون بيانات: {safe_html(info['name'])} - زبون {chat_id}")
+                    notify_admin(f"⚠ طلب تجربة مجانية بدون بيانات: {safe_html(info['name'])} - زبون {chat_id}")
                     return
                 orders = load_orders()
                 orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": "FREE_TEST", "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
                 save_orders(orders)
-                bot.send_message(chat_id, f"🎉 <b>تجربة مجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
+                bot.send_message(chat_id, f"🎉 <b>التجربة المجانية - تم التسليم!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, is_admin))
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             if info["price"] <= 0:
@@ -1402,9 +1402,9 @@ if bot:
             USER_SELECTED_PRODUCT[chat_id] = key
             qty = USER_QTY.get(chat_id, 1)
             total = round(info["price"] * qty, 2)
-            pay_msg = (f"🪙 قم بتحويل (${total} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
-            # بدون حذف: رسالة الدفع تنزل تحت كرسالة جديدة، والقديم يبقى
-            bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) سنا في المحادثة.")
+            # بدون حذف: رسالة الدفع تانخفض تحت كرسالة جديدة، والقديم يبقى
+            bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
             orders = load_orders().get(str(chat_id), [])
@@ -1412,14 +1412,14 @@ if bot:
                 body = "📜 لا توجد طلبات."
             else:
                 body = "📜 سجل مشترياتي:\n" + "\n".join(f"📦 {safe_html(o.get('product', 'منتج'))}\n🔑 <code>{safe_html(o.get('item', ''))}</code>" for o in orders[-30:])
-            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.edit_message_text(body, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
 
         elif data == "wallet_home":
             bot.answer_callback_query(call.id)
             bal = get_wallet_balance(chat_id)
             try: bot.delete_message(chat_id, msg_id)
             except Exception: pass
-            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${bal}</b>\n\n- اشحن محفظتك مرة واحدة واشتري منها على طول\n- كل 25$ شحن تاخد 1$ كاش باك\n- لو حصل مشكلة في التسليم، الفلوس بترجع لمحفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
+            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${bal}</b>\n\n- اشحن محفظتك مرة واحدة واشترِ منها مباشرة\n- كل شحن بقيمة 25$ تحصل على 1$ هدية\n- إذا حدثت مشكلة في التسليم، يعود المبلغ إلى محفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
             return
         elif data == "wallet_history":
             bot.answer_callback_query(call.id)
@@ -1438,18 +1438,18 @@ if bot:
             bot.answer_callback_query(call.id)
             if data == "wallet_dep_custom":
                 USER_WAITING_WALLET_CUSTOM.add(chat_id)
-                bot.send_message(chat_id, "✏️ اكتب المبلغ اللي عايز تشحنه بالدولار (مثال: 30):", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")))
+                bot.send_message(chat_id, "✏️ اكتب المبلغ الذي تريد شحنه بالدولار (مثال: 30):", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة القائمة الرئيسية", callback_data="main_menu")))
                 return
             try: amt = float(data.replace("wallet_dep_", ""))
             except Exception: amt = 0
             if amt <= 0: return
             USER_WAITING_WALLET_DEPOSIT[chat_id] = amt
             bonus = wallet_cashback_for(amt)
-            extra = f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد اللي هيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا."
+            extra = f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد الذي سيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
+            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا."
             try: bot.delete_message(chat_id, msg_id)
             except Exception: pass
-            bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
+            bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             return
         elif data.startswith("pay_wallet_"):
             k = data[len("pay_wallet_"):]; info = products.get(k); bot.answer_callback_query(call.id)
@@ -1457,30 +1457,30 @@ if bot:
             qty = int(USER_QTY.get(chat_id, 1))
             if qty < 1: qty = 1
             if qty > int(info["stock"]):
-                bot.send_message(chat_id, f"⚠ الكمية المتوفرة {info['stock']} فقط. قلل الكمية وحاول تاني."); return
+                bot.send_message(chat_id, f"⚠ الكمية المتوفرة {info['stock']} فقط. قلّل الكمية وحاول مرة أخرى."); return
             total = round(info["price"] * qty, 2)
             bal = get_wallet_balance(chat_id)
             if bal + 1e-9 < total:
-                bot.send_message(chat_id, f"⚠ رصيدك <b>${bal}</b> مش كفاية. الإجمالي <b>${total}</b>. اشحن محفظتك الأول.", reply_markup=get_wallet_markup(), parse_mode="HTML"); return
+                bot.send_message(chat_id, f"⚠ رصيدك <b>${bal}</b> غير كافٍ. الإجمالي <b>${total}</b>. اشحن محفظتك أولًا.", reply_markup=get_wallet_markup(), parse_mode="HTML"); return
             if chat_id in USER_PROCESSING: bot.send_message(chat_id, "⏳ طلبك قيد المعالجة."); return
             USER_PROCESSING.add(chat_id)
             try:
                 new_bal = deduct_wallet_balance(chat_id, total)
-                bot.send_message(chat_id, f"⏳ جاري إرسال الطلب للمورد... تم خصم <b>${total}</b> من محفظتك. رصيدك الجديد: <b>${new_bal}</b>")
+                bot.send_message(chat_id, f"⏳ جارٍ إرسال الطلب للمورد... تم خصم <b>${total}</b> من محفظتك. رصيدك الجديد: <b>${new_bal}</b>")
                 ref = f"wallet_{chat_id}_{int(time.time())}"
                 result = purchase_order_from_supplier(k, ref, quantity=qty)
                 if not result["success"]:
                     add_wallet_balance(chat_id, total, reason="refund_failed_delivery")
-                    notify_admin(f"🚨 <b>دفع من المحفظة لكن طلب المورد فشل - تم الاسترجاع</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nالكمية: {qty}\nالمبلغ: ${total} - تم إرجاعه للمحفظة")
-                    bot.send_message(chat_id, "✅ تم إرجاع المبلغ لمحفظتك لأن المورد لم يؤكد الطلب. لا تدفع مرة تانية.", reply_markup=get_main_menu_markup(chat_id, is_admin)); return
+                    notify_admin(f"🚨 <b>دفع من المحفظة لكن طلب المورّد فشل - تمت إعادة المبلغ</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nالكمية: {qty}\nالمبلغ: ${total} - تمت إعادته إلى المحفظة")
+                    bot.send_message(chat_id, "✅ تمت إعادة المبلغ إلى محفظتك لأن المورّد لم يؤكد الطلب. لا تدفع مرة أخرى.", reply_markup=get_main_menu_markup(chat_id, is_admin)); return
                 delivery = extract_delivery_data(result["data"])
                 if not delivery:
                     add_wallet_balance(chat_id, total, reason="refund_no_delivery")
-                    notify_admin(f"⚠ <b>دفع من المحفظة لكن بدون بيانات تسليم - تم الاسترجاع</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}")
-                    bot.send_message(chat_id, "✅ تم إرجاع المبلغ لمحفظتك لأن بيانات التسليم لم تصل. تم إشعار الإدارة."); return
+                    notify_admin(f"⚠ <b>دفع من المحفظة لكن بدون بيانات تسليم - تمت إعادة المبلغ</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}")
+                    bot.send_message(chat_id, "✅ تمت إعادة المبلغ إلى محفظتك لأن بيانات التسليم لم تصل. تم إشعار الإدارة."); return
                 orders = load_orders(); orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": ref, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S"), "quantity": qty}); save_orders(orders)
                 oid = str(result.get("order_id") or ref or "—")
-                dm = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 طلب رقم: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{qty}</b>\n💰 الإجمالي: <b>${total}</b> (من المحفظة)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>")
+                dm = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 رقم الطلب: <b>#{safe_html(oid)}</b>\n📦 <b>{safe_html(info['name'])}</b>\n🔢 الكمية: <b>{qty}</b>\n💰 الإجمالي: <b>${total}</b> (من المحفظة)\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>")
                 bot.send_message(chat_id, dm, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
             except Exception as e:
@@ -1504,26 +1504,26 @@ if bot:
             try: amt=float((message.text or "").strip().replace("$",""))
             except Exception: amt=0
             if amt < 1:
-                bot.send_message(chat_id, "❌ اكتب مبلغ صحيح، 1$ على الأقل."); return
+                bot.send_message(chat_id, "❌ اكتب مبلغًا صحيحًا، 1$ على الأقل."); return
             USER_WAITING_WALLET_DEPOSIT[chat_id]=amt
             bonus=wallet_cashback_for(amt)
-            extra=f"\n🎁 هتاخد <b>${bonus} كاش باك</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nوبعدين ابعت رقم العملية (Order ID) هنا.", parse_mode="HTML")
+            extra=f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
+            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا.", parse_mode="HTML")
             return
         if chat_id in USER_WAITING_WALLET_DEPOSIT:
             amt=USER_WAITING_WALLET_DEPOSIT.get(chat_id,0)
             ref=(message.text or "").strip()
             if not re.match(r"^[A-Za-z0-9_-]{8,}$", ref):
-                bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل."); return
+                bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يتكون من 8 أحرف على الأقل."); return
             USER_WAITING_WALLET_DEPOSIT.pop(chat_id,None)
-            bot.send_message(chat_id, "⏳ جاري فحص عملية الدفع عبر Binance...")
+            bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
             pay=verify_binance_transaction(ref, amt)
             if not pay["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}", parse_mode="HTML"); return
             bonus=wallet_cashback_for(amt)
             new_bal=add_wallet_balance(chat_id, amt, reason="deposit")
             if bonus: new_bal=add_wallet_balance(chat_id, bonus, reason="cashback")
-            bot.send_message(chat_id, f"✅ <b>تم شحن المحفظة!</b>\n\n💰 شحنت: <b>${amt}</b>\n🎁 كاش باك: <b>${bonus}</b>\n💰 رصيدك الجديد: <b>${new_bal}</b>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id==ADMIN_ID))
+            bot.send_message(chat_id, f"✅ <b>تم شحن المحفظة!</b>\n\n💰 تم شحن: <b>${amt}</b>\n🎁 هدية: <b>${bonus}</b>\n💰 رصيدك الجديد: <b>${new_bal}</b>", parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id==ADMIN_ID))
             return
         if USER_WAITING_FOR_SEARCH.get(chat_id):
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
@@ -1539,19 +1539,19 @@ if bot:
                     found += 1
                     if info["stock"] > 0:
                         markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
-            markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-            bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج لـ: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
+            markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+            bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج إلى: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
             return
         if chat_id not in USER_SELECTED_PRODUCT:
-            bot.send_message(chat_id, "⚠ يرجى اختيار المنتج أولاً من القائمة.", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+            bot.send_message(chat_id, "⚠ يرجى اختيار المنتج أولًا من القائمة.", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
             return
         if chat_id in USER_PROCESSING:
-            bot.send_message(chat_id, "⏳ طلبك قيد المعالجة، انتظر قليلاً.")
+            bot.send_message(chat_id, "⏳ طلبك قيد المعالجة، يرجى الانتظار قليلًا.")
             return
         reference = (message.text or "").strip()
-        # FIX: اقبل حروف وأرقام لأن Order ID بتاع Binance مش أرقام بس
+        # FIX: اقبل حروف وأرقام لأن Order ID الخاص بـ Binance مش أرقام بس
         if not re.match(r"^[A-Za-z0-9_-]{8,}$", reference):
-            bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يكون 8 خانات على الأقل (حروف وأرقام).")
+            bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يتكون من 8 أحرف على الأقل (حروف وأرقام).")
             return
         USER_PROCESSING.add(chat_id)
         try:
@@ -1559,41 +1559,41 @@ if bot:
             products = fetch_supplier_products()
             info = products.get(product_key)
             if not info:
-                bot.send_message(chat_id, "تعذر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع.")
+                bot.send_message(chat_id, "تعذّر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع.")
                 return
-            bot.send_message(chat_id, "⏳ جاري فحص عملية الدفع عبر Binance...")
+            bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
             qty_check = USER_QTY.get(chat_id, 1)
             total_check = round(info["price"] * qty_check, 2)
             payment = verify_binance_transaction(reference, total_check)
             if not payment["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(payment['error'])}", parse_mode="HTML")
                 return
-            bot.send_message(chat_id, "✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورد...")
+            bot.send_message(chat_id, "✅ تم تأكيد الدفع. جارٍ إرسال الطلب إلى المورّد...")
             result = purchase_order_from_supplier(product_key, reference, quantity=qty_check)
             if not result["success"]:
-                notify_admin(f"🚨 <b>دفع مؤكد لكن طلب المورد فشل</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nالخطأ: <code>{safe_html(result.get('error', 'غير معروف')[:700])}</code>")
-                bot.send_message(chat_id, "✅ تم تأكيد الدفع، لكن المورد لم يؤكد إتمام الطلب. تم إشعار الإدارة، لا ترسل دفعة ثانية.")
+                notify_admin(f"🚨 <b>دفع مؤكد لكن طلب المورّد فشل</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nالخطأ: <code>{safe_html(result.get('error', 'غير معروف')[:700])}</code>")
+                bot.send_message(chat_id, "✅ تم تأكيد الدفع، لكن المورّد لم يؤكد إتمام الطلب. تم إشعار الإدارة، لا ترسل دفعة ثانية.")
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             delivery = extract_delivery_data(result["data"])
             if not delivery:
-                notify_admin(f"⚠ <b>الدفع وطلب المورد تم قبولهما، لكن لم أستطع استخراج بيانات التسليم.</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nOrder ID المورد: <code>{result.get('order_id')}</code>\nراجع سجل Render وابحث عن SUPPLIER CREATE RAW PREVIEW.")
-                bot.send_message(chat_id, "✅ تم تأكيد الدفع وإرسال الطلب للمورد، لكن بيانات المنتج لم تصلنا بصيغة مفهومة. تم إشعار الإدارة لمتابعة التسليم. لا تدفع مرة أخرى.")
+                notify_admin(f"⚠ <b>تم قبول الدفع وطلب المورّد، لكن لم نتمكن من استخراج بيانات التسليم.</b>\nالزبون: <code>{chat_id}</code>\nالمنتج: {safe_html(info['name'])}\nمرجع الدفع: <code>{safe_html(reference)}</code>\nOrder ID المورّد: <code>{result.get('order_id')}</code>\nراجع سجل Render وابحث عن SUPPLIER CREATE RAW PREVIEW.")
+                bot.send_message(chat_id, "✅ تم تأكيد الدفع وإرسال الطلب إلى المورّد، لكن بيانات المنتج لم تصلنا بصيغة مفهومة. تم إشعار الإدارة لمتابعة التسليم. لا تدفع مرة أخرى.")
                 orders = load_orders()
-                orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": "قيد المتابعة مع المورد - لم تصل بيانات التسليم بعد", "reference": reference, "status": "pending_delivery", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
+                orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": "قيد المتابعة مع المورّد - لم تصل بيانات التسليم بعد", "reference": reference, "status": "pending_delivery", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
                 save_orders(orders)
                 USER_SELECTED_PRODUCT.pop(chat_id, None)
                 return
             orders = load_orders()
             orders.setdefault(str(chat_id), []).append({"product": info["name"], "item": delivery, "reference": reference, "status": "delivered", "time": time.strftime("%Y-%m-%d %H:%M:%S")})
             save_orders(orders)
-            delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ بهذه الرسالة للرجوع إليها.")
+            delivery_message = (f"🎉 <b>تم تأكيد الدفع والتسليم بنجاح!</b>\n\n📦 <b>{safe_html(info['name'])}</b>\n🔑 <b>بيانات المنتج:</b>\n<pre>{safe_html(delivery[:3500])}</pre>\n\nاحتفظ بهذه الرسالة للعودة إلماذاا.")
             bot.send_message(chat_id, delivery_message, parse_mode="HTML", reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
             USER_SELECTED_PRODUCT.pop(chat_id, None)
         except Exception as exc:
             print("PAYMENT/DELIVERY HANDLER ERROR:", repr(exc))
             notify_admin(f"🚨 خطأ غير متوقع أثناء معالجة طلب:\nالزبون: <code>{chat_id}</code>\n<code>{safe_html(str(exc)[:700])}</code>")
-            bot.send_message(chat_id, "حدث خطأ أثناء معالجة الطلب. تم إشعار الإدارة. لا تعاود الدفع قبل التواصل مع الدعم.")
+            bot.send_message(chat_id, "حدث خطأ أثناء معالجة الطلب. تم إشعار الإدارة. لا تعِد الدفع قبل التواصل مع الدعم.")
         finally:
             USER_PROCESSING.discard(chat_id)
 
