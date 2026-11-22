@@ -140,7 +140,7 @@ FAMILY_IMAGES = {
     "quizlet": "https://logo.clearbit.com/quizlet.com",
     "railway": "https://logo.clearbit.com/railway.app",
     "wordwall": "https://logo.clearbit.com/wordwall.net",
-    "api_services": "https://logo.clearbit.com/openai.com",
+    "api_services": None,  # FIX: كان بيشاور على صورة ChatGPT
     "vpn": "https://cdn-icons-png.flaticon.com/512/3064/3064155.png",
     "tests": "https://cdn-icons-png.flaticon.com/512/1828/1828640.png",
 }
@@ -182,7 +182,8 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    return "https://logo.clearbit.com/openai.com"
+    # FIX: مفيش صورة = مفيش صورة. ممنوع ترجع صورة ChatGPT كـ fallback
+    return None
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -368,6 +369,9 @@ def send_photo_smart(chat_id, fam, info, caption, markup):
         except Exception as e:
             print("B64 SEND ERROR", repr(e))
     url = FAMILY_IMAGES.get(fam) if fam else None
+    # FIX: لو العائلة ملهاش صورة محددة، متبعتش صورة حد تاني
+    if url and "openai.com" in url and fam != "chatgpt":
+        url = None
     if url:
         try:
             bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
@@ -1108,7 +1112,7 @@ def build_product_card_markup(key, qty, info):
     else:
         m.add(InlineKeyboardButton(f"💰 الدفع من المحفظة - ${total}", callback_data=f"pay_wallet_{key}"))
         m.add(InlineKeyboardButton(f"🪙 إتمام الدفع - ${total}", callback_data=f"pay_{key}"))
-    m.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+    m.row(InlineKeyboardButton("💰 محفظتي", callback_data="wallet_home"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
     return m, total
 
 def build_product_card_text(info, qty):
@@ -1138,6 +1142,10 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     msg = build_product_card_text(info, qty)
     if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
         return True
+    # FIX: لو send_photo_smart فشل (مفيش صورة حقيقية) ابعت نص بس.
+    # ممنوع نروح لـ get_product_image اللي كان بيرجع ChatGPT لكل المنتجات
+    bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
+    return False
     image = get_product_image(info)
     print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
     if image and image.startswith("http"):
@@ -1163,6 +1171,7 @@ if bot:
             BotCommand("start", "تشغيل المتجر 🚀"),
             BotCommand("products", "تصفح المنتجات 🛍"),
             BotCommand("my_orders", "مشترياتي 📜"),
+            BotCommand("wallet", "محفظتي 💰"),
             BotCommand("language", "اللغة / Language 🌐")
         ])
     except Exception as exc:
@@ -1179,6 +1188,15 @@ if bot:
             bot.delete_message(chat_id, msg.message_id)
         except Exception:
             pass
+        # FIX WALLET: كارت محفظة منفصل فوق القايمة - يبان حتى لو المنتجات فشلت
+        try:
+            _bal0 = get_wallet_balance(chat_id)
+            _mk0 = InlineKeyboardMarkup()
+            _mk0.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal0}", callback_data="wallet_home"))
+            _mk0.row(InlineKeyboardButton("💳 شحن المحفظة", callback_data="wallet_home"))
+            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${_bal0}</b>\n\nدوس هنا عشان تشحن أو تشوف سجل محفظتك.", reply_markup=_mk0, parse_mode="HTML")
+        except Exception as _e:
+            print("WALLET CARD ERROR", repr(_e))
         send_home(chat_id)
 
     @bot.message_handler(commands=["my_orders"])
@@ -1340,7 +1358,17 @@ if bot:
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
             bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر.", show_alert=True)
+            # FIX: كان بيعمل alert بس ويسكت. دلوقتي بيفتح كارت المنتج + زرار التنبيه زي buy_ بالظبط
+            bot.answer_callback_query(call.id)
+            _key = data[len("sold_out_"):]
+            _info = products.get(_key)
+            if not _info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            _markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند التوفر", callback_data="notify_" + _key))
+            _markup_sold.add(InlineKeyboardButton("🔙 عودة", callback_data="main_menu"))
+            send_product_card(chat_id, _info, _markup_sold)
+            return
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
@@ -1526,6 +1554,12 @@ if bot:
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
+            # FIX: لو الرسالة الحالية فيها صورة، امسحها عشان القايمة الجديدة (وفيها المحفظة) تبان في الآخر مش متدارية
+            try:
+                if call.message and call.message.photo:
+                    bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
             send_home(chat_id)
 
     @bot.message_handler(content_types=["text", "photo"])
