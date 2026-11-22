@@ -1276,17 +1276,18 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # جوه العائلة: كل منتج في صف كامل لوحده تحت التاني - اسمه + نظامه + سعره من بره
+            # جوه العائلة فقط: كل صنف في سطر كامل لوحده (مش نص سطر)
+            # سطر = الاسم + النظام/الخطة + السعر - كل منتج بـ markup.add لوحده، مفيش row للمنتجات هنا خالص
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
             found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
             for key, info in found_sorted:
                 system = get_product_system(info)
                 if info["stock"] > 0:
-                    # صف كامل: الاسم | النظام | السعر
-                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                    # سطر كامل: الاسم • النظام/الخطة • السعر
+                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} • {system} • ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="buy_" + key))  # FIX: يفتح المنتج
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} • {system} • نفد", callback_data="buy_" + key))  # FIX: يفتح المنتج
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
             try:
