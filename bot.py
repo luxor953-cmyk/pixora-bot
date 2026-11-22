@@ -1003,7 +1003,7 @@ def send_family_products_with_images(chat_id, fam, products):
         # الاسم كامل من غير تقطيع
         full_name = info['name']
         if info["stock"] > 0:
-            caption = f"🏷 <b>{safe_html(full_name)}</b>\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>\n\n📝 {safe_html(info['description'])}"
+            caption = f"🏷 <b>{safe_html(full_name)}</b>\n💰 السعر: <b>${info['price']}</b> | 🟢 متوفر: <b>{info['stock']}</b>\n\n📝 {safe_html(get_display_description(info, chat_id))}"
             send_photo_with_button(chat_id, info, caption, f"🛒 اشتري {full_name} - ${info['price']}", "buy_" + key, is_family=False)
         else:
             caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفد"
@@ -1095,12 +1095,76 @@ def clean_description(desc):
     s = _re.sub(r"\n{3,}", "\n\n", s).strip()
     return s or "اشتراك رقمي."
 
+
+# ========== ترجمة الوصف + تنسيق القايمة 1- 2- 3- ==========
+_TRANSLATION_CACHE = {}  # (product_id, lang) -> وصف مترجم
+
+def format_list_numbers(text):
+    """حوّل أي ترقيم في أول السطر لـ 1- 2- 3- 4-
+    بيحوّل: 1. / 1) / 1: / 1  ->  1-  |  وبيسيب الأسعار والتواريخ اللي جوه السطر"""
+    import re as _re2
+    lines = str(text or "").split("\n")
+    out = []
+    for line in lines:
+        # سطر بيبدأ برقم + (. أو ) أو : أو مسافة) -> 1-
+        m = _re2.match(r"^\s*(\d{1,2})\s*[\.\)\:\-\–]\s*(.*)$", line)
+        if m:
+            out.append(f"{m.group(1)}- {m.group(2)}")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+def translate_description(desc, product_id, target_lang):
+    """ترجم الوصف للغة اللي اختارها العميل. كاش + fallback للأصلي لو فشلت."""
+    if not desc or target_lang not in ("ar", "en", "fr"):
+        return desc
+    key = (str(product_id), target_lang)
+    if key in _TRANSLATION_CACHE:
+        return _TRANSLATION_CACHE[key]
+    try:
+        # Google Translate المجاني (من غير مفتاح) - سطر سطر عشان الترقيم ميتكسرش
+        import requests as _rq
+        lines = str(desc).split("\n")
+        translated_lines = []
+        for line in lines:
+            if not line.strip():
+                translated_lines.append("")
+                continue
+            # الرقم 1- مبيترجمش، بنرجّعه بعد الترجمة
+            import re as _re3
+            m = _re3.match(r"^(\d{1,2})-\s*(.*)$", line.strip())
+            prefix, body = (m.group(1) + "- ", m.group(2)) if m else ("", line)
+            if not body.strip():
+                translated_lines.append(line)
+                continue
+            r = _rq.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params={"client": "gtx", "sl": "auto", "tl": target_lang, "dt": "t", "q": body},
+                timeout=6,
+            )
+            data = r.json()
+            t = "".join(seg[0] for seg in data[0] if seg and seg[0])
+            translated_lines.append(prefix + (t or body))
+        result = "\n".join(translated_lines)
+        _TRANSLATION_CACHE[key] = result
+        return result
+    except Exception as e:
+        print("TRANSLATE FAIL", repr(e))
+        return desc  # لو الترجمة فشلت: اعرض الأصلي، البوت ميقفش
+
+def get_display_description(info, chat_id):
+    """الوصف النهائي: تنظيف -> ترقيم 1- -> ترجمة -> ترقيم تاني بعد الترجمة"""
+    raw = clean_description(info.get("description"))
+    formatted = format_list_numbers(raw)
+    translated = translate_description(formatted, info.get("id"), user_lang(chat_id))
+    return format_list_numbers(translated)
+
 def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     """FIX: كارت المنتج نص فقط - ممنوع أي صورة جوه وصف المنتج.
     الصورة بتفضل بس على غلاف العائلة من بره (send_family_header)، مش جوه المنتج."""
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
            f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
-           f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(clean_description(info.get('description')))}")
+           f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(get_display_description(info, chat_id))}")
     # FIX: اقفل معاينة اللينكات - تيليجرام كان بيطلع صورة المعاينة (غالباً ChatGPT) فوق الوصف
     bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
     return True
