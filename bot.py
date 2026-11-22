@@ -43,7 +43,6 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
 USER_WAITING_FOR_SEARCH = {}
-USER_QTY = {}
 ADMIN_WAITING_IMAGE = {}  # chat_id -> fam اللي مستني صورته
 USER_LANGUAGES = {}
 USER_PROCESSING = set()
@@ -994,55 +993,11 @@ def send_family_header(chat_id, fam, markup):
     bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
     return False
 
-
-def build_product_card_markup(key, qty, info):
-    """أزرار الكارت: الكمية + / - والدفع والرجوع - كلها في نفس الرسالة"""
-    total = round(info["price"] * qty, 2)
-    m = InlineKeyboardMarkup()
-    # صف الكمية: - | الكمية: X | +
-    m.row(
-        InlineKeyboardButton("➖", callback_data=f"qty_dec_{key}"),
-        InlineKeyboardButton(f"الكمية: {qty}", callback_data="qty_noop"),
-        InlineKeyboardButton("➕", callback_data=f"qty_inc_{key}")
-    )
-    if info.get("family") == "tests" and info["price"] <= 0:
-        m.add(InlineKeyboardButton(f"🧪 تجربة مجانية - استلم الآن", callback_data=f"pay_{key}"))
-    else:
-        m.add(InlineKeyboardButton(f"🪙 إتمام الدفع - ${total}", callback_data=f"pay_{key}"))
-    m.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
-    return m, total
-
-def build_product_card_text(info, qty):
-    total = round(info["price"] * qty, 2)
-    return (f"🏷 <b>{safe_html(info['name'])}</b>\n"
-            f"💰 سعر الواحدة: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n"
-            f"📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\n"
-            f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
-
-def edit_product_card(chat_id, msg_id, key, info, qty, is_photo=True):
-    """يعدّل نفس الرسالة - مش يبعت واحدة جديدة - ده اللي بيحل اختفاء الشاشة"""
-    text = build_product_card_text(info, qty)
-    markup, _ = build_product_card_markup(key, qty, info)
-    try:
-        if is_photo:
-            bot.edit_message_caption(text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
-        else:
-            bot.edit_message_text(text, chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
-        return True
-    except Exception as e:
-        # لو الرسالة هي هي ومفيش تغيير، تيليجرام بيرفض - تجاهل
-        if "message is not modified" in str(e).lower():
-            return True
-        print("EDIT CARD ERROR", repr(e))
-        return False
-
 def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
-    # الكارت الصح: فيه الكمية والإجمالي
-    qty = USER_QTY.get(chat_id, 1)
-    msg = build_product_card_text(info, qty)
-    # لو markup مش فيه أزرار كمية، ابنِه صح
-    if markup is None:
-        markup, _ = build_product_card_markup(str(info.get("id","")), qty, info)
+    """FIX 1: ابعت صورة المنتج لو موجودة، ولو فشلت ابعت نص"""
+    msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
+           f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
+           f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
     if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
         return True
     image = get_product_image(info)
@@ -1171,24 +1126,45 @@ if bot:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            # جوه العائلة: كل منتج في صف كامل لوحده تحت التاني - اسمه + نظامه + سعره من بره
+            # جوه العائلة: كل منتج في سطر كامل - نص فيه كل المعلومات + زرار شراء
+            # النص هو اللي فيه كل المعلومات عشان الزرار بيقص الكلام
             markup = InlineKeyboardMarkup()
             found = [(k, v) for k, v in products.items() if v["family"] == fam]
             found_sorted = sorted(found, key=lambda x: x[1]["name"].lower())
-            for key, info in found_sorted:
+            lines = [f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\n"]
+            for idx, (key, info) in enumerate(found_sorted, start=1):
                 system = get_product_system(info)
+                stock_txt = f"متوفر: {info['stock']}" if info["stock"] > 0 else "🔴 نفد"
+                # سطر كامل: رقم - الاسم - النظام - المخزون - السعر (أهم حاجة)
+                lines.append(f"<b>{idx}.</b> {safe_html(info['name'])} | {system} | {stock_txt} | 💰 <b>${info['price']}</b>")
+                # زرار الشراء في صف كامل لوحده تحت السطر
                 if info["stock"] > 0:
-                    # صف كامل: الاسم | النظام | السعر
-                    markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
+                    markup.add(InlineKeyboardButton(f"🛒 اشتري {info['name']} - ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="sold_out_" + key))
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} - نفد", callback_data="sold_out_" + key))
+            body = "\n".join(lines)
+            # هنبعت النص + الأزرار في رسالة واحدة - النص فيه كل المعلومات، والأزرار للشراء
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
-            # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
-            try:
-                send_family_header(chat_id, fam, markup)
-            except Exception as e:
-                print("FAMILY HEADER ERROR", repr(e))
-                bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>", reply_markup=markup, parse_mode="HTML")
+            # ابعت السطر الكامل + الأزرار: جرب صورة العائلة فوق النص، لو فشلت ابعت النص بس
+            fid = get_stored_image_id(fam=fam)
+            sent = False
+            if fid:
+                try:
+                    bot.send_photo(chat_id, fid, caption=body, reply_markup=markup, parse_mode="HTML")
+                    sent = True
+                except Exception as e:
+                    print("FAMILY PHOTO ERROR", repr(e))
+            if not sent and fam in FAMILY_IMAGES_B64:
+                try:
+                    b = get_family_image_bytes(fam)
+                    if b:
+                        b.name = f"{fam}.jpg"
+                        bot.send_photo(chat_id, b, caption=body, reply_markup=markup, parse_mode="HTML")
+                        sent = True
+                except Exception as e:
+                    print("FAMILY B64 ERROR", repr(e))
+            if not sent:
+                bot.send_message(chat_id, body, reply_markup=markup, parse_mode="HTML")
         elif data == "menu_lang":
             bot.answer_callback_query(call.id)
             markup = InlineKeyboardMarkup().add(
@@ -1248,49 +1224,18 @@ if bot:
                 notify_admin(f"⚠ محاولة شراء منتج سعره صفر: {safe_html(info['name'])} (ID: {safe_html(key)})")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
-            USER_QTY[chat_id] = 1
-            # كارت جديد: فيه أزرار كمية - والكمية بتتعدل في نفس الرسالة
-            text = build_product_card_text(info, 1)
-            markup, _ = build_product_card_markup(key, 1, info)
+            # لو منتج تيست مجاني، الزرار يبقى تجربة مجانية مش دفع
+            if info.get("family") == "tests" and info["price"] <= 0:
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🧪 تجربة مجانية - استلم الآن", callback_data="pay_" + key))
+            else:
+                markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🪙 إتمام الدفع الفوري", callback_data="pay_" + key))
+            markup.row(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
             try:
                 bot.delete_message(chat_id, msg_id)
             except Exception:
                 pass
-            send_product_card(chat_id, info, markup, reply_to_msg_id=None)
-            # هنبعت الكارت الصح بالكمية - نستبدل النص اللي اتبعت
-            # عشان الصورة تفضل، هنبعت رسالة الكمية كتعديل للرسالة اللي اتبعتت لو أمكن
-            # أبسط حل مضمون: الكارت اللي اتبعت دلوقتي هو اللي هيتعدل بعد كده
-        elif data == "qty_noop":
-            bot.answer_callback_query(call.id)
-            return
-        elif data.startswith("qty_inc_") or data.startswith("qty_dec_"):
-            is_inc = data.startswith("qty_inc_")
-            key = data[8:] if is_inc else data[8:]
-            # qty_inc_ طولها 8، qty_dec_ طولها 8 برضه
-            if data.startswith("qty_inc_"):
-                key = data[len("qty_inc_"):]
-            else:
-                key = data[len("qty_dec_"):]
-            info = products.get(key)
-            bot.answer_callback_query(call.id)
-            if not info:
-                return
-            cur = USER_QTY.get(chat_id, 1)
-            if is_inc:
-                new_qty = min(cur + 1, max(1, info["stock"]))
-            else:
-                new_qty = max(1, cur - 1)
-            USER_QTY[chat_id] = new_qty
-            # عدّل نفس الرسالة - مش تبعت واحدة جديدة
-            # لو الرسالة فيها صورة، عدّل الكابشن، لو نص عدّل النص
-            try:
-                if call.message.photo:
-                    edit_product_card(chat_id, msg_id, key, info, new_qty, is_photo=True)
-                else:
-                    edit_product_card(chat_id, msg_id, key, info, new_qty, is_photo=False)
-            except Exception as e:
-                print("QTY EDIT ERROR", repr(e))
-            return
+            # FIX 1: ابعت كارت المنتج بالصورة
+            send_product_card(chat_id, info, markup)
         elif data.startswith("pay_"):
             key = data[4:]
             info = products.get(key)
@@ -1321,11 +1266,7 @@ if bot:
                 bot.send_message(chat_id, "تعذر تحديد المنتج. ارجع للقائمة وحاول مجدداً.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
-            qty = USER_QTY.get(chat_id, 1)
-            total = round(info["price"] * qty, 2)
-            # خزن الإجمالي عشان التحقق من الدفع يستخدمه
-            USER_QTY[chat_id] = qty
-            pay_msg = (f"🪙 قم بتحويل (${total} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 المنتج: <b>{safe_html(info['name'])}</b>\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
+            pay_msg = (f"🪙 قم بتحويل (${info['price']} USDT) إلى Binance ID: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
             bot.edit_message_text(pay_msg, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "my_orders":
             bot.answer_callback_query(call.id)
@@ -1387,9 +1328,7 @@ if bot:
                 bot.send_message(chat_id, "تعذر العثور على المنتج. تواصل مع الدعم قبل إعادة الدفع.")
                 return
             bot.send_message(chat_id, "⏳ جاري فحص عملية الدفع عبر Binance...")
-            qty_check = USER_QTY.get(chat_id, 1)
-            total_check = round(info["price"] * qty_check, 2)
-            payment = verify_binance_transaction(reference, total_check)
+            payment = verify_binance_transaction(reference, info["price"])
             if not payment["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(payment['error'])}", parse_mode="HTML")
                 return
