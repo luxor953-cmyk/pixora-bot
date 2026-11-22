@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 import telebot
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardRemove, BotCommand
+    ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 )
 from flask import Flask
 
@@ -164,7 +164,7 @@ def get_family_image_bytes(family):
         return None
 
 # صور يدوية لمنتجات معينة - الأقوى
-# لو تريد صورة خاصة لمنتج معين، حط اإلى ID الخاص بـه سنا واللينك
+# لو تريد صورة خاصة لمنتج معين، حط الـ ID الخاص به هنا واللينك
 # مثال: "123": "https://i.postimg.cc/xxxx/product.jpg"
 # تعرف اإلى ID منين؟ من لوحة الأدمن -> فحص الرصيد أو من Logs
 PRODUCT_IMAGES = {
@@ -869,6 +869,14 @@ def get_wallet_markup():
     mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
     return mk
 
+def get_persistent_keyboard():
+    # FIX: كيبورد ثابت تحت جنب مربع الكتابة - جنب زرار الاختيارات (☰) بالظبط
+    # ده غير الـ Inline Keyboard اللي جوه الرسالة. ده ثابت ومبيختفيش.
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("💰 محفظتي"), KeyboardButton("🛍 المنتجات"))
+    kb.row(KeyboardButton("📜 طلباتي"), KeyboardButton("🏠 القائمة الرئيسية"))
+    return kb
+
 def get_main_menu_markup(chat_id, is_admin=False):
     t = LANG_TEXTS.get(user_lang(chat_id), LANG_TEXTS["ar"])
     markup = InlineKeyboardMarkup()
@@ -877,7 +885,8 @@ def get_main_menu_markup(chat_id, is_admin=False):
         _bal = get_wallet_balance(chat_id)
     except Exception:
         _bal = 0
-    markup.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal}", callback_data="wallet_home"))
+    # المحفظة جنب الاختيارات: صف فيه المحفظة + الشحن جنب بعض، مش صف لوحده فوق
+    markup.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal}", callback_data="wallet_home"), InlineKeyboardButton("💳 شحن المحفظة", callback_data="wallet_home"))
     try:
         products = fetch_supplier_products()
     except Exception:
@@ -1036,6 +1045,12 @@ def send_family_products_with_images(chat_id, fam, products):
 def send_home(chat_id):
     # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
     bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
+    # FIX: ثبّت كيبورد المحفظة تحت جنب مربع الكتابة (جنب زرار الاختيارات)
+    try:
+        _bal_h = get_wallet_balance(chat_id)
+        bot.send_message(chat_id, f"💰 محفظتك: <b>${_bal_h}</b> - دوس على زر المحفظة تحت 👇", reply_markup=get_persistent_keyboard(), parse_mode="HTML")
+    except Exception as _e:
+        print("PERSISTENT KB ERROR", repr(_e))
 
 
 
@@ -1183,11 +1198,8 @@ if bot:
         add_subscriber(chat_id)
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
-        try:
-            msg = bot.send_message(chat_id, "🔄", reply_markup=ReplyKeyboardRemove())
-            bot.delete_message(chat_id, msg.message_id)
-        except Exception:
-            pass
+        # FIX: متمسحش الكيبورد الثابت - كان بيمسح زرار المحفظة اللي تحت
+        # ReplyKeyboardRemove اتشال عشان المحفظة تفضل ثابتة جنب الاختيارات
         # FIX WALLET: كارت محفظة منفصل فوق القايمة - يبان حتى لو المنتجات فشلت
         try:
             _bal0 = get_wallet_balance(chat_id)
@@ -1566,6 +1578,26 @@ if bot:
     def handle_incoming(message):
         chat_id = message.chat.id
         if message.text and message.text.startswith("/"):
+            return
+        # FIX: أزرار الكيبورد الثابت اللي تحت (جنب الاختيارات)
+        _t = (message.text or "").strip()
+        if _t == "💰 محفظتي":
+            _bal = get_wallet_balance(chat_id)
+            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${_bal}</b>\n\n- اشحن محفظتك مرة واحدة واشترِ منها مباشرة\n- كل شحن بقيمة 25$ تحصل على 1$ هدية\n- إذا حدثت مشكلة في التسليم، يعود المبلغ إلى محفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
+            return
+        if _t in ("🛍 المنتجات", "🏠 القائمة الرئيسية"):
+            send_home(chat_id)
+            return
+        if _t == "📜 طلباتي":
+            orders = load_orders().get(str(chat_id), [])
+            if not orders:
+                body = "📜 لا توجد طلبات سابقة."
+            else:
+                rows = []
+                for order in orders[-30:]:
+                    rows.append(f"📦 <b>{safe_html(order.get('product', 'منتج'))}</b>\n🔑 <code>{safe_html(order.get('item', ''))}</code>\n🕒 {safe_html(order.get('time', ''))}\n──────────────")
+                body = "📜 سجل مشترياتي السابقة:\n\n" + "\n".join(rows)
+            bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             return
 
         if chat_id in USER_WAITING_WALLET_CUSTOM:
