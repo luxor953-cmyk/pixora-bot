@@ -128,7 +128,7 @@ FAMILY_IMAGES = {
     "quizlet": "https://logo.clearbit.com/quizlet.com",
     "railway": "https://logo.clearbit.com/railway.app",
     "wordwall": "https://logo.clearbit.com/wordwall.net",
-    "api_services": "https://logo.clearbit.com/openai.com",
+    "api_services": "https://cdn-icons-png.flaticon.com/512/1087/1087818.png",  # FIX: كانت واخدة لوجو ChatGPT بالغلط,
     "vpn": "https://cdn-icons-png.flaticon.com/512/3064/3064155.png",
     "tests": "https://cdn-icons-png.flaticon.com/512/1828/1828640.png",
 }
@@ -170,7 +170,7 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    return "https://logo.clearbit.com/openai.com"
+    return None  # FIX: مفيش صورة افتراضية - ممنوع لوجو ChatGPT يطلع لأي منتج تاني
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -1077,31 +1077,33 @@ def send_family_header(chat_id, fam, markup):
     bot.send_message(chat_id, f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>\nاختر المنتج:", reply_markup=markup, parse_mode="HTML")
     return False
 
+
+# ========== تنظيف وصف المنتج من أي صورة جواه ==========
+import re as _re
+def clean_description(desc):
+    s = str(desc or "")
+    # شيل تاج <img ...>
+    s = _re.sub(r"<img[^>]*>", "", s, flags=_re.IGNORECASE)
+    # شيل صور ماركداون ![alt](url)
+    s = _re.sub(r"!\[[^\]]*\]\([^)]+\)", "", s)
+    # شيل أي لينك صورة مباشر (jpg/png/webp/gif/svg/logo/clearbit)
+    s = _re.sub(r"https?://\S+\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?\S*)?", "", s, flags=_re.IGNORECASE)
+    s = _re.sub(r"https?://\S*clearbit\S*", "", s, flags=_re.IGNORECASE)
+    s = _re.sub(r"https?://\S*logo\S*", "", s, flags=_re.IGNORECASE)
+    s = _re.sub(r"https?://\S*(?:openai|chatgpt|chat\.openai)\S*", "", s, flags=_re.IGNORECASE)
+    # نضّف سطور فاضية زيادة
+    s = _re.sub(r"\n{3,}", "\n\n", s).strip()
+    return s or "اشتراك رقمي."
+
 def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
-    """FIX 1: ابعت صورة المنتج لو موجودة، ولو فشلت ابعت نص"""
+    """FIX: كارت المنتج نص فقط - ممنوع أي صورة جوه وصف المنتج.
+    الصورة بتفضل بس على غلاف العائلة من بره (send_family_header)، مش جوه المنتج."""
     msg = (f"🏷 <b>{safe_html(info['name'])}</b>\n"
            f"💰 السعر: <b>${info['price']}</b> | التوفر: <b>{info['stock']}</b>\n\n"
-           f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(info['description'])}")
-    if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
-        return True
-    image = get_product_image(info)
-    print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
-    if image and image.startswith("http"):
-        try:
-            bot.send_photo(chat_id, image, caption=msg, reply_markup=markup, parse_mode="HTML")
-            return True
-        except Exception as exc:
-            print("IMAGE SEND ERROR:", repr(exc), "URL:", image[:500])
-            # جرب تاني بدون parse_mode لو المشكلة في الوصف
-            try:
-                bot.send_photo(chat_id, image, caption=msg, reply_markup=markup)
-                return True
-            except Exception as exc2:
-                print("IMAGE SEND RETRY ERROR:", repr(exc2))
-    else:
-        print(f"NO IMAGE URL FOR PRODUCT: {info.get('name')} - supplier did not send image")
-    bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
-    return False
+           f"📝 <b>تفاصيل المنتج:</b>\n{safe_html(clean_description(info.get('description')))}")
+    # FIX: اقفل معاينة اللينكات - تيليجرام كان بيطلع صورة المعاينة (غالباً ChatGPT) فوق الوصف
+    bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML", disable_web_page_preview=True)
+    return True
 
 if bot:
     try:
