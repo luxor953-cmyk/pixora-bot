@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 import telebot
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, BotCommand
+    ReplyKeyboardRemove, BotCommand
 )
 from flask import Flask
 
@@ -140,7 +140,7 @@ FAMILY_IMAGES = {
     "quizlet": "https://logo.clearbit.com/quizlet.com",
     "railway": "https://logo.clearbit.com/railway.app",
     "wordwall": "https://logo.clearbit.com/wordwall.net",
-    "api_services": None,  # FIX: كان بيشاور على صورة ChatGPT
+    "api_services": "https://logo.clearbit.com/openai.com",
     "vpn": "https://cdn-icons-png.flaticon.com/512/3064/3064155.png",
     "tests": "https://cdn-icons-png.flaticon.com/512/1828/1828640.png",
 }
@@ -164,7 +164,7 @@ def get_family_image_bytes(family):
         return None
 
 # صور يدوية لمنتجات معينة - الأقوى
-# لو تريد صورة خاصة لمنتج معين، حط الـ ID الخاص به هنا واللينك
+# لو تريد صورة خاصة لمنتج معين، حط اإلى ID الخاص بـه سنا واللينك
 # مثال: "123": "https://i.postimg.cc/xxxx/product.jpg"
 # تعرف اإلى ID منين؟ من لوحة الأدمن -> فحص الرصيد أو من Logs
 PRODUCT_IMAGES = {
@@ -182,8 +182,7 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    # FIX: مفيش صورة = مفيش صورة. ممنوع ترجع صورة ChatGPT كـ fallback
-    return None
+    return "https://logo.clearbit.com/openai.com"
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -369,9 +368,6 @@ def send_photo_smart(chat_id, fam, info, caption, markup):
         except Exception as e:
             print("B64 SEND ERROR", repr(e))
     url = FAMILY_IMAGES.get(fam) if fam else None
-    # FIX: لو العائلة ملهاش صورة محددة، متبعتش صورة حد تاني
-    if url and "openai.com" in url and fam != "chatgpt":
-        url = None
     if url:
         try:
             bot.send_photo(chat_id, url, caption=caption, reply_markup=markup, parse_mode="HTML")
@@ -869,13 +865,30 @@ def get_wallet_markup():
     mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
     return mk
 
-def get_persistent_keyboard():
-    # FIX: كيبورد ثابت تحت جنب مربع الكتابة - جنب زرار الاختيارات (☰) بالظبط
-    # ده غير الـ Inline Keyboard اللي جوه الرسالة. ده ثابت ومبيختفيش.
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("💰 محفظتي"), KeyboardButton("🛍 المنتجات"))
-    kb.row(KeyboardButton("📜 طلباتي"), KeyboardButton("🏠 القائمة الرئيسية"))
-    return kb
+
+def get_service_buttons(chat_id, is_admin=False, lang="ar"):
+    """أزرار الخدمات - نفس الترتيب في كل مكان. 4 صفوف بس، كل زرار ليه وظيفة واحدة."""
+    t = LANG_TEXTS.get(user_lang(chat_id), LANG_TEXTS["ar"])
+    rows = []
+    # الصف 1 - أهم حاجتين: ألاقي منتج / أشوف اللي اشتريته
+    rows.append([InlineKeyboardButton("🔍 بحث", callback_data="search_product"),
+                 InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders")])
+    # الصف 2 - الفلوس والمساعدة
+    rows.append([InlineKeyboardButton("💰 شحن المحفظة", callback_data="wallet_home"),
+                 InlineKeyboardButton("💬 دعم", url=SUPPORT_WHATSAPP)])
+    # الصف 3 - ثانوي
+    rows.append([InlineKeyboardButton("🌐 اللغة", callback_data="menu_lang"),
+                 InlineKeyboardButton("🔑 API", callback_data="show_apis")])
+    # الصف 4 - أدمن بس
+    if is_admin:
+        rows.append([InlineKeyboardButton("🛠 لوحة الأدمن", callback_data="admin_panel"),
+                     InlineKeyboardButton("🖼 صور العائلات", callback_data="admin_images")])
+    return rows
+
+def add_service_buttons(markup, chat_id, is_admin=False):
+    for r in get_service_buttons(chat_id, is_admin):
+        markup.row(*r)
+    return markup
 
 def get_main_menu_markup(chat_id, is_admin=False):
     t = LANG_TEXTS.get(user_lang(chat_id), LANG_TEXTS["ar"])
@@ -885,19 +898,14 @@ def get_main_menu_markup(chat_id, is_admin=False):
         _bal = get_wallet_balance(chat_id)
     except Exception:
         _bal = 0
-    # المحفظة جنب الاختيارات: صف فيه المحفظة + الشحن جنب بعض، مش صف لوحده فوق
-    markup.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal}", callback_data="wallet_home"), InlineKeyboardButton("💳 شحن المحفظة", callback_data="wallet_home"))
+    markup.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal}", callback_data="wallet_home"))
     try:
         products = fetch_supplier_products()
     except Exception:
         products = {}
     if not products:
         markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
-        markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
-        markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
-        markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
-        if is_admin:
-            markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
+        add_service_buttons(markup, chat_id, is_admin)
         return markup
 
     families_set = set()
@@ -937,12 +945,8 @@ def get_main_menu_markup(chat_id, is_admin=False):
             buttons.append(InlineKeyboardButton(label, callback_data=cb))
         markup.row(*buttons)
 
-    # المحفظة فوق خالص - مش هنا عشان متتكررش
-    markup.row(InlineKeyboardButton(t["search"], callback_data="search_product"), InlineKeyboardButton(t["orders"], callback_data="my_orders"))
-    markup.row(InlineKeyboardButton(t["deposit"], callback_data="payment_methods"), InlineKeyboardButton(t["support"], url=SUPPORT_WHATSAPP))
-    markup.row(InlineKeyboardButton(t["api"], callback_data="show_apis"), InlineKeyboardButton(t["lang"], callback_data="menu_lang"))
-    if is_admin:
-        markup.row(InlineKeyboardButton(t["admin"], callback_data="admin_panel"))
+    # ===== 3. أزرار الخدمات - نفس الترتيب في كل مكان، 4 صفوف بس =====
+    add_service_buttons(markup, chat_id, is_admin)
     return markup
 
 def get_admin_markup():
@@ -1016,7 +1020,7 @@ def send_main_menu_with_images(chat_id, is_admin=False):
             send_photo_with_button(chat_id, info, caption, f"🛒 شراء - ${info['price']}", "buy_" + key, is_family=False)
     # أزرار الخدمات في الآخر
     markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 طلباتي", callback_data="my_orders"))
+    markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
     markup.row(InlineKeyboardButton("💰 شحن", callback_data="payment_methods"), InlineKeyboardButton("💬 دعم", url=SUPPORT_WHATSAPP))
     if is_admin:
         markup.row(InlineKeyboardButton("🛠 لوحة الأدمن", callback_data="admin_panel"))
@@ -1045,12 +1049,6 @@ def send_family_products_with_images(chat_id, fam, products):
 def send_home(chat_id):
     # رسالة واحدة بس - القايمة كلها فيها، مش رسايل ورا بعض
     bot.send_message(chat_id, LANG_TEXTS[user_lang(chat_id)]["welcome"], reply_markup=get_main_menu_markup(chat_id, chat_id == ADMIN_ID))
-    # FIX: ثبّت كيبورد المحفظة تحت جنب مربع الكتابة (جنب زرار الاختيارات)
-    try:
-        _bal_h = get_wallet_balance(chat_id)
-        bot.send_message(chat_id, f"💰 محفظتك: <b>${_bal_h}</b> - دوس على زر المحفظة تحت 👇", reply_markup=get_persistent_keyboard(), parse_mode="HTML")
-    except Exception as _e:
-        print("PERSISTENT KB ERROR", repr(_e))
 
 
 
@@ -1127,7 +1125,7 @@ def build_product_card_markup(key, qty, info):
     else:
         m.add(InlineKeyboardButton(f"💰 الدفع من المحفظة - ${total}", callback_data=f"pay_wallet_{key}"))
         m.add(InlineKeyboardButton(f"🪙 إتمام الدفع - ${total}", callback_data=f"pay_{key}"))
-    m.row(InlineKeyboardButton("💰 محفظتي", callback_data="wallet_home"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+    m.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
     return m, total
 
 def build_product_card_text(info, qty):
@@ -1157,10 +1155,6 @@ def send_product_card(chat_id, info, markup, reply_to_msg_id=None):
     msg = build_product_card_text(info, qty)
     if send_photo_smart(chat_id, info.get("family"), info, msg, markup):
         return True
-    # FIX: لو send_photo_smart فشل (مفيش صورة حقيقية) ابعت نص بس.
-    # ممنوع نروح لـ get_product_image اللي كان بيرجع ChatGPT لكل المنتجات
-    bot.send_message(chat_id, msg, reply_markup=markup, parse_mode="HTML")
-    return False
     image = get_product_image(info)
     print(f"DEBUG IMAGE for {info.get('name')}: '{image[:60] if image else 'EMPTY'}'")
     if image and image.startswith("http"):
@@ -1186,7 +1180,6 @@ if bot:
             BotCommand("start", "تشغيل المتجر 🚀"),
             BotCommand("products", "تصفح المنتجات 🛍"),
             BotCommand("my_orders", "مشترياتي 📜"),
-            BotCommand("wallet", "محفظتي 💰"),
             BotCommand("language", "اللغة / Language 🌐")
         ])
     except Exception as exc:
@@ -1198,17 +1191,11 @@ if bot:
         add_subscriber(chat_id)
         USER_WAITING_FOR_SEARCH.pop(chat_id, None)
         USER_SELECTED_PRODUCT.pop(chat_id, None)
-        # FIX: متمسحش الكيبورد الثابت - كان بيمسح زرار المحفظة اللي تحت
-        # ReplyKeyboardRemove اتشال عشان المحفظة تفضل ثابتة جنب الاختيارات
-        # FIX WALLET: كارت محفظة منفصل فوق القايمة - يبان حتى لو المنتجات فشلت
         try:
-            _bal0 = get_wallet_balance(chat_id)
-            _mk0 = InlineKeyboardMarkup()
-            _mk0.row(InlineKeyboardButton(f"💰 محفظتي - ${_bal0}", callback_data="wallet_home"))
-            _mk0.row(InlineKeyboardButton("💳 شحن المحفظة", callback_data="wallet_home"))
-            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${_bal0}</b>\n\nدوس هنا عشان تشحن أو تشوف سجل محفظتك.", reply_markup=_mk0, parse_mode="HTML")
-        except Exception as _e:
-            print("WALLET CARD ERROR", repr(_e))
+            msg = bot.send_message(chat_id, "🔄", reply_markup=ReplyKeyboardRemove())
+            bot.delete_message(chat_id, msg.message_id)
+        except Exception:
+            pass
         send_home(chat_id)
 
     @bot.message_handler(commands=["my_orders"])
@@ -1307,7 +1294,7 @@ if bot:
                     markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
                     markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | غير متوفر", callback_data="buy_" + key))
-            markup.add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
+            markup.row(InlineKeyboardButton("🔙 رجوع", callback_data="main_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             fid = get_stored_image_id(fam=fam)
             sent = False
             caption = f"📁 <b>{safe_html(FAMILY_NAMES.get(fam, fam))}</b>"
@@ -1345,6 +1332,17 @@ if bot:
                     markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
             markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             bot.edit_message_text("🔑 <b>خدمات API المتاحة:</b>", chat_id, msg_id, reply_markup=markup, parse_mode="HTML")
+        elif data == "admin_images" and is_admin:
+            bot.answer_callback_query(call.id)
+            mk = InlineKeyboardMarkup()
+            for fam, name in sorted(FAMILY_NAMES.items(), key=lambda x: family_sort_key(x[0])):
+                mk.add(InlineKeyboardButton(f"🖼 {name}", callback_data="setimg_" + fam))
+            mk.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
+            try:
+                bot.edit_message_text("🖼 <b>اختر القسم اللي عايز تغير صورته، وبعدين ابعت الصورة:</b>", chat_id, msg_id, reply_markup=mk, parse_mode="HTML")
+            except Exception:
+                bot.send_message(chat_id, "🖼 <b>اختر القسم اللي عايز تغير صورته، وبعدين ابعت الصورة:</b>", reply_markup=mk, parse_mode="HTML")
+            return
         elif data == "admin_panel" and is_admin:
             bot.answer_callback_query(call.id)
             bot.edit_message_text("🛠 <b>لوحة تحكم الإدارة:</b>", chat_id, msg_id, reply_markup=get_admin_markup(), parse_mode="HTML")
@@ -1370,17 +1368,7 @@ if bot:
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
             bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            # FIX: كان بيعمل alert بس ويسكت. دلوقتي بيفتح كارت المنتج + زرار التنبيه زي buy_ بالظبط
-            bot.answer_callback_query(call.id)
-            _key = data[len("sold_out_"):]
-            _info = products.get(_key)
-            if not _info:
-                bot.send_message(chat_id, "تعذر العثور على المنتج.")
-                return
-            _markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند التوفر", callback_data="notify_" + _key))
-            _markup_sold.add(InlineKeyboardButton("🔙 عودة", callback_data="main_menu"))
-            send_product_card(chat_id, _info, _markup_sold)
-            return
+            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر.", show_alert=True)
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
@@ -1469,7 +1457,7 @@ if bot:
             USER_SELECTED_PRODUCT[chat_id] = key
             qty = USER_QTY.get(chat_id, 1)
             total = round(info["price"] * qty, 2)
-            pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
+            pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) سنا في المحادثة.")
             # بدون حذف: رسالة الدفع تانخفض تحت كرسالة جديدة، والقديم يبقى
             bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "my_orders":
@@ -1521,7 +1509,7 @@ if bot:
             USER_WAITING_WALLET_DEPOSIT[chat_id] = amt
             bonus = wallet_cashback_for(amt)
             extra = f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد الذي سيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا."
+            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا."
             try: bot.delete_message(chat_id, msg_id)
             except Exception: pass
             bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
@@ -1566,38 +1554,12 @@ if bot:
             bot.answer_callback_query(call.id)
             USER_SELECTED_PRODUCT.pop(chat_id, None)
             USER_WAITING_FOR_SEARCH.pop(chat_id, None)
-            # FIX: لو الرسالة الحالية فيها صورة، امسحها عشان القايمة الجديدة (وفيها المحفظة) تبان في الآخر مش متدارية
-            try:
-                if call.message and call.message.photo:
-                    bot.delete_message(chat_id, msg_id)
-            except Exception:
-                pass
             send_home(chat_id)
 
     @bot.message_handler(content_types=["text", "photo"])
     def handle_incoming(message):
         chat_id = message.chat.id
         if message.text and message.text.startswith("/"):
-            return
-        # FIX: أزرار الكيبورد الثابت اللي تحت (جنب الاختيارات)
-        _t = (message.text or "").strip()
-        if _t == "💰 محفظتي":
-            _bal = get_wallet_balance(chat_id)
-            bot.send_message(chat_id, f"💰 <b>محفظتي</b>\n\nرصيدك الحالي: <b>${_bal}</b>\n\n- اشحن محفظتك مرة واحدة واشترِ منها مباشرة\n- كل شحن بقيمة 25$ تحصل على 1$ هدية\n- إذا حدثت مشكلة في التسليم، يعود المبلغ إلى محفظتك", reply_markup=get_wallet_markup(), parse_mode="HTML")
-            return
-        if _t in ("🛍 المنتجات", "🏠 القائمة الرئيسية"):
-            send_home(chat_id)
-            return
-        if _t == "📜 طلباتي":
-            orders = load_orders().get(str(chat_id), [])
-            if not orders:
-                body = "📜 لا توجد طلبات سابقة."
-            else:
-                rows = []
-                for order in orders[-30:]:
-                    rows.append(f"📦 <b>{safe_html(order.get('product', 'منتج'))}</b>\n🔑 <code>{safe_html(order.get('item', ''))}</code>\n🕒 {safe_html(order.get('time', ''))}\n──────────────")
-                body = "📜 سجل مشترياتي السابقة:\n\n" + "\n".join(rows)
-            bot.send_message(chat_id, body, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
             return
 
         if chat_id in USER_WAITING_WALLET_CUSTOM:
@@ -1609,7 +1571,7 @@ if bot:
             USER_WAITING_WALLET_DEPOSIT[chat_id]=amt
             bonus=wallet_cashback_for(amt)
             extra=f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا.", parse_mode="HTML")
+            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا.", parse_mode="HTML")
             return
         if chat_id in USER_WAITING_WALLET_DEPOSIT:
             amt=USER_WAITING_WALLET_DEPOSIT.get(chat_id,0)
