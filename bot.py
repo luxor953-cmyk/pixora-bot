@@ -40,6 +40,7 @@ SUBSCRIBERS_FILE = os.environ.get("SUBSCRIBERS_FILE", "subscribers.json")
 SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 WALLET_FILE = os.environ.get("WALLET_FILE", "user_wallets.json")
+NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -285,6 +286,19 @@ def check_and_notify_changes():
                 arrow = "📉 نزل" if float(info["price"]) < float(prev.get("price", 0)) else "📈 زاد"
                 changes.append(f"💲 <b>سعر اتعدل!</b> {arrow}\n🏷 {safe_html(info['name'])}\nمن <b>${prev.get('price')}</b> لـ <b>${info['price']}</b>")
             if int(info["stock"]) > int(prev.get("stock", 0)) and int(prev.get("stock", 0)) == 0:
+                # نبه اللي طلبوا التنبيه للمنتج ده تحديداً
+                try:
+                    _want = load_notify().get(str(key), [])
+                    for _cid in list(_want):
+                        try:
+                            bot.send_message(int(_cid), f"✅ <b>المنتج رجع متوفر!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🛒 اشتري دلوقتي", callback_data="buy_" + str(key))))
+                        except Exception as _e:
+                            print("NOTIFY ONE ERROR", repr(_e))
+                    _d = load_notify()
+                    _d[str(key)] = []
+                    save_notify(_d)
+                except Exception as _e:
+                    print("NOTIFY BACK ERROR", repr(_e))
                 changes.append(f"✅ <b>رجع متوفر تاني!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>")
             elif int(info["stock"]) > int(prev.get("stock", 0)):
                 changes.append(f"📦 <b>كمية جديدة اتضافت!</b>\n🏷 {safe_html(info['name'])}\n🟢 الكمية بقت: <b>{info['stock']}</b> (كانت {prev.get('stock')})")
@@ -320,6 +334,38 @@ def start_notify_watcher():
     t = _th.Thread(target=loop, daemon=True)
     t.start()
 
+
+
+# ========== تنبيه عند التوفر - لمنتج معين ==========
+def load_notify():
+    if not os.path.exists(NOTIFY_FILE):
+        return {}
+    try:
+        with open(NOTIFY_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+def save_notify(d):
+    try:
+        with open(NOTIFY_FILE, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+    except Exception as e:
+        print("NOTIFY SAVE ERROR", repr(e))
+def is_notify_subscribed(key, chat_id):
+    return str(chat_id) in load_notify().get(str(key), [])
+def toggle_notify(key, chat_id):
+    d = load_notify()
+    lst = d.get(str(key), [])
+    if str(chat_id) in lst:
+        lst = [x for x in lst if x != str(chat_id)]
+        subscribed = False
+    else:
+        lst.append(str(chat_id))
+        subscribed = True
+    d[str(key)] = lst
+    save_notify(d)
+    return subscribed
 
 # ========== محفظة المستخدم ==========
 def load_wallets():
@@ -843,7 +889,7 @@ def get_main_menu_markup(chat_id, is_admin=False):
                 cb = "buy_" + key
             else:
                 label = f"🔴 {info['name']} ({t['sold_out']})"
-                cb = "sold_out_" + key
+                cb = "buy_" + key  # FIX: صفر رصيد يفتح المنتج مش رسالة
             buttons.append(InlineKeyboardButton(label, callback_data=cb))
         markup.row(*buttons)
 
@@ -1174,7 +1220,7 @@ if bot:
                     # صف كامل: الاسم | النظام | السعر
                     markup.add(InlineKeyboardButton(f"🟢 {info['name']} | {system} | ${info['price']}", callback_data="buy_" + key))
                 else:
-                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="sold_out_" + key))
+                    markup.add(InlineKeyboardButton(f"🔴 {info['name']} | {system} | نفد", callback_data="buy_" + key))  # FIX: يفتح المنتج
             markup.add(InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="main_menu"))
             # ابعت صورة القسم + الأزرار في رسالة واحدة - لو الصورة فشلت ابعت نص بس
             try:
@@ -1237,7 +1283,42 @@ if bot:
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
             bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            bot.answer_callback_query(call.id, "❌ المنتج نفد من المخزون.", show_alert=True)
+            # توافق مع رسايل قديمة: افتح المنتج بدل رسالة "غير متوفر"
+            _k = data[len("sold_out_"):]
+            _info = products.get(_k)
+            bot.answer_callback_query(call.id)
+            if _info:
+                _sub = is_notify_subscribed(_k, chat_id)
+                _m = InlineKeyboardMarkup()
+                _m.add(InlineKeyboardButton("🔕 إلغاء التنبيه" if _sub else "🔔 نبهني عندما يتوفر المنتج", callback_data="notify_" + _k))
+                _m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+                send_product_card(chat_id, _info, _m)
+            else:
+                bot.send_message(chat_id, "تعذر العثور على المنتج. حدّث القائمة وحاول مجدداً.")
+        elif data.startswith("notify_"):
+            _k = data[len("notify_"):]
+            _info = products.get(_k)
+            bot.answer_callback_query(call.id)
+            if not _info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            if int(_info["stock"]) > 0:
+                bot.answer_callback_query(call.id, "✅ المنتج متوفر دلوقتي! تقدر تشتريه.", show_alert=True)
+                return
+            sub = toggle_notify(_k, chat_id)
+            _m = InlineKeyboardMarkup()
+            _m.add(InlineKeyboardButton("🔕 إلغاء التنبيه" if sub else "🔔 نبهني عندما يتوفر المنتج", callback_data="notify_" + _k))
+            _m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+            send_product_card(chat_id, _info, _m)
+            bot.send_message(chat_id, "✅ تمام، هنبعتلك أول ما المنتج يرجع متوفر." if sub else "تمام، لغينا التنبيه للمنتج ده.")
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
@@ -1246,7 +1327,17 @@ if bot:
                 bot.send_message(chat_id, "تعذر العثور على المنتج. حدّث القائمة وحاول مجدداً.")
                 return
             if info["stock"] <= 0:
-                bot.send_message(chat_id, "❌ المنتج نفد من المخزون.")
+                # FIX: صفر رصيد -> افتح المنتج وشوف الوصف + تنبيه عند التوفر
+                subscribed = is_notify_subscribed(key, chat_id)
+                notify_label = "🔕 إلغاء التنبيه" if subscribed else "🔔 نبهني عندما يتوفر المنتج"
+                markup0 = InlineKeyboardMarkup()
+                markup0.add(InlineKeyboardButton(notify_label, callback_data="notify_" + key))
+                markup0.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="main_menu"))
+                try:
+                    bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+                send_product_card(chat_id, info, markup0)
                 return
             # صنف التيست: لو سعره 0 اسمح بتجربته مجاناً
             if info["price"] <= 0 and info.get("family") != "tests":
