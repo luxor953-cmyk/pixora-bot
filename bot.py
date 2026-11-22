@@ -1457,7 +1457,7 @@ if bot:
             USER_SELECTED_PRODUCT[chat_id] = key
             qty = USER_QTY.get(chat_id, 1)
             total = round(info["price"] * qty, 2)
-            pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) سنا في المحادثة.")
+            pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) هنا في المحادثة.")
             # بدون حذف: رسالة الدفع تانخفض تحت كرسالة جديدة، والقديم يبقى
             bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data == "my_orders":
@@ -1509,7 +1509,7 @@ if bot:
             USER_WAITING_WALLET_DEPOSIT[chat_id] = amt
             bonus = wallet_cashback_for(amt)
             extra = f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد الذي سيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا."
+            pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا."
             try: bot.delete_message(chat_id, msg_id)
             except Exception: pass
             bot.send_message(chat_id, pay_msg, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
@@ -1577,7 +1577,7 @@ if bot:
             USER_WAITING_WALLET_DEPOSIT[chat_id]=amt
             bonus=wallet_cashback_for(amt)
             extra=f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
-            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا.", parse_mode="HTML")
+            bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) هنا.", parse_mode="HTML")
             return
         if chat_id in USER_WAITING_WALLET_DEPOSIT:
             amt=USER_WAITING_WALLET_DEPOSIT.get(chat_id,0)
