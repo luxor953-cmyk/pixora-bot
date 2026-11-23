@@ -332,7 +332,7 @@ def check_and_notify_changes():
                 markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 شراء - ${info['price']}", callback_data="buy_" + key))
                 for chat_id in wanters:
                     try:
-                        bot.send_message(chat_id, f"🔔 <b>المنتج متوفر الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\n", reply_markup=markup, parse_mode="HTML")
+                        bot.send_message(chat_id, f"🔔 <b>أصبح المنتج متوفراً الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية المتاحة: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\nيرجى الضغط على الزر أدناه لإتمام عملية الشراء.", reply_markup=markup, parse_mode="HTML")
                     except Exception as e:
                         print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
                 # امسح الطلبات بعد ما نبسناهم
@@ -1429,9 +1429,9 @@ if bot:
                 return
             added = add_notify_request(key, chat_id)
             if added:
-                bot.send_message(chat_id, f"✅ تم التسجيل. سيصلك إشعار عند توفر <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
+                bot.send_message(chat_id, f"✅ تم تسجيل طلبك بنجاح. سيصلك إشعار عند توفر <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
             else:
-                bot.send_message(chat_id, "ℹ️ أنت مسجّل مسبقاً لهذا التنبيه.", parse_mode="HTML")
+                bot.send_message(chat_id, "ℹ️ لقد قمت بتسجيل طلب التنبيه لهذا المنتج مسبقاً.", parse_mode="HTML")
             return
         elif data == "qty_noop":
             bot.answer_callback_query(call.id)
