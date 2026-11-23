@@ -332,7 +332,7 @@ def check_and_notify_changes():
                 markup = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🛒 شراء - ${info['price']}", callback_data="buy_" + key))
                 for chat_id in wanters:
                     try:
-                        bot.send_message(chat_id, f"🔔 <b>أصبح المنتج متوفراً الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية المتاحة: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\nيرجى الضغط على الزر أدناه لإتمام عملية الشراء.", reply_markup=markup, parse_mode="HTML")
+                        bot.send_message(chat_id, f"🔔 <b>المنتج متوفر الآن</b>\n\n🏷 {safe_html(info['name'])}\n🟢 الكمية: <b>{info['stock']}</b> | 💰 السعر: <b>${info['price']}</b>\n\n", reply_markup=markup, parse_mode="HTML")
                     except Exception as e:
                         print(f"NOTIFY RESTOCK ERROR to {chat_id}:", repr(e))
                 # امسح الطلبات بعد ما نبسناهم
@@ -967,8 +967,9 @@ def get_main_menu_markup(chat_id, is_admin=False):
                 label = f"🟢 {info['name']} · ${info['price']}"
                 cb = "buy_" + key
             else:
-                label = f"🔴 {info['name']} ({t['sold_out']})"
-                cb = "sold_out_" + key
+                # منفرد ورصيده صفر: نفس زر الدخول، يفتح بطاقة المنتج بالوصف + زر التنبيه
+                label = f"🔴 {info['name']} · ${info['price']} ({t['sold_out']})"
+                cb = "buy_" + key
             buttons.append(InlineKeyboardButton(label, callback_data=cb))
         markup.row(*buttons)
 
@@ -1397,7 +1398,21 @@ if bot:
             pay_info = f"💳 <b>شحن الرصيد / الدفع:</b>\n\n- Binance ID: <code>{safe_html(BINANCE_ID)}</code>"
             bot.edit_message_text(pay_info, chat_id, msg_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")), parse_mode="HTML")
         elif data.startswith("sold_out_"):
-            bot.answer_callback_query(call.id, "❌ المنتج غير متوفر.", show_alert=True)
+            # رسائل قديمة كان زرها sold_out_ : لا نعرض رسالة منع، نفتح بطاقة المنتج بالوصف والسعر وزر التنبيه
+            bot.answer_callback_query(call.id)
+            key = data[len("sold_out_"):]
+            info = products.get(key)
+            if not info:
+                bot.send_message(chat_id, "تعذر العثور على المنتج.")
+                return
+            if info["stock"] <= 0:
+                markup_sold = InlineKeyboardMarkup().add(InlineKeyboardButton("🔔 تنبيه عند التوفر", callback_data="notify_" + key))
+                markup_sold.add(InlineKeyboardButton("🔙 عودة", callback_data="main_menu"))
+                send_product_card(chat_id, info, markup_sold)
+                return
+            markup, _ = build_product_card_markup(key, 1, info)
+            send_product_card(chat_id, info, markup)
+            return
         elif data.startswith("buy_"):
             key = data[4:]
             info = products.get(key)
@@ -1429,9 +1444,9 @@ if bot:
                 return
             added = add_notify_request(key, chat_id)
             if added:
-                bot.send_message(chat_id, f"✅ تم تسجيل طلبك بنجاح. سيصلك إشعار عند توفر <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
+                bot.send_message(chat_id, f"✅ تم التسجيل. سيصلك إشعار عند توفر <b>{safe_html(info['name'])}</b>.", parse_mode="HTML")
             else:
-                bot.send_message(chat_id, "ℹ️ لقد قمت بتسجيل طلب التنبيه لهذا المنتج مسبقاً.", parse_mode="HTML")
+                bot.send_message(chat_id, "ℹ️ أنت مسجّل مسبقاً لهذا التنبيه.", parse_mode="HTML")
             return
         elif data == "qty_noop":
             bot.answer_callback_query(call.id)
