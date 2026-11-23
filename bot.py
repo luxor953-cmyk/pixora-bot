@@ -1045,6 +1045,9 @@ def send_main_menu_with_images(chat_id, is_admin=False):
         if info["stock"] > 0:
             caption = f"🏷 <b>{safe_html(info['name'])}</b>\n💰 <b>${info['price']}</b> | 🟢 متوفر"
             send_photo_with_button(chat_id, info, caption, f"🛒 شراء - ${info['price']}", "buy_" + key, is_family=False)
+        else:
+            caption = f"🏷 <b>{safe_html(info['name'])}</b>\n💰 <b>${info['price']}</b> | 🔴 نفذ"
+            send_photo_with_button(chat_id, info, caption, "عرض المنتج - نفذ", "buy_" + key, is_family=False)
     # أزرار الخدمات في الآخر
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("🔍 بحث", callback_data="search_product"), InlineKeyboardButton("📜 مشترياتي", callback_data="my_orders"))
@@ -1068,8 +1071,7 @@ def send_family_products_with_images(chat_id, fam, products):
             send_photo_with_button(chat_id, info, caption, f"🛒 شراء {full_name} - ${info['price']}", "buy_" + key, is_family=False)
         else:
             caption = f"🏷 <b>{safe_html(full_name)}</b>\n🔴 نفذ"
-            # حتى اللي خلصان يتبعت لوحده تحت اللي قبله من أجل يبان كامل
-            bot.send_message(chat_id, caption, parse_mode="HTML")
+            send_photo_with_button(chat_id, info, caption, "عرض المنتج - نفذ", "buy_" + key, is_family=False)
     markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main_menu"))
     bot.send_message(chat_id, "—", reply_markup=markup)
 
@@ -1629,6 +1631,8 @@ if bot:
                     found += 1
                     if info["stock"] > 0:
                         markup.add(InlineKeyboardButton(f"✅ {info['name']} · ${info['price']}", callback_data="buy_" + key))
+                    else:
+                        markup.add(InlineKeyboardButton(f"🔴 {info['name']} · نفذ - عرض المنتج", callback_data="buy_" + key))
             markup.row(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu"))
             bot.send_message(chat_id, f"🔍 نتائج البحث: <b>{safe_html(message.text)}</b>" if found else f"❌ لا توجد نتائج إلى: <b>{safe_html(message.text)}</b>", reply_markup=markup, parse_mode="HTML")
             return
