@@ -140,7 +140,7 @@ FAMILY_IMAGES = {
     "quizlet": "https://logo.clearbit.com/quizlet.com",
     "railway": "https://logo.clearbit.com/railway.app",
     "wordwall": "https://logo.clearbit.com/wordwall.net",
-    "api_services": "https://logo.clearbit.com/openai.com",
+    "api_services": "https://logo.clearbit.com/rapidapi.com",
     "vpn": "https://cdn-icons-png.flaticon.com/512/3064/3064155.png",
     "tests": "https://cdn-icons-png.flaticon.com/512/1828/1828640.png",
 }
@@ -182,7 +182,8 @@ def get_product_image(info):
         return info["image"]
     if fam and fam in FAMILY_IMAGES:
         return FAMILY_IMAGES[fam]
-    return "https://logo.clearbit.com/openai.com"
+    # لا يوجد بديل افتراضي: أي منتج بلا صورة يُرسل نصاً فقط، ولا يُستخدم شعار OpenAI أبداً
+    return None
 
 def user_lang(chat_id):
     return USER_LANGUAGES.get(chat_id, "ar")
@@ -202,12 +203,24 @@ def format_supplier_description(desc):
     if not desc:
         return "اشتراك رقمي."
     t = str(desc)
+    # إزالة أي صورة / رابط من وصف المورد نهائياً: صورة شات جي بي تي كانت تأتي من هنا
+    # روابط ماركداون للصور: ![وصف](رابط) -> نحذفها كلها
+    t = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", t)
+    # وسوم HTML للصور: <img ...> / <a href=...>
+    t = re.sub(r"<img[^>]*>", " ", t, flags=re.I)
+    t = re.sub(r"<a[^>]*>.*?</a>", " ", t, flags=re.I|re.S)
+    # أي رابط http/https/www - صورة أو غيرها - لا يظهر في الوصف أبداً
+    t = re.sub(r"https?://\S+|www\.\S+", " ", t)
+    # سطور فيها اسم ملف صورة فقط: .jpg / .png / .webp ...
+    t = re.sub(r"\S+\.(?:jpg|jpeg|png|webp|gif|svg|bmp)\b", " ", t, flags=re.I)
+    # كلمة image / صورة لو جاءت مع رابط محذوف بقيت وحدها
+    t = re.sub(r"(?i)\b(image|img|photo|صورة)\s*[:\-]?\s*", " ", t)
     t = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27BF\u2700-\u27BF\uFE0F\u200d]+", "", t)
     t = re.sub(r"[*_#`~>•\-–—]+", " ", t)
     # تقسيم على الأسطر أو النقاط
     parts = re.split(r"[\n\r]+|(?<=\.)\s+", t)
     parts = [re.sub(r"\s+", " ", p).strip(" .،,;:") for p in parts]
-    parts = [p for p in parts if len(p) >= 3]
+    parts = [p for p in parts if len(p) >= 3 and "http" not in p.lower() and ".jpg" not in p.lower() and ".png" not in p.lower() and "clearbit" not in p.lower() and "openai" not in p.lower() and "chatgpt" not in p.lower()]
     if not parts:
         return re.sub(r"\s+", " ", t).strip()
     if len(parts) == 1:
