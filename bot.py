@@ -4,6 +4,8 @@ import json
 import threading
 import html
 import re
+import io
+import base64
 import requests
 import hmac
 import hashlib
@@ -539,6 +541,9 @@ def fetch_supplier_products(force_refresh=False):
             }
         _PRODUCTS_CACHE["data"] = result
         _PRODUCTS_CACHE["time"] = now
+        print("SUPPLIER PRODUCTS COUNT:", len(result))
+        print("SUPPLIER NAMES:", [v.get("name") for v in list(result.values())[:20]])
+        print("SUPPLIER FAMILIES:", sorted(set(str(v.get("family")) for v in result.values())))
         return result
     except Exception as exc:
         print("FETCH SUPPLIER PRODUCTS EXCEPTION:", repr(exc))
