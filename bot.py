@@ -4,6 +4,8 @@ import json
 import threading
 import html
 import re
+import io
+import base64
 import requests
 import hmac
 import hashlib
