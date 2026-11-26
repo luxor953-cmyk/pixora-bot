@@ -31,7 +31,7 @@ SUPPORT_WHATSAPP = os.environ.get(
 RESELLER_KEY = os.environ.get("RESELLER_KEY", "").strip()
 VENTEBOT_API_URL = os.environ.get(
     "VENTEBOT_API_URL",
-    "https://web-production-1c7b1.up.railway.app/api/reseller"
+    "https://batman.sarl/api/reseller"
 ).strip().rstrip("/")
 
 BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "").strip()
