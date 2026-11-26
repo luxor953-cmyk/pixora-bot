@@ -43,6 +43,7 @@ SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 WALLETS_FILE = os.environ.get("WALLETS_FILE", "wallets.json")
 NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
+USED_TX_FILE = os.environ.get("USED_TX_FILE", "used_transactions.json")
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -53,6 +54,7 @@ USER_LANGUAGES = {}
 USER_PROCESSING = set()
 USER_WAITING_WALLET_CUSTOM = set()
 USER_WAITING_WALLET_DEPOSIT = {}
+USER_PAY_START = {}  # chat_id -> وقت ضغط زر الدفع (unix seconds) - لمنع إعادة استخدام عملية قديمة
 
 # ===== Cache للمنتجات من أجل البوت ميبقاش بطيء =====
 _PRODUCTS_CACHE = {"data": {}, "time": 0}
@@ -860,25 +862,139 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
         "order_id": order_id
     }
 
-def verify_binance_transaction(order_id, expected_amount):
+def load_used_tx():
+    if not os.path.exists(USED_TX_FILE):
+        return {}
+    try:
+        with open(USED_TX_FILE, "r", encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def save_used_tx(d):
+    try:
+        tmp = USED_TX_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, USED_TX_FILE)
+    except Exception as e:
+        print("USED_TX SAVE ERROR", repr(e))
+
+def is_tx_used(tx_id):
+    tx_id = str(tx_id).strip()
+    if not tx_id:
+        return False
+    # 1) ملف العمليات المستخدمة
+    if tx_id in load_used_tx():
+        return True
+    # 2) أي طلب قديم في orders.json بنفس مرجع الدفع = مكرر
+    try:
+        for _uid, _orders in load_orders().items():
+            for _o in (_orders or []):
+                if str(_o.get("reference", "")).strip() == tx_id:
+                    return True
+    except Exception:
+        pass
+    return False
+
+def mark_tx_used(tx_id, chat_id, amount):
+    try:
+        d = load_used_tx()
+        d[str(tx_id).strip()] = {"chat_id": str(chat_id), "amount": float(amount), "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+        save_used_tx(d)
+    except Exception as e:
+        print("MARK TX USED ERROR", repr(e))
+
+def _tx_time_seconds(tx):
+    for k in ("transactionTime", "createTime", "timestamp", "time", "payTime"):
+        v = tx.get(k)
+        if v is None:
+            continue
+        try:
+            v = float(v)
+        except Exception:
+            continue
+        # Binance يرجع الوقت بالملي ثانية غالباً
+        if v > 1e12:
+            v = v / 1000.0
+        elif v > 1e10:
+            v = v / 1000.0
+        return v
+    return None
+
+def verify_binance_transaction(order_id, expected_amount, chat_id=None, min_timestamp=None):
+    """تحقق صارم من عملية Binance Pay:
+    - العملية موجودة فعلاً في آخر معاملات حسابك (دخلت حسابك)
+    - حالتها مكتملة (COMPLETED/SUCCESS) إن وُجد حقل حالة
+    - ليست عملية إرسال/سحب من حسابك
+    - المبلغ مطابق تماماً للمطلوب (فرق مسموح 0.01 فقط)
+    - لم تُستخدم من قبل لأي طلب/شحن (لا إعادة استخدام)
+    - وقتها بعد بداية الطلب وخلال 60 دقيقة منه إن توفر وقت البداية
+    """
+    tx_id = str(order_id).strip()
+    if not tx_id:
+        return {"success": False, "error": "رقم العملية فارغ."}
+    if is_tx_used(tx_id):
+        return {"success": False, "error": "رقم العملية هذا مستخدم من قبل في طلب أو شحن سابق. لا يمكن إعادة استخدامه."}
     if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
         return {"success": False, "error": "مفاتيح Binance API غير مضبوطة على Render."}
     try:
         timestamp = int(time.time() * 1000)
-        query_string = urlencode({"timestamp": timestamp, "limit": 50})
+        query_string = urlencode({"timestamp": timestamp, "limit": 100})
         signature = hmac.new(BINANCE_SECRET_KEY.encode(), query_string.encode(), hashlib.sha256).hexdigest()
         url = f"https://api.binance.com/sapi/v1/pay/transactions?{query_string}&signature={signature}"
         response = requests.get(url, headers={"X-MBX-APIKEY": BINANCE_API_KEY}, timeout=15)
         if response.status_code != 200:
             return {"success": False, "error": f"Binance HTTP {response.status_code}: {response.text[:500]}"}
-        transactions = response.json().get("data", [])
+        payload = response.json()
+        transactions = payload.get("data", []) if isinstance(payload, dict) else payload
+        if not isinstance(transactions, list):
+            transactions = []
+        matched = None
         for tx in transactions:
-            if (str(tx.get("orderId")) == str(order_id) or str(tx.get("transactionId")) == str(order_id)):
-                actual = float(tx.get("amount", 0))
-                if actual >= float(expected_amount):
-                    return {"success": True}
-                return {"success": False, "error": f"المبلغ المستلم ${actual} أقل من السعر ${expected_amount}."}
-        return {"success": False, "error": "رقم العملية غير موجود ضمن آخر المعاملات."}
+            if not isinstance(tx, dict):
+                continue
+            if str(tx.get("orderId")) == tx_id or str(tx.get("transactionId")) == tx_id or str(tx.get("transaction_id")) == tx_id:
+                matched = tx
+                break
+        if not matched:
+            return {"success": False, "error": "رقم العملية غير موجود ضمن معاملات حسابك. تأكد أنك أرسلت رقم العملية الصحيح من Binance Pay."}
+        # --- الحالة: لازم تكون مكتملة ---
+        status = str(matched.get("status") or matched.get("transactionStatus") or matched.get("payStatus") or matched.get("state") or "").upper()
+        if status and status not in ("COMPLETED", "SUCCESS", "SUCCEED", "PAID", "DONE", "FINISHED"):
+            return {"success": False, "error": f"حالة العملية: {status}. لازم تكون مكتملة (COMPLETED) حتى نقبلها."}
+        # --- الاتجاه: لازم تكون واردة لحسابك، مش صادرة منه ---
+        direction = str(matched.get("transactionType") or matched.get("type") or matched.get("transferType") or "").upper()
+        if direction and any(w in direction for w in ("SEND", "WITHDRAW", "OUT", "TRANSFER_OUT", "PAYOUT")):
+            return {"success": False, "error": "هذه العملية صادرة من حسابك (إرسال/سحب)، وليست عملية دفع واردة إليك."}
+        # --- المبلغ: مطابق تماماً ---
+        try:
+            actual = float(matched.get("amount", 0))
+        except Exception:
+            actual = 0.0
+        expected = float(expected_amount)
+        if abs(actual - expected) > 0.01:
+            if actual < expected:
+                return {"success": False, "error": f"المبلغ المستلم ${actual} أقل من المطلوب ${expected}. أرسل المبلغ كاملاً برقم عملية جديد."}
+            return {"success": False, "error": f"المبلغ المستلم ${actual} لا يطابق المطلوب ${expected}. أرسل المبلغ الصحيح تماماً برقم عملية جديد."}
+        # --- العملة إن وُجدت: لازم تكون USDT ---
+        currency = str(matched.get("currency") or matched.get("fiatCurrency") or matched.get("cryptoCurrency") or "").upper()
+        if currency and currency not in ("USDT", "USD₮"):
+            return {"success": False, "error": f"عملة العملية {currency} وليست USDT."}
+        # --- الوقت: بعد بداية الطلب وخلال 60 دقيقة ---
+        tx_time = _tx_time_seconds(matched)
+        now = time.time()
+        if min_timestamp:
+            if tx_time is not None and tx_time < float(min_timestamp) - 60:
+                return {"success": False, "error": "رقم العملية هذا قديم - من قبل بداية هذا الطلب. ادفع الآن برقم عملية جديد."}
+            if now - float(min_timestamp) > 3600:
+                return {"success": False, "error": "مرت أكثر من 60 دقيقة على بداية الطلب. ابدأ طلباً جديداً وادفع برقم عملية جديد."}
+        elif tx_time is not None and now - tx_time > 86400:
+            return {"success": False, "error": "رقم العملية قديم (أكثر من 24 ساعة). ادفع الآن برقم عملية جديد."}
+        # نجح كل التحقق: احجز رقم العملية فوراً حتى لا يُستخدم مرتين في نفس اللحظة
+        mark_tx_used(tx_id, chat_id or "", expected)
+        return {"success": True, "tx": matched}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -1556,6 +1672,7 @@ if bot:
                 bot.send_message(chat_id, "تعذر تحديد المنتج.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
+            USER_PAY_START[chat_id] = time.time()
             qty = USER_QTY.get(chat_id, 1)
             total = round(info["price"] * qty, 2)
             pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) سنا في المحادثة.")
@@ -1608,6 +1725,7 @@ if bot:
             except Exception: amt = 0
             if amt <= 0: return
             USER_WAITING_WALLET_DEPOSIT[chat_id] = amt
+            USER_PAY_START[chat_id] = time.time()
             bonus = wallet_cashback_for(amt)
             extra = f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد الذي سيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
             pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا."
@@ -1670,6 +1788,7 @@ if bot:
             if amt < 1:
                 bot.send_message(chat_id, "❌ اكتب مبلغًا صحيحًا، 1$ على الأقل."); return
             USER_WAITING_WALLET_DEPOSIT[chat_id]=amt
+            USER_PAY_START[chat_id]=time.time()
             bonus=wallet_cashback_for(amt)
             extra=f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد: <b>${round(amt+bonus,2)}</b>" if bonus else ""
             bot.send_message(chat_id, f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا.", parse_mode="HTML")
@@ -1681,7 +1800,7 @@ if bot:
                 bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يتكون من 8 أحرف على الأقل."); return
             USER_WAITING_WALLET_DEPOSIT.pop(chat_id,None)
             bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
-            pay=verify_binance_transaction(ref, amt)
+            pay=verify_binance_transaction(ref, amt, chat_id=chat_id, min_timestamp=USER_PAY_START.get(chat_id))
             if not pay["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}", parse_mode="HTML"); return
             bonus=wallet_cashback_for(amt)
@@ -1730,7 +1849,7 @@ if bot:
             bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
             qty_check = USER_QTY.get(chat_id, 1)
             total_check = round(info["price"] * qty_check, 2)
-            payment = verify_binance_transaction(reference, total_check)
+            payment = verify_binance_transaction(reference, total_check, chat_id=chat_id, min_timestamp=USER_PAY_START.get(chat_id))
             if not payment["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(payment['error'])}", parse_mode="HTML")
                 return
