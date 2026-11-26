@@ -483,6 +483,31 @@ def extract_image_url(item):
             return base.rstrip("/") + v.strip()
     return ""
 
+
+# ===== FIX: الأصناف لا تختفي أبداً =====
+# لو المورّد رجّع قايمة فاضية / خطأ / فلترة شالت كل حاجة، نرجع لآخر snapshot محفوظ
+# بدل ما القايمة الرئيسية تطلع فاضية.
+def _products_from_snapshot():
+    try:
+        snap = load_snapshot()
+    except Exception:
+        return {}
+    out = {}
+    for k, v in (snap or {}).items():
+        if not isinstance(v, dict):
+            continue
+        name = str(v.get("name") or "منتج رقمي")
+        out[str(k)] = {
+            "id": str(k),
+            "name": name,
+            "price": float(v.get("price") or 0),
+            "stock": int(v.get("stock") or 0),
+            "description": "اشتراك رقمي.",
+            "image": "",
+            "family": get_product_family(name),
+        }
+    return out
+
 def fetch_supplier_products(force_refresh=False):
     # استخدم الكاش من أجل البوت ميبقاش بطيء
     now = time.time()
@@ -498,7 +523,7 @@ def fetch_supplier_products(force_refresh=False):
         )
         if response.status_code != 200:
             print("SUPPLIER PRODUCTS ERROR:", response.status_code, response.text[:1000])
-            return _PRODUCTS_CACHE["data"] or {}
+            return _PRODUCTS_CACHE["data"] or _products_from_snapshot()
         payload = response.json()
         if isinstance(payload, list):
             items = payload
@@ -539,15 +564,23 @@ def fetch_supplier_products(force_refresh=False):
                 "image": extract_image_url(item),
                 "family": get_product_family(name)
             }
+        if not result:
+            # المورّد رجّع صفر منتج بعد الفلترة = مشكلة مؤقتة، لا تمسح الكاش ولا الـ snapshot
+            print("SUPPLIER RETURNED 0 PRODUCTS - KEEPING CACHE/SNAPSHOT, NOT CLEARING MENU")
+            if _PRODUCTS_CACHE["data"]:
+                return _PRODUCTS_CACHE["data"]
+            snap = _products_from_snapshot()
+            if snap:
+                _PRODUCTS_CACHE["data"] = snap
+                _PRODUCTS_CACHE["time"] = now
+                return snap
+            return {}
         _PRODUCTS_CACHE["data"] = result
         _PRODUCTS_CACHE["time"] = now
-        print("SUPPLIER PRODUCTS COUNT:", len(result))
-        print("SUPPLIER NAMES:", [v.get("name") for v in list(result.values())[:20]])
-        print("SUPPLIER FAMILIES:", sorted(set(str(v.get("family")) for v in result.values())))
         return result
     except Exception as exc:
         print("FETCH SUPPLIER PRODUCTS EXCEPTION:", repr(exc))
-        return _PRODUCTS_CACHE["data"] or {}
+        return _PRODUCTS_CACHE["data"] or _products_from_snapshot()
 
 def api_get(path):
     if not RESELLER_KEY:
@@ -949,7 +982,13 @@ def get_main_menu_markup(chat_id, is_admin=False):
     except Exception:
         products = {}
     if not products:
+        # لا توجد منتجات من المورّد الآن: اعرض كل الأصناف ثابتة من FAMILY_NAMES
+        # حتى لو المورّد فشل، الأصناف لا تختفي. الضغط على صنف سيعرض منتجاته من الـ snapshot إن وجدت.
         markup.add(InlineKeyboardButton(t["no_products"], callback_data="main_menu"))
+        _fams = sorted([f for f in FAMILY_NAMES.keys()], key=family_sort_key)
+        for i in range(0, len(_fams), 3):
+            _chunk = _fams[i:i+3]
+            markup.row(*[InlineKeyboardButton(FAMILY_NAMES.get(f, f), callback_data="fam_" + f) for f in _chunk])
         add_service_buttons(markup, chat_id, is_admin)
         return markup
 
