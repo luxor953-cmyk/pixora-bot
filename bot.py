@@ -41,8 +41,6 @@ SNAPSHOT_FILE = os.environ.get("SNAPSHOT_FILE", "products_snapshot.json")
 IMAGE_IDS_FILE = os.environ.get("IMAGE_IDS_FILE", "image_ids.json")
 WALLETS_FILE = os.environ.get("WALLETS_FILE", "wallets.json")
 NOTIFY_FILE = os.environ.get("NOTIFY_FILE", "notify_requests.json")
-USED_TX_FILE = os.environ.get("USED_TX_FILE", "used_transactions.json")
-USER_ORDER_START = {}
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False) if BOT_TOKEN else None
 
 USER_SELECTED_PRODUCT = {}
@@ -237,31 +235,23 @@ def is_allowed_product(name, description=""):
     return not any(word in text for word in BANNED_KEYWORDS)
 
 def get_product_family(name):
-    # تصنيف بالكلمة الكاملة + عربي، حتى تظهر الأصناف حتى لو تغيرت صيغة اسم المورّد
-    n = " " + str(name).lower().replace("-", " ").replace("_", " ").replace("/", " ") + " "
-    n = re.sub(r"\s+", " ", n)
+    n = str(name).lower()
     rules = [
-        ((" test ", " api test ", " تجربة ", " تيست "), "tests"),
-        ((" chatgpt ", " chat gpt ", " gpt ", " openai ", " open ai ", " شات جي بي تي ", " تشات جي بي تي "), "chatgpt"),
-        ((" claude ", " كلود "), "claude"),
-        ((" gemini ", " google ", " gmail ", " جيميني ", " جوجل "), "google"),
-        ((" capcut ", " كاب كات ", " كاب كت "), "capcut"),
-        ((" canva ", " كانفا "), "canva"),
-        ((" zoom ", " زوم "), "zoom"),
-        ((" elevenlabs ", " eleven labs ", " ايليفن لابس "), "elevenlabs"),
-        ((" gamma ", " جاما "), "gamma"),
-        ((" lovable ", " لوفابل "), "lovable"),
-        ((" microsoft ", " office ", " windows ", " مايكروسوفت ", " اوفيس ", " أوفيس "), "microsoft"),
-        ((" miro ", " ميرو "), "miro"),
-        ((" notion ", " نوشن "), "notion"),
-        ((" quizlet ", " كويزليت "), "quizlet"),
-        ((" railway ", " ريلواي "), "railway"),
-        ((" wordwall ", " ووردوول "), "wordwall"),
-        ((" api ",), "api_services"),
-        ((" vpn ", " hma ", " surfshark ", " expressvpn ", " في بي ان "), "vpn"),
+        (("test", "api test"), "tests"),
+        (("chatgpt", "gpt", "openai"), "chatgpt"),
+        (("claude",), "claude"),
+        (("gemini", "google", "gmail"), "google"),
+        (("capcut",), "capcut"), (("canva",), "canva"),
+        (("zoom",), "zoom"), (("elevenlabs",), "elevenlabs"),
+        (("gamma",), "gamma"), (("lovable",), "lovable"),
+        (("microsoft",), "microsoft"), (("miro",), "miro"),
+        (("notion",), "notion"), (("quizlet",), "quizlet"),
+        (("railway",), "railway"), (("wordwall",), "wordwall"),
+        (("api",), "api_services"),
+        (("vpn", "hma", "surfshark", "expressvpn"), "vpn")
     ]
     for words, family in rules:
-        if any(w in n for w in words):
+        if any(word in n for word in words):
             return family
     return None
 
@@ -530,13 +520,11 @@ def fetch_supplier_products(force_refresh=False):
             try:
                 cost = float(item.get("price_usd") or item.get("price") or item.get("cost") or 0)
                 family_tmp = get_product_family(str(name).strip())
-                # الأسعار: Test ثابت 0.01، Gemini Plus 6 شهور = تكلفة + 0.5، الباقي = تكلفة + 0.80
-                _lname = str(name).lower()
+                # صنف التيست: بدون مكسب، بنفس سعر التاجر (مجاناً تقريباً)
                 if family_tmp == "tests":
-                    price = 0.01
-                elif "gemini" in _lname and ("6 month" in _lname or "6 شهور" in _lname or "6شهور" in _lname or "6 months" in _lname or "6 mois" in _lname):
-                    price = round(cost + 0.5, 2)
+                    price = round(cost, 2)
                 else:
+                    # باقي المنتجات: سعر التاجر + 0.80 دولار ربح
                     price = round(cost + 0.80, 2)
             except (TypeError, ValueError):
                 price = 0.0
@@ -549,7 +537,6 @@ def fetch_supplier_products(force_refresh=False):
                 "image": extract_image_url(item),
                 "family": get_product_family(name)
             }
-        print("SUPPLIER NAMES:", [(v["name"], v["family"]) for v in result.values()])
         _PRODUCTS_CACHE["data"] = result
         _PRODUCTS_CACHE["time"] = now
         return result
@@ -835,25 +822,7 @@ def purchase_order_from_supplier(product_id, payment_reference, quantity=1):
         "order_id": order_id
     }
 
-
-def load_used_tx():
-    if not os.path.exists(USED_TX_FILE):
-        return {}
-    try:
-        with open(USED_TX_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f); return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-def save_used_tx(d):
-    try:
-        with open(USED_TX_FILE, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print("USED TX SAVE ERROR", repr(e))
-def mark_tx_used(tx_id, chat_id):
-    d = load_used_tx(); d[str(tx_id)] = {"chat_id": chat_id, "time": int(time.time())}; save_used_tx(d)
-
-def verify_binance_transaction(order_id, expected_amount, order_start=None):
+def verify_binance_transaction(order_id, expected_amount):
     if not BINANCE_API_KEY or not BINANCE_SECRET_KEY:
         return {"success": False, "error": "مفاتيح Binance API غير مضبوطة على Render."}
     try:
@@ -865,27 +834,12 @@ def verify_binance_transaction(order_id, expected_amount, order_start=None):
         if response.status_code != 200:
             return {"success": False, "error": f"Binance HTTP {response.status_code}: {response.text[:500]}"}
         transactions = response.json().get("data", [])
-        used = load_used_tx()
-        if str(order_id) in used:
-            return {"success": False, "error": "رقم العملية هذا مستخدم من قبل. لا يمكن استخدامه مرة أخرى."}
         for tx in transactions:
             if (str(tx.get("orderId")) == str(order_id) or str(tx.get("transactionId")) == str(order_id)):
                 actual = float(tx.get("amount", 0))
-                # مبلغ مطابق تماما (سماح 0.01 فقط لفرق التقريب)
-                if abs(actual - float(expected_amount)) > 0.011:
-                    return {"success": False, "error": f"المبلغ المستلم ${actual} لا يطابق المطلوب ${expected_amount} تماما."}
-                # زمن العملية: يجب أن تكون بعد بدء الطلب وألا يمر عليها أكثر من 60 دقيقة
-                tx_ms = tx.get("createTime") or tx.get("transactionTime") or tx.get("time") or tx.get("payTime") or 0
-                try:
-                    tx_sec = int(tx_ms) // 1000 if int(tx_ms) > 10000000000 else int(tx_ms)
-                except Exception:
-                    tx_sec = 0
-                now_sec = int(time.time())
-                if tx_sec and (now_sec - tx_sec > 3600):
-                    return {"success": False, "error": "رقم العملية قديم. مر عليه أكثر من 60 دقيقة."}
-                if order_start and tx_sec and tx_sec < int(order_start) - 60:
-                    return {"success": False, "error": "رقم العملية أقدم من بدء هذا الطلب."}
-                return {"success": True}
+                if actual >= float(expected_amount):
+                    return {"success": True}
+                return {"success": False, "error": f"المبلغ المستلم ${actual} أقل من السعر ${expected_amount}."}
         return {"success": False, "error": "رقم العملية غير موجود ضمن آخر المعاملات."}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
@@ -1558,7 +1512,6 @@ if bot:
                 bot.send_message(chat_id, "تعذر تحديد المنتج.")
                 return
             USER_SELECTED_PRODUCT[chat_id] = key
-            USER_ORDER_START[chat_id] = int(time.time())
             qty = USER_QTY.get(chat_id, 1)
             total = round(info["price"] * qty, 2)
             pay_msg = (f"🪙 حوّل (${total} USDT) إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\n📦 {safe_html(info['name'])}\n📦 الكمية: <b>{qty}</b> | الإجمالي: <b>${total}</b>\n\nثم أرسل رقم العملية (Order ID) سنا في المحادثة.")
@@ -1611,7 +1564,6 @@ if bot:
             except Exception: amt = 0
             if amt <= 0: return
             USER_WAITING_WALLET_DEPOSIT[chat_id] = amt
-            USER_ORDER_START[chat_id] = int(time.time())
             bonus = wallet_cashback_for(amt)
             extra = f"\n🎁 ستحصل على <b>${bonus} هدية</b> - إجمالي الرصيد الذي سيدخل محفظتك: <b>${round(amt+bonus,2)}</b>" if bonus else ""
             pay_msg = f"💳 <b>شحن المحفظة</b>\n\nالمبلغ: <b>${amt}</b>{extra}\n\nحول المبلغ إلى معرّف Binance: <code>{safe_html(BINANCE_ID)}</code>\n\nثم أرسل رقم العملية (Order ID) سنا."
@@ -1685,8 +1637,7 @@ if bot:
                 bot.send_message(chat_id, "❌ رقم العملية غير صالح. يجب أن يتكون من 8 أحرف على الأقل."); return
             USER_WAITING_WALLET_DEPOSIT.pop(chat_id,None)
             bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
-            pay=verify_binance_transaction(ref, amt, order_start=USER_ORDER_START.get(chat_id))
-            if pay["success"]: mark_tx_used(ref, chat_id)
+            pay=verify_binance_transaction(ref, amt)
             if not pay["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(pay['error'])}", parse_mode="HTML"); return
             bonus=wallet_cashback_for(amt)
@@ -1735,8 +1686,7 @@ if bot:
             bot.send_message(chat_id, "⏳ جارٍ التحقق من عملية الدفع عبر Binance...")
             qty_check = USER_QTY.get(chat_id, 1)
             total_check = round(info["price"] * qty_check, 2)
-            payment = verify_binance_transaction(reference, total_check, order_start=USER_ORDER_START.get(chat_id))
-            if payment["success"]: mark_tx_used(reference, chat_id)
+            payment = verify_binance_transaction(reference, total_check)
             if not payment["success"]:
                 bot.send_message(chat_id, f"❌ <b>فشل التحقق:</b>\n{safe_html(payment['error'])}", parse_mode="HTML")
                 return
